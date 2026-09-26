@@ -3,7 +3,6 @@ import {
   type CanUseTool,
   type Options,
   type PermissionResult,
-  type PermissionUpdate,
   type Query,
   type SDKMessage,
   type SDKUserMessage
@@ -21,7 +20,7 @@ import type {
   PermissionDecision,
   Project
 } from '../shared/types'
-import { describeActivity } from '../shared/activity'
+import { alwaysAllowRule, describeActivity } from '../shared/activity'
 import { childEnv, HYPERFRAMES, run, which } from './env'
 import { Channels, broadcast } from './ipc'
 import { catalogTitle } from './library'
@@ -55,8 +54,8 @@ const ALLOWED_TOOLS = [
 
 type Pending = {
   resolve: (r: PermissionResult) => void
-  tool: string
-  suggestions?: PermissionUpdate[]
+  /** The always-allow rule, or null when this request may only be allowed once. */
+  rule: string | null
 }
 
 type TurnOutcome = { isError: boolean; error?: string }
@@ -65,8 +64,21 @@ type Turn = {
   text: string
   chips: Chip[]
   context: unknown
+  /** The user message this turn answers. */
+  userId?: string
   /** Called once when this turn ends, is dropped from the queue, or the agent stops. */
   done?: (outcome: TurnOutcome) => void
+}
+
+/** SDK result subtypes, as people should read them. */
+const PLAIN_ERRORS: Record<string, string> = {
+  error_during_execution: 'Something went wrong while working on this.',
+  error_max_turns: 'This needed more steps than Luca can take in one go.',
+  error_max_budget_usd: 'This reached the spending limit for a single request.',
+  error_max_structured_output_retries: 'Something went wrong while working on this.',
+  restarted: 'Luca restarted before finishing this.',
+  closed: 'The project was closed before Luca finished.',
+  ended: 'Luca stopped unexpectedly before finishing this.'
 }
 
 type ToolPart = Extract<ChatContentPart, { type: 'tool' }>
@@ -135,6 +147,8 @@ export class ProjectAgent {
   private queued: Turn[] = []
   /** The turn being answered now. */
   private active: Turn | null = null
+  private interrupted = false
+  private starting: Promise<void> | null = null
   private abort = new AbortController()
 
   constructor(readonly project: Project) {
@@ -156,7 +170,16 @@ export class ProjectAgent {
     for (const line of readFileSync(this.chatFile, 'utf8').split('\n')) {
       if (!line.trim()) continue
       try {
-        out.push(JSON.parse(line) as ChatMessage)
+        const m = JSON.parse(line) as ChatMessage
+        // a turn cut off by a crash or quit was saved mid-step; those steps can't finish now
+        for (const p of m.parts ?? []) {
+          if (p.type === 'tool' && p.status === 'running') p.status = 'error'
+          else if (p.type === 'permission' && !p.resolved) {
+            p.resolved = 'deny'
+            p.cancelled = true
+          }
+        }
+        out.push(m)
       } catch {
         // skip corrupt line
       }
@@ -185,7 +208,9 @@ export class ProjectAgent {
   history(): ChatMessage[] {
     return this.messages
   }
+  /** The request being answered now, else the last one sent (checkpoint labels). */
   lastUserText(): string | undefined {
+    if (this.active) return this.active.text
     for (let i = this.messages.length - 1; i >= 0; i--) {
       if (this.messages[i].role === 'user') return this.messages[i].text
     }
@@ -210,8 +235,16 @@ export class ProjectAgent {
   }
 
   // ---------------------------------------------------------------- lifecycle
-  async start(): Promise<void> {
-    if (this.q || this.closed) return
+  /** Start the session. Calls while one is starting share it, so there is never a second query. */
+  start(): Promise<void> {
+    if (this.q || this.closed) return Promise.resolve()
+    this.starting ??= this.boot().finally(() => {
+      this.starting = null
+    })
+    return this.starting
+  }
+
+  private async boot(): Promise<void> {
     const claude = await which('claude')
     if (!claude) {
       this.setState('missing-claude', 'claude not found on PATH')
@@ -220,6 +253,7 @@ export class ProjectAgent {
     this.setState('starting')
     const env = await childEnv()
     const auth = await authStatus(claude, env)
+    if (this.closed) return
     if (auth === false) {
       this.setState('needs-login', 'Not logged in · run /login in Claude Code')
       return
@@ -257,37 +291,34 @@ export class ProjectAgent {
 
   async stop(): Promise<void> {
     this.closed = true
-    this.abandonTurns('The project was closed')
+    // nothing may be dispatched into the closing session, and queued turns won't run
+    this.q = null
+    for (const t of this.queued.splice(0))
+      t.done?.({ isError: true, error: 'The project was closed' })
     this.abort.abort()
     for (const w of this.waiters.splice(0)) w(null)
-    for (const p of this.pending.values())
-      p.resolve({ behavior: 'deny', message: 'Project closed' })
-    this.pending.clear()
-    this.q = null
+    this.cancelPending('Project closed')
+    // ends the turn the normal way, so clean edit / Look waiters are released too
+    if (this.working) this.finishTurn(true, 'closed')
   }
 
   async restart(): Promise<void> {
-    this.abandonTurns('Claude Code restarted')
     this.abort.abort()
     for (const w of this.waiters.splice(0)) w(null)
+    // a message the old session never read belongs to the turn that ends below
+    this.inbox.length = 0
     this.q = null
     this.closed = false
+    this.cancelPending('Luca restarted')
+    // q is null, so finishing here can't dispatch a queued turn into the dead session
+    if (this.working) this.finishTurn(true, 'restarted')
+    this.interrupted = false
     await this.start()
-  }
-
-  /** Settle every turn still waiting (running or queued) when the session goes away under it. */
-  private abandonTurns(error: string): void {
-    const turns = [...(this.active ? [this.active] : []), ...this.queued]
-    this.active = null
-    this.queued = []
-    this.working = false
-    if (this.current) {
-      this.current.pending = false
-      this.current.isError = true
-      this.current = null
-      this.rewriteHistory()
+    // messages sent while the old session ran are answered by the new one
+    if (this.q && !this.working) {
+      const next = this.queued.shift()
+      if (next) this.dispatch(next)
     }
-    for (const t of turns) t.done?.({ isError: true, error })
   }
 
   private async *stream(): AsyncGenerator<SDKUserMessage> {
@@ -314,16 +345,15 @@ export class ProjectAgent {
       role: 'user',
       createdAt: new Date().toISOString(),
       text: turn.text,
-      chips: turn.chips
+      chips: turn.chips,
+      context: turn.context
     }
     this.messages.push(user)
     this.rewriteHistory()
     this.pushMessage(user)
-    if (this.working) {
-      this.queued.push(turn)
-      return
-    }
-    this.dispatch(turn)
+    // through the queue, so anything still waiting (e.g. after a restart) goes first
+    this.queued.push({ ...turn, userId: user.id })
+    if (!this.working) this.dispatch(this.queued.shift()!)
   }
 
   /**
@@ -337,6 +367,7 @@ export class ProjectAgent {
   }
 
   private dispatch(turn: Turn): void {
+    this.interrupted = false
     this.active = turn
     this.working = true
     this.turnStartedAt = Date.now()
@@ -348,7 +379,8 @@ export class ProjectAgent {
       createdAt: new Date().toISOString(),
       text: '',
       parts: [],
-      pending: true
+      pending: true,
+      replyTo: turn.userId
     }
     this.messages.push(this.current)
     this.pushMessage(this.current)
@@ -409,8 +441,12 @@ export class ProjectAgent {
     else this.inbox.push(msg)
   }
 
+  /** Stop the current turn. Messages sent while it ran stay queued and are answered next. */
   async interrupt(): Promise<void> {
-    for (const t of this.queued.splice(0)) t.done?.({ isError: true, error: 'Stopped' })
+    // messages queued meanwhile stay queued and are answered next ("Luca will read this next")
+    if (this.working) this.interrupted = true
+    // answer any open permission card now, so the turn isn't left waiting on it
+    this.cancelPending('Stopped')
     try {
       await this.q?.interrupt()
     } catch {
@@ -419,7 +455,7 @@ export class ProjectAgent {
   }
 
   // ---------------------------------------------------------------- permissions
-  private canUseTool: CanUseTool = async (toolName, input, { suggestions }) => {
+  private canUseTool: CanUseTool = async (toolName, input) => {
     // Never let edits escape the project folder.
     const target = input.file_path ?? input.path ?? input.notebook_path
     if (
@@ -435,18 +471,27 @@ export class ProjectAgent {
         return { behavior: 'deny', message: 'media/ and renders/ are immutable in Luca.' }
       }
     }
+    // "Always allow" remembers a command by its first word, so it is only offered (and only
+    // honoured) for plain read-only commands; anything that could change, delete, download or
+    // chain something asks every time
+    const rule = toolName !== 'Bash' ? toolName : alwaysAllowRule(String(input.command ?? ''))
     const always = getSettings().alwaysAllow?.[this.project.id] ?? []
-    const key =
-      toolName === 'Bash' ? `Bash(${String(input.command ?? '').split(/\s+/)[0]})` : toolName
-    if (always.includes(key)) return { behavior: 'allow', updatedInput: input }
+    if (rule && always.includes(rule)) return { behavior: 'allow', updatedInput: input }
 
     const id = randomUUID()
-    const part: ChatContentPart = { type: 'permission', id, tool: toolName, input }
+    // `rule` is what "Always allow" stores, so the card can say exactly what it would permit
+    const part: ChatContentPart = {
+      type: 'permission',
+      id,
+      tool: toolName,
+      input,
+      ...(rule ? { rule } : {})
+    }
     this.current?.parts?.push(part)
     this.pushMessage(this.current)
-    this.emit({ type: 'permission', id, tool: toolName, input })
+    this.emit({ type: 'permission', id, tool: toolName, input, ...(rule ? { rule } : {}) })
     return new Promise<PermissionResult>((resolvePerm) => {
-      this.pending.set(id, { resolve: resolvePerm, tool: key, suggestions })
+      this.pending.set(id, { resolve: resolvePerm, rule })
     })
   }
 
@@ -454,6 +499,8 @@ export class ProjectAgent {
     const p = this.pending.get(id)
     if (!p) return
     this.pending.delete(id)
+    // a request that can't be always-allowed is allowed once, whatever was clicked
+    if (decision === 'allow-always' && !p.rule) decision = 'allow'
     const part = this.current?.parts?.find(
       (x): x is Extract<ChatContentPart, { type: 'permission' }> =>
         x.type === 'permission' && x.id === id
@@ -465,38 +512,50 @@ export class ProjectAgent {
       p.resolve({ behavior: 'deny', message: 'The user denied this action in Luca.' })
       return
     }
-    if (decision === 'allow-always') {
+    if (decision === 'allow-always' && p.rule) {
       const s = getSettings()
       const list = new Set(s.alwaysAllow?.[this.project.id] ?? [])
-      list.add(p.tool)
+      list.add(p.rule)
       updateSettings({ alwaysAllow: { ...(s.alwaysAllow ?? {}), [this.project.id]: [...list] } })
-      p.resolve({ behavior: 'allow', updatedPermissions: p.suggestions })
-      return
     }
+    // Luca keeps its own always-allow list; the SDK's suggested rules can be broader than the card says
     p.resolve({ behavior: 'allow' })
+  }
+
+  /** Answer every open permission request with deny (the turn it belongs to is over). */
+  private cancelPending(message: string): void {
+    for (const [id, p] of this.pending) {
+      p.resolve({ behavior: 'deny', message })
+      this.emit({ type: 'permission-resolved', id })
+    }
+    this.pending.clear()
   }
 
   // ---------------------------------------------------------------- event mapping
   private async consume(q: Query): Promise<void> {
+    let failure: string | null = null
     try {
       for await (const m of q) {
         if (this.q !== q) return
         this.onMessage(m)
       }
     } catch (err) {
-      if (this.q !== q) return
-      const text = String(err)
-      if (/not logged in|\/login|invalid api key|authentication/i.test(text)) {
-        this.setState('needs-login', text)
+      failure = String(err)
+    }
+    if (this.q !== q) return
+    // the session is over: nothing more goes into it, and queued turns wait for the next start
+    this.q = null
+    for (const w of this.waiters.splice(0)) w(null)
+    this.inbox.length = 0
+    if (failure !== null) {
+      if (/not logged in|\/login|invalid api key|authentication/i.test(failure)) {
+        this.setState('needs-login', failure)
       } else if (!this.abort.signal.aborted) {
-        this.setState('error', text)
+        this.setState('error', failure)
       }
-      this.finishTurn(true, text)
     }
-    if (this.q === q) {
-      this.q = null
-      if (this.state === 'working' || this.state === 'ready') this.setState('idle')
-    }
+    if (this.working) this.finishTurn(true, 'ended')
+    if (this.state === 'working' || this.state === 'ready') this.setState('idle')
   }
 
   private onMessage(m: SDKMessage): void {
@@ -559,7 +618,7 @@ export class ProjectAgent {
             const b = block as { tool_use_id: string; is_error?: boolean; content?: unknown }
             const part = this.tools.get(b.tool_use_id)
             if (!part) continue
-            part.status = b.is_error ? 'error' : 'done'
+            part.status = b.is_error ? (this.interrupted ? 'stopped' : 'error') : 'done'
             const out = Array.isArray(b.content)
               ? (b.content as { type: string; text?: string }[]).map((c) => c.text ?? '').join('\n')
               : typeof b.content === 'string'
@@ -567,6 +626,23 @@ export class ProjectAgent {
                 : ''
             if (out && part.name !== 'Edit' && part.name !== 'Write') {
               part.detail = out.length > 4000 ? out.slice(0, 4000) + '\n…' : out
+            }
+            if (part.name === 'mcp__luca__catalog_search' && !b.is_error && part.activity) {
+              try {
+                const r = JSON.parse(out) as { total?: number; query?: string }
+                if (typeof r.total === 'number') {
+                  const q = r.query ?? ''
+                  part.activity = {
+                    ...part.activity,
+                    done:
+                      r.total > 0
+                        ? `Found ${r.total} component${r.total === 1 ? '' : 's'} for “${q}”`
+                        : `No components matched “${q}”`
+                  }
+                }
+              } catch {
+                // keep the neutral label
+              }
             }
             this.emit(part)
             this.pushMessage(this.current)
@@ -603,16 +679,40 @@ export class ProjectAgent {
     this.emit({ type: 'text-delta', id: this.current.id, text })
   }
 
+  /** End the in-flight assistant message: open steps and permission cards can't finish now. */
+  private settleCurrent(isError: boolean, stopped: boolean): void {
+    if (!this.current) return
+    for (const p of this.current.parts ?? []) {
+      if (p.type === 'tool' && p.status === 'running') {
+        p.status = stopped ? 'stopped' : 'error'
+        this.emit(p)
+      } else if (p.type === 'permission' && !p.resolved) {
+        p.resolved = 'deny'
+        p.cancelled = true
+      }
+    }
+    this.current.pending = false
+    this.current.isError = isError
+    if (stopped) this.current.stopped = true
+    this.current.durationMs = Date.now() - this.turnStartedAt
+  }
+
   private finishTurn(isError: boolean, error?: string): void {
     if (!this.working) return
     this.working = false
+    // a turn the person stopped isn't shown as a failure, but whoever waits on it must not
+    // carry on as if it had succeeded
+    const stopped = this.interrupted
+    this.interrupted = false
+    this.cancelPending(stopped ? 'Stopped' : 'The turn ended')
     if (this.current) {
-      this.current.pending = false
-      this.current.isError = isError
-      this.current.durationMs = Date.now() - this.turnStartedAt
-      if (isError && error && !this.current.text) {
+      this.settleCurrent(isError && !stopped, stopped)
+      if (stopped && !this.current.text) this.appendText('Stopped.')
+      else if (isError && error && !this.current.text) {
         this.appendText(
-          this.state === 'needs-login' ? 'Sign in to Claude Code to continue.' : error
+          this.state === 'needs-login'
+            ? 'Sign in to Claude Code to continue.'
+            : (PLAIN_ERRORS[error] ?? error)
         )
       }
       this.pushMessage(this.current)
@@ -623,17 +723,22 @@ export class ProjectAgent {
       type: 'turn-end',
       sessionId: this.sessionId ?? '',
       durationMs: Date.now() - this.turnStartedAt,
-      isError,
-      error
+      isError: isError || stopped,
+      stopped,
+      error: stopped ? 'Stopped' : error
     }
     this.emit(end)
     for (const cb of turnEndListeners) cb(this.project, end)
     const turn = this.active
     this.active = null
-    turn?.done?.({ isError, error })
+    // a stopped turn is not a success for whoever waits on it (clean edit, Save Look)
+    turn?.done?.({ isError: end.isError, error: end.error })
     if (this.state === 'working') this.setState('ready')
-    const next = this.queued.shift()
-    if (next && this.q) this.dispatch(next)
+    // without a live session the queue waits for the next start (restart, or the next send)
+    if (this.q) {
+      const next = this.queued.shift()
+      if (next) this.dispatch(next)
+    }
   }
 }
 
