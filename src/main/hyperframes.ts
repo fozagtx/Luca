@@ -216,15 +216,21 @@ export async function catalog(opts: { refresh?: boolean; cwd: string }): Promise
     const cached = readCache(cacheFile)
     if (cached) return cached
   }
-  const res = await runHyperframes(['catalog', '--json'], { cwd: opts.cwd, timeoutMs: 90_000 })
-  if (res.code !== 0) {
-    return (existsSync(cacheFile) && readCache(cacheFile)) || bundledCatalog
+  const fallback = (): CatalogItem[] =>
+    (existsSync(cacheFile) && readCache(cacheFile)) || bundledCatalog
+  let res: Awaited<ReturnType<typeof runHyperframes>>
+  try {
+    res = await runHyperframes(['catalog', '--json'], { cwd: opts.cwd, timeoutMs: 90_000 })
+  } catch {
+    // the CLI could not start at all (e.g. no npx on PATH)
+    return fallback()
   }
+  if (res.code !== 0) return fallback()
   let raw: HfCatalog | HfCatalogEntry[]
   try {
     raw = parseJsonOutput<HfCatalog | HfCatalogEntry[]>(res.stdout)
   } catch {
-    return (existsSync(cacheFile) && readCache(cacheFile)) || bundledCatalog
+    return fallback()
   }
   const data: HfCatalog = Array.isArray(raw) ? { items: raw } : raw
   const map = (e: HfCatalogEntry, fallback: 'block' | 'component'): CatalogItem => ({
@@ -246,7 +252,7 @@ export async function catalog(opts: { refresh?: boolean; cwd: string }): Promise
     ...(data.components ?? []).map((e) => map(e, 'component')),
     ...(data.items ?? []).map((e) => map(e, 'block'))
   ]
-  if (items.length === 0) return (existsSync(cacheFile) && readCache(cacheFile)) || bundledCatalog
+  if (items.length === 0) return fallback()
   writeFileSync(cacheFile, JSON.stringify(items))
   return items
 }
