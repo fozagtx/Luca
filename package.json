@@ -26,6 +26,7 @@
     "@hyperframes/core": "^0.8.78",
     "@hyperframes/player": "^0.8.78",
     "@hyperframes/producer": "^0.8.78",
+    "@xzdarcy/timeline-engine": "1.0.0",
     "assemblyai": "^4.41.5",
     "chokidar": "^5.0.0",
     "simple-git": "^4.0.2",

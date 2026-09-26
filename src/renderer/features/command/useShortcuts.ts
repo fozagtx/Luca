@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { luca } from '../../lib/luca'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
+import { useTimeline } from '../../stores/timeline'
 import { useUi, type SidebarTab } from '../../stores/ui'
 
 const isEditable = (t: EventTarget | null): boolean => {
@@ -25,9 +26,33 @@ export function useShortcuts(): void {
         return
       }
       if (isEditable(e.target)) return
-      if (meta) return
+      const tl = useTimeline.getState()
+      if (meta) {
+        if (e.key === '=' || e.key === '+') {
+          e.preventDefault()
+          tl.zoomBy(1.25)
+        } else if (e.key === '-') {
+          e.preventDefault()
+          tl.zoomBy(0.8)
+        } else if (e.key === '0') {
+          e.preventDefault()
+          tl.setZoom(80)
+        }
+        return
+      }
 
       switch (e.key) {
+        case 's':
+          if (tl.selected) void tl.edit({ op: 'split', ref: tl.selected, time: player.currentTime })
+          break
+        case 'Delete':
+        case 'Backspace':
+          if (tl.selected) {
+            e.preventDefault()
+            void tl.edit({ op: 'delete', ref: tl.selected })
+            tl.select(null)
+          }
+          break
         case ' ':
           e.preventDefault()
           player.togglePlay()
@@ -65,6 +90,7 @@ export function useShortcuts(): void {
           break
         case 'Escape':
           if (player.grab) player.toggleGrab(false)
+          else if (tl.selected) tl.select(null)
           break
       }
     }

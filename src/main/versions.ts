@@ -12,6 +12,7 @@ node_modules/
 .luca/chat.jsonl
 .luca/session.json
 .luca/project.json
+.hyperframes/
 *.mp4
 *.mov
 *.m4v

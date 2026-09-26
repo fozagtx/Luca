@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Aspect, Chip, PermissionDecision, Settings } from '../shared/types'
+import type { Aspect, Chip, PermissionDecision, Settings, TimelineEdit } from '../shared/types'
 import { activeAgent, agentFor, closeAgent, onTurnEnd } from './agent'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
@@ -12,6 +12,7 @@ import { hasSecret, setSecret } from './secrets'
 import type { LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, requireProject, setCurrentProject } from './state'
+import { applyEdit, editLabel, peaks, thumbnails } from './media'
 import { checkpoint, ensureRepo, history, restore, undo } from './versions'
 import { stopWatching, watchProject } from './watcher'
 
@@ -110,9 +111,14 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
 
   // timeline
   handle(Channels.timelineGet, () => readTimeline(requireProject().dir))
-  handle(Channels.timelineEdit, notReady('Timeline editing'))
-  handle(Channels.timelineThumbs, notReady('Thumbnails'))
-  handle(Channels.timelinePeaks, notReady('Waveform'))
+  handle(Channels.timelineEdit, async (edit: TimelineEdit) => {
+    const p = requireProject()
+    const res = await applyEdit(p.dir, edit)
+    if (res.ok) void checkpoint(p.dir, editLabel(edit))
+    return res
+  })
+  handle(Channels.timelineThumbs, () => thumbnails(requireProject()))
+  handle(Channels.timelinePeaks, () => peaks(requireProject()))
 
   // agent
   handle(Channels.agentSend, (args: { text: string; chips: Chip[]; context: unknown }) =>
