@@ -8,6 +8,14 @@ const lucaDevPort = Number(process.env.LUCA_DEV_PORT ?? 41733)
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/main/index.ts'),
+          'render-worker': resolve('src/main/render-worker.ts')
+        }
+      }
+    },
     resolve: { alias: { '@shared': resolve('src/shared') } }
   },
   preload: {

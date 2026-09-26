@@ -1,9 +1,18 @@
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Aspect, Chip, Edl, PermissionDecision, Settings, TimelineEdit } from '../shared/types'
+import type {
+  Aspect,
+  Chip,
+  Edl,
+  ExportOptions,
+  PermissionDecision,
+  Settings,
+  TimelineEdit
+} from '../shared/types'
 import { activeAgent, agentFor, closeAgent, onTurnEnd } from './agent'
 import { applyEdl, cleanStatus, readEdl, readTranscript, runCleanEdit } from './clean'
+import { cancelExport, startExport } from './export'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
 import { remocnCatalog, setupStudio, studioStatus } from './remocn'
@@ -26,10 +35,6 @@ const openDialog = (
   opts: Electron.OpenDialogOptions
 ): Promise<Electron.OpenDialogReturnValue> =>
   win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts)
-
-const notReady = (feature: string) => (): never => {
-  throw new Error(`${feature} is not available yet`)
-}
 
 export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.serverBaseUrl, () => server.baseUrl)
@@ -176,8 +181,8 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.historyUndo, () => undo(requireProject().dir))
 
   // export
-  handle(Channels.exportStart, notReady('Export'))
-  handle(Channels.exportCancel, () => undefined)
+  handle(Channels.exportStart, (opts: ExportOptions) => startExport(requireProject(), opts))
+  handle(Channels.exportCancel, () => cancelExport())
   handle(Channels.exportReveal, (p: string) => shell.showItemInFolder(p))
   handle(Channels.exportFreeMemory, () => Math.round(process.getSystemMemoryInfo().free / 1024))
 
