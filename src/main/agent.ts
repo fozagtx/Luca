@@ -23,6 +23,7 @@ import type {
 } from '../shared/types'
 import { childEnv, run, which } from './env'
 import { Channels, broadcast } from './ipc'
+import { lucaMcpServer } from './mcp'
 import { lucaDir } from './projects'
 import { getSettings, updateSettings } from './settings'
 
@@ -219,6 +220,7 @@ export class ProjectAgent {
       systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_RULES },
       permissionMode: 'acceptEdits',
       allowedTools: ALLOWED_TOOLS,
+      mcpServers: { luca: lucaMcpServer(this.project.dir) },
       canUseTool: this.canUseTool,
       includePartialMessages: true,
       abortController: this.abort,

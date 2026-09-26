@@ -5,6 +5,7 @@ import type { Aspect, Chip, PermissionDecision, Settings, TimelineEdit } from '.
 import { activeAgent, agentFor, closeAgent, onTurnEnd } from './agent'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
+import { remocnCatalog, setupStudio, studioStatus } from './remocn'
 import { Channels, broadcast, handle } from './ipc'
 import { popupClipMenu, popupLookMenu } from './menu'
 import { createProject, listFiles, openProject, recentProjects, safeJoin } from './projects'
@@ -137,10 +138,10 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     catalog({ refresh: args?.refresh, cwd: currentProject()?.dir ?? app.getPath('userData') })
   )
   handle(Channels.catalogAdd, (name: string) => addCatalogItem(requireProject().dir, name))
-  handle(Channels.catalogRemocn, () => [])
+  handle(Channels.catalogRemocn, (args?: { refresh?: boolean }) => remocnCatalog(args?.refresh))
   handle(Channels.catalogRemocnPreview, () => null)
-  handle(Channels.catalogRemocnStudioStatus, () => ({ ready: false, step: 'not set up' }))
-  handle(Channels.catalogRemocnSetup, notReady('Remocn'))
+  handle(Channels.catalogRemocnStudioStatus, () => studioStatus())
+  handle(Channels.catalogRemocnSetup, () => setupStudio())
 
   // clean
   handle(Channels.cleanRun, notReady('Clean edit'))
