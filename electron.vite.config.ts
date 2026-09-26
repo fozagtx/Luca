@@ -28,7 +28,8 @@ export default defineConfig({
       // Dev only: the UI is served by Vite, project files and the token cookie come from the Luca server.
       proxy: {
         '/p': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false },
-        '/api': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false }
+        '/api': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false },
+        '/hf': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false }
       }
     }
   }

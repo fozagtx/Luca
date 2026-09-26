@@ -23,13 +23,16 @@ node_modules/
 `
 
 function git(dir: string): SimpleGit {
-  return simpleGit({ baseDir: dir, binary: 'git', maxConcurrentProcesses: 1 }).env({
-    ...process.env,
-    GIT_AUTHOR_NAME: 'Luca',
-    GIT_AUTHOR_EMAIL: 'luca@localhost',
-    GIT_COMMITTER_NAME: 'Luca',
-    GIT_COMMITTER_EMAIL: 'luca@localhost'
-  })
+  const env: Record<string, string> = {}
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && !k.startsWith('GIT_') && k !== 'EDITOR' && k !== 'VISUAL') env[k] = v
+  }
+  return simpleGit({
+    baseDir: dir,
+    binary: 'git',
+    maxConcurrentProcesses: 1,
+    config: ['user.name=Luca', 'user.email=luca@localhost']
+  }).env(env)
 }
 
 export async function ensureRepo(dir: string): Promise<void> {
