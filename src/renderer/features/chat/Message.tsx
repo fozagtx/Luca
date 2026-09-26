@@ -45,7 +45,12 @@ function chipIcon(chip: Chip): ReactElement {
 function chipLabel(chip: Chip): string {
   switch (chip.kind) {
     case 'element':
-      return chip.selector.replace(/^[#.]/, '').replace(/[-_]/g, ' ') || 'Element'
+      return (
+        chip.label ??
+        (/^#[\w-]+$/.test(chip.selector)
+          ? chip.selector.slice(1).replace(/[-_]/g, ' ')
+          : `Part of the video at ${clock(chip.time)}`)
+      )
     case 'frame':
       return `Frame at ${clock(chip.time)}`
     case 'catalog':

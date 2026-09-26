@@ -63,6 +63,8 @@ export type Chip =
       compositionId: string
       time: number
       html: string
+      /** What people see: its words, or "Image", "Video"… */
+      label?: string
     }
   | { kind: 'frame'; time: number; png: string }
   | {

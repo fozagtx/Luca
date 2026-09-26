@@ -13,7 +13,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       ['⌘↩', 'Approve what you said or dictated'],
       ['⌘↩', 'Allow a step Luca asks about (⇧⌘↩ always)'],
       ['⌘.', 'Stop Luca'],
-      ['G', 'Point at something in the preview']
+      ['G', 'Click something in the video to comment on it']
     ]
   },
   {
@@ -42,7 +42,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     rows: [
       ['⌘K', 'Search commands'],
       ['⌘E', 'Export'],
-      ['⌘1 – ⌘4', 'Inspiration, Catalog, Transcript, Looks'],
+      ['⌘1 – ⌘3', 'Inspiration, Transcript, Looks'],
       ['⇧⌘S  ⇧⌘C', 'Show or hide the sidebar and the chat'],
       ['⇧⌘D', 'Light or dark'],
       ['?  ⌘/', 'This list']
