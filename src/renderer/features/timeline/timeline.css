@@ -116,9 +116,11 @@
   border-color: var(--color-clip-audio-edge);
 }
 .luca-clip-selected {
+  border-color: var(--color-accent);
   box-shadow:
-    0 0 0 1.5px var(--color-accent),
-    0 0 0 1px white inset;
+    inset 0 0 0 2px var(--color-accent),
+    inset 0 0 0 3px white;
+  filter: brightness(1.06);
 }
 
 .luca-strip {
