@@ -9,6 +9,7 @@ import {
   type PanelSize
 } from 'react-resizable-panels'
 import { Toaster } from 'sonner'
+import { ErrorBoundary } from './components/ui/error-boundary'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Chat } from './features/chat/Chat'
 import { CommandPalette } from './features/command/CommandPalette'
@@ -25,6 +26,7 @@ import { Transport } from './features/viewer/Transport'
 import { Viewer } from './features/viewer/Viewer'
 import { cn } from './lib/cn'
 import { luca } from './lib/luca'
+import { useChat } from './stores/chat'
 import { useProject } from './stores/project'
 import { useUi } from './stores/ui'
 
@@ -88,7 +90,13 @@ export default function App(): ReactElement {
   const setSidebar = useUi((s) => s.setSidebar)
   const setChat = useUi((s) => s.setChat)
   const outerEl = useRef<HTMLDivElement>(null)
+  const projectDir = useProject((s) => s.project?.dir ?? null)
   useShortcuts()
+
+  // the chat panel unmounts when hidden, so the draft's project is tracked here
+  useEffect(() => {
+    useChat.getState().setProject(projectDir)
+  }, [projectDir])
 
   useEffect(() => {
     void init()
@@ -192,7 +200,9 @@ export default function App(): ReactElement {
               maxSize={540}
               className={cn('panel', !chatOpen && 'panel-collapsed')}
             >
-              <Chat />
+              <ErrorBoundary label="the chat">
+                <Chat />
+              </ErrorBoundary>
             </Panel>
           </Group>
         ) : (

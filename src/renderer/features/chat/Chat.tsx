@@ -38,15 +38,13 @@ export function Chat(): ReactElement {
           <Status />
         </div>
       </header>
-      <Messages
-        messages={messages}
-        disabled={!projectDir}
-        onboarding={
-          state === 'needs-login' || state === 'missing-claude' ? (
-            <Onboarding state={state} detail={detail} />
-          ) : null
-        }
-      />
+      {state === 'needs-login' || state === 'missing-claude' ? (
+        // pinned above the conversation so it stays in view however long the chat is
+        <div className="shrink-0 px-3.5 pt-3">
+          <Onboarding state={state} detail={detail} />
+        </div>
+      ) : null}
+      <Messages messages={messages} disabled={!projectDir} />
       <QueueTray />
       <Composer noProject={!projectDir} />
     </section>
@@ -76,25 +74,28 @@ function Status(): ReactElement {
 
 function Messages({
   messages,
-  disabled,
-  onboarding
+  disabled
 }: {
   messages: ChatMessage[]
   disabled: boolean
-  onboarding: ReactElement | null
 }): ReactElement {
   const working = useChat((s) => s.state === 'working')
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom()
   // only messages that arrive while the chat is open animate in, not a reloaded history
   const [mountedAt] = useState(() => Date.now())
   const empty = messages.length === 0
-  // for Try again: the request each assistant message answered
+  // for Try again: the request each assistant message answered (older history has no replyTo,
+  // so fall back to the user message just before it)
   const askedBefore = useMemo(() => {
-    const out = new Map<string, string>()
-    let asked: string | undefined
+    const byId = new Map(messages.filter((m) => m.role === 'user').map((m) => [m.id, m]))
+    const out = new Map<string, ChatMessage>()
+    let asked: ChatMessage | undefined
     for (const m of messages) {
-      if (m.role === 'user') asked = m.text
-      else if (asked) out.set(m.id, asked)
+      if (m.role === 'user') asked = m
+      else {
+        const request = (m.replyTo && byId.get(m.replyTo)) || asked
+        if (request) out.set(m.id, request)
+      }
     }
     return out
   }, [messages])
@@ -107,7 +108,6 @@ function Messages({
           className={cn('flex min-h-full flex-col px-3 pb-4', empty && 'justify-center')}
         >
           <LucaProfile compact={!empty} live={working} />
-          {onboarding}
           {empty ? (
             <div className="mx-auto w-full max-w-[340px] pt-1">
               <Suggestions start={disabled} />
@@ -128,7 +128,7 @@ function Messages({
                     key={m.id}
                     m={m}
                     animate={animate}
-                    lastUserText={askedBefore.get(m.id)}
+                    request={askedBefore.get(m.id)}
                   />
                 )
               })}
@@ -139,6 +139,7 @@ function Messages({
       <button
         type="button"
         aria-label="Scroll to the latest message"
+        inert={isAtBottom || empty}
         onClick={() => scrollToBottom()}
         className={cn(
           'absolute bottom-2 left-1/2 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-bg text-text-2 shadow-popover transition-[opacity,transform] duration-200 ease-out hover:text-text',
@@ -175,7 +176,7 @@ function Onboarding({ state, detail }: { state: string; detail?: string }): Reac
 
   const missing = state === 'missing-claude'
   return (
-    <div className="glow-card msg-in mb-4">
+    <div className="glow-card msg-in mb-1">
       <div className="rounded-[11px] bg-bg p-3.5">
         <div className="flex items-center gap-2.5">
           <LucaAvatar size={28} />

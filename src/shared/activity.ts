@@ -37,7 +37,10 @@ export function friendlyTarget(path: unknown, titleOf?: TitleOf): string {
   if (/(^|\/)remocn\/[^/]+\.tsx?$/.test(p)) return `the ${titleCase(stem)} animation`
   if (/(^|\/)(CLAUDE|AGENTS)\.md$/.test(p)) return 'the project notes'
   if (/(^|\/)media\//.test(p)) return 'your footage'
-  if (/\.json$/.test(p)) return 'the project settings'
+  if (/(^|\/)transcript(\.original)?\.json$/.test(p)) return 'the transcript'
+  if (/(^|\/)edl\.json$/.test(p)) return 'the cut list'
+  if (/(^|\/)cut-candidates\.json$/.test(p)) return 'the suggested cuts'
+  if (/(^|\/)(hyperframes|meta|package|project|look)\.json$/.test(p)) return 'the project settings'
   if (/\.html$/.test(p)) return 'a scene'
   return 'the project'
 }
@@ -48,13 +51,113 @@ const act = (kind: ActivityKind, active: string, done: string): Activity => ({
   done
 })
 
+/**
+ * The words a shell command runs with once the shell has applied its quoting, or null when the
+ * command does anything beyond running one simple command: chaining, pipes, redirects (other than
+ * discarding output), substitutions, variables, subshells, comments, globs that could expand into
+ * options, or anything else this reader doesn't model. Null means "can't tell", never "safe".
+ */
+export function shellWords(command: string): string[] | null {
+  const src = command
+    .trim()
+    .replace(/[ \t]\d?>&\d(?=[ \t]|$)/g, ' ')
+    .replace(/[ \t](?:\d|&)?>[ \t]*\/dev\/null(?=[ \t]|$)/g, ' ')
+  const words: string[] = []
+  let word = ''
+  let inWord = false
+  let quote: "'" | '"' | null = null
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i]
+    if (quote === "'") {
+      if (c === "'") quote = null
+      else word += c
+      continue
+    }
+    if (quote === '"') {
+      if (c === '"') quote = null
+      else if (c === '$' || c === '`' || c === '!') return null
+      else if (c === '\\') {
+        const n = src[++i]
+        if (n === undefined) return null
+        // inside double quotes a backslash only escapes $ ` " \ and newline
+        if ('$`"\\'.includes(n)) word += n
+        else if (n !== '\n') word += c + n
+      } else word += c
+      continue
+    }
+    if (c === '\\') {
+      const n = src[++i]
+      if (n === undefined) return null
+      // backslash-newline joins lines; any other escaped character is taken literally
+      if (n !== '\n') {
+        word += n
+        inWord = true
+      }
+      continue
+    }
+    if (c === "'" || c === '"') {
+      quote = c
+      inWord = true
+      continue
+    }
+    if (c === ' ' || c === '\t') {
+      if (inWord) words.push(word)
+      word = ''
+      inWord = false
+      continue
+    }
+    // operators, expansions, subshells, comments, history, control characters
+    if (/[;&|<>`$(){}#!]/.test(c) || c < ' ') return null
+    // a glob at the start of a word could expand to a file named like an option ("-delete")
+    if (!inWord && /[*?[]/.test(c)) return null
+    word += c
+    inWord = true
+  }
+  if (quote) return null
+  if (inWord) words.push(word)
+  return words
+}
+
+/** Read-only commands that may be "always allowed", and the options that would make them write or run code. */
+const READ_ONLY: Record<string, (args: string[]) => boolean> = {
+  ls: () => true,
+  cat: () => true,
+  head: () => true,
+  tail: () => true,
+  wc: () => true,
+  du: () => true,
+  stat: () => true,
+  pwd: () => true,
+  echo: () => true,
+  which: () => true,
+  grep: () => true,
+  rg: (args) => !args.some((a) => a === '--pre' || a.startsWith('--pre=')),
+  find: (args) =>
+    !args.some((a) => /^-(delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/.test(a))
+}
+
+/**
+ * The rule "Always allow" stores for a shell command (`Bash(ls)`), or null when the command could
+ * change, delete, download or run anything, or chain further commands. Only plain read-only
+ * commands qualify, and every later command is checked again before the rule is applied.
+ */
+export function alwaysAllowRule(command: string): string | null {
+  const words = shellWords(command)
+  if (!words?.length) return null
+  const [name, ...args] = words
+  const ok = Object.hasOwn(READ_ONLY, name) && READ_ONLY[name](args)
+  return ok ? `Bash(${name})` : null
+}
+
 function bash(command: string, titleOf?: TitleOf): Activity {
-  const cmd = command.trim()
-  const hf = /(?:^|\s)npx\s+(?:--yes\s+)?hyperframes(?:@[\w.-]+)?\s+(\w+)(?:\s+([\w@/.-]+))?/.exec(
-    cmd
-  )
-  if (hf) {
-    const [, sub, arg] = hf
+  const run = act('other', 'Running a command', 'Ran a command')
+  const words = shellWords(command)
+  if (!words?.length) return run
+  // `npx hyperframes …` is judged on the hyperframes part (npx alone could run anything)
+  let w = words
+  if (w[0] === 'npx') w = w.slice(w[1] === '--yes' || w[1] === '-y' ? 2 : 1)
+  if (/^hyperframes(@[\w.-]+)?$/.test(w[0] ?? '')) {
+    const [, sub, arg] = w
     switch (sub) {
       case 'add': {
         const what =
@@ -76,12 +179,11 @@ function bash(command: string, titleOf?: TitleOf): Activity {
         return act('other', 'Working on your video', 'Worked on your video')
     }
   }
-  const first = cmd.split(/\s+/)[0]?.replace(/^.*\//, '') ?? ''
-  if (first === 'ffprobe') return act('media', 'Inspecting the footage', 'Inspected the footage')
-  if (first === 'ffmpeg') return act('media', 'Processing the footage', 'Processed the footage')
-  if (['ls', 'cat', 'head', 'tail', 'find', 'grep', 'rg', 'wc', 'tree'].includes(first))
+  if (words[0] === 'ffprobe') return act('media', 'Inspecting the footage', 'Inspected the footage')
+  if (words[0] === 'ffmpeg') return act('media', 'Processing the footage', 'Processed the footage')
+  if (alwaysAllowRule(command))
     return act('look', 'Looking around the project', 'Looked around the project')
-  return act('other', 'Running a step', 'Ran a step')
+  return run
 }
 
 export function describeActivity(
@@ -123,7 +225,7 @@ export function describeActivity(
     case 'mcp__luca__catalog_search': {
       const q = String(input.query ?? '').trim()
       return q
-        ? act('search', `Finding components for “${q}”`, `Found components for “${q}”`)
+        ? act('search', `Finding components for “${q}”`, `Searched components for “${q}”`)
         : act('search', 'Browsing the component library', 'Browsed the component library')
     }
     case 'mcp__luca__remocn_install': {

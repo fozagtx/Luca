@@ -183,11 +183,12 @@ function Thinking({ since, onStop }: { since: string; onStop: () => void }): Rea
 export function AssistantMessage({
   m,
   animate,
-  lastUserText
+  request
 }: {
   m: ChatMessage
   animate: boolean
-  lastUserText?: string
+  /** The user message this reply answers, for Try again. */
+  request?: ChatMessage
 }): ReactElement {
   const resend = useChat((s) => s.resend)
   const [copied, setCopied] = useState(false)
@@ -200,6 +201,8 @@ export function AssistantMessage({
   const waitingOnPermission = parts.some((p) => p.type === 'permission' && !p.resolved)
   const streaming = !!m.pending && last?.type === 'text'
   const thinking = !!m.pending && !streaming && !toolRunning && !waitingOnPermission
+  // reloaded history appears as is; only new or live messages animate
+  const anim = animate || !!m.pending
 
   const copy = (): void => {
     void navigator.clipboard.writeText(m.text.trim()).then(() => {
@@ -211,8 +214,20 @@ export function AssistantMessage({
   return (
     <div className={cn('group/msg flex flex-col gap-2.5', animate && 'msg-in')}>
       {groups.map((g, i) => {
-        if (g.kind === 'steps') return <Steps key={i} parts={g.parts} live={!!m.pending} />
-        if (g.kind === 'permission') return <PermissionCard key={g.part.id} part={g.part} />
+        if (g.kind === 'steps')
+          return (
+            <Steps
+              key={i}
+              parts={g.parts}
+              live={!!m.pending}
+              stopped={!!m.stopped}
+              animate={anim}
+            />
+          )
+        if (g.kind === 'permission')
+          return (
+            <PermissionCard key={g.part.id} part={g.part} stopped={!!m.stopped} animate={anim} />
+          )
         return (
           <Markdown
             key={i}
@@ -225,7 +240,12 @@ export function AssistantMessage({
       })}
       {thinking ? <Thinking since={m.createdAt} onStop={() => void stopLuca()} /> : null}
       {m.isError && !m.pending ? (
-        <div className="fade-in flex items-start gap-2.5 rounded-[12px] border border-danger/20 bg-danger/[0.06] px-3 py-2.5">
+        <div
+          className={cn(
+            'flex items-start gap-2.5 rounded-[12px] border border-danger/20 bg-danger/[0.06] px-3 py-2.5',
+            anim && 'fade-in'
+          )}
+        >
           <CircleAlert size={14} className="mt-px shrink-0 text-danger" />
           <div className="min-w-0 flex-1">
             <div className="text-[12.5px] font-medium text-text">
@@ -235,15 +255,15 @@ export function AssistantMessage({
               Nothing was lost. You can try again or rephrase what you&apos;d like.
             </div>
           </div>
-          {lastUserText ? (
-            <Button size="sm" onClick={() => void resend(lastUserText)} className="shrink-0">
+          {request ? (
+            <Button size="sm" onClick={() => void resend(request)} className="shrink-0">
               <RotateCcw size={11} /> Try again
             </Button>
           ) : null}
         </div>
       ) : null}
       {!m.pending && m.text.trim() ? (
-        <div className="-mt-1 flex h-5 items-center gap-1 text-[11px] text-text-3 opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100">
+        <div className="-mt-1 flex h-5 items-center gap-1 text-[11px] text-text-3 opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100">
           <button
             type="button"
             onClick={copy}
@@ -265,50 +285,77 @@ export function AssistantMessage({
 
 // ------------------------------------------------------------------------------------ permission
 
+/** What "Always allow" would permit. Only plain read-only commands get a rule (see canUseTool). */
+function allowScope(rule: string): string {
+  const bash = /^Bash\((.+)\)$/.exec(rule)
+  return bash ? `read-only “${bash[1]} …” commands` : `every “${rule}” step`
+}
+
 function PermissionCard({
-  part
+  part,
+  stopped,
+  animate
 }: {
   part: Extract<ChatContentPart, { type: 'permission' }>
+  /** The turn was stopped, so an unanswered card was closed by Stop, not by the person. */
+  stopped: boolean
+  animate: boolean
 }): ReactElement {
   const decide = useChat((s) => s.decide)
   const [details, setDetails] = useState(false)
   const input = (part.input ?? {}) as Record<string, unknown>
   const activity = describeActivity(part.tool, input)
-  const exact = part.tool === 'Bash' ? String(input.command ?? '') : JSON.stringify(input, null, 2)
+  const bash = part.tool === 'Bash'
+  const exact = bash ? String(input.command ?? '') : JSON.stringify(input, null, 2)
+  const scope = part.rule ? allowScope(part.rule) : null
 
-  // ⌘↩ allows once, ⌘⇧↩ always: Luca is blocked until you answer, so this comes before the queue
+  // ⌘↩ allows once, ⇧⌘↩ always (when offered): Luca is blocked until you answer, so this comes
+  // before the queue
   useEffect(() => {
     if (part.resolved) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing) return
       e.preventDefault()
       e.stopImmediatePropagation()
-      void decide(part.id, e.shiftKey ? 'allow-always' : 'allow')
+      void decide(part.id, e.shiftKey && scope ? 'allow-always' : 'allow')
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [part.id, part.resolved, decide])
+  }, [part.id, part.resolved, scope, decide])
 
   if (part.resolved) {
     const denied = part.resolved === 'deny'
     return (
-      <div className="fade-in flex items-center gap-1.5 text-[11.5px] text-text-3">
+      <div
+        className={cn('flex items-center gap-1.5 text-[11.5px] text-text-3', animate && 'fade-in')}
+      >
         {denied ? (
-          <X size={12} className="text-text-3" />
+          <X size={12} className="shrink-0 text-text-3" />
         ) : (
-          <Check size={12} className="text-success" />
+          <Check size={12} className="shrink-0 text-success" />
         )}
-        {denied
-          ? `You didn't allow: ${activity.active.toLowerCase()}`
-          : part.resolved === 'allow-always'
-            ? `Always allowed in this project: ${activity.active.toLowerCase()}`
-            : `Allowed once: ${activity.active.toLowerCase()}`}
+        <span className="min-w-0 truncate">
+          {denied
+            ? stopped
+              ? `Stopped before ${activity.active.toLowerCase()}`
+              : part.cancelled
+                ? `Skipped: ${activity.active.toLowerCase()}`
+                : `You didn't allow: ${activity.active.toLowerCase()}`
+            : part.resolved === 'allow-always'
+              ? `Always allowed in this project: ${scope ?? activity.active.toLowerCase()}`
+              : `Allowed once: ${activity.active.toLowerCase()}`}
+        </span>
       </div>
     )
   }
 
   return (
-    <div className="msg-in rounded-[12px] border border-border bg-bg p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+    <div
+      className={cn(
+        'rounded-[12px] border border-border bg-bg p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
+        animate && 'msg-in'
+      )}
+    >
       <div className="flex items-start gap-2.5">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-secondary text-secondary-fg">
           <ShieldCheck size={15} strokeWidth={1.75} />
@@ -316,37 +363,58 @@ function PermissionCard({
         <div className="min-w-0 flex-1">
           <div className="text-[12.5px] font-semibold text-text">Luca needs your OK</div>
           <div className="mt-0.5 text-[12px] leading-[1.45] text-text-2">
-            {activity.active}. This step isn&apos;t on Luca&apos;s safe list yet.
+            {bash
+              ? 'Luca wants to run this command. It isn’t on Luca’s safe list, so check it before allowing.'
+              : `${activity.active}. This step isn’t on Luca’s safe list yet.`}
           </div>
-          <button
-            type="button"
-            onClick={() => setDetails((d) => !d)}
-            className="mt-1 inline-flex items-center gap-0.5 text-[11px] text-text-3 transition-colors hover:text-text"
-          >
-            <ChevronRight
-              size={11}
-              className={cn('transition-transform duration-150', details && 'rotate-90')}
-            />
-            {details ? 'Hide details' : 'Show details'}
-          </button>
-          {details ? (
-            <pre className="fade-in mt-1.5 max-h-40 overflow-auto rounded-[8px] bg-bg-muted p-2 font-mono text-[10.5px] leading-[1.45] whitespace-pre-wrap text-text-2 select-text">
+          {bash ? (
+            <pre className="mt-2 max-h-28 overflow-auto rounded-[8px] bg-bg-muted p-2 font-mono text-[10.5px] leading-[1.45] whitespace-pre-wrap text-text select-text">
               {exact}
             </pre>
-          ) : null}
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setDetails((d) => !d)}
+                className="mt-1 inline-flex items-center gap-0.5 text-[11px] text-text-3 transition-colors hover:text-text"
+              >
+                <ChevronRight
+                  size={11}
+                  className={cn('transition-transform duration-150', details && 'rotate-90')}
+                />
+                {details ? 'Hide details' : 'Show details'}
+              </button>
+              {details ? (
+                <pre className="fade-in mt-1.5 max-h-40 overflow-auto rounded-[8px] bg-bg-muted p-2 font-mono text-[10.5px] leading-[1.45] whitespace-pre-wrap text-text-2 select-text">
+                  {exact}
+                </pre>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5 pl-[38px]">
         <Button size="sm" variant="primary" onClick={() => void decide(part.id, 'allow')}>
           Allow once <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↩</kbd>
         </Button>
-        <Button size="sm" onClick={() => void decide(part.id, 'allow-always')}>
-          Always allow <kbd className="ml-0.5 font-mono text-[10px] opacity-60">⇧⌘↩</kbd>
-        </Button>
+        {scope ? (
+          <Button
+            size="sm"
+            onClick={() => void decide(part.id, 'allow-always')}
+            title={`Lets ${scope} run in this project without asking again`}
+          >
+            Always allow <kbd className="ml-0.5 font-mono text-[10px] opacity-60">⇧⌘↩</kbd>
+          </Button>
+        ) : null}
         <Button size="sm" variant="ghost" onClick={() => void decide(part.id, 'deny')}>
           Don&apos;t allow
         </Button>
       </div>
+      <p className="mt-2 pl-[38px] text-[10.5px] leading-[1.4] text-text-3">
+        {scope
+          ? `Always allow lets ${scope} run in this project without asking again.`
+          : 'Luca asks every time for commands that could change, delete or download things.'}
+      </p>
     </div>
   )
 }

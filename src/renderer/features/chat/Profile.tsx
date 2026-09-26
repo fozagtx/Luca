@@ -94,7 +94,7 @@ const starts: { icon: LucideIcon; text: string }[] = [
  * With no project open they are ideas for a new video instead of edits.
  */
 export function Suggestions({ start }: { start: boolean }): ReactElement {
-  const setDraft = useChat((s) => s.setDraft)
+  const fillDraft = useChat((s) => s.fillDraft)
   const list = start ? starts : suggestions
   return (
     <div className="flex flex-col gap-1.5">
@@ -106,7 +106,7 @@ export function Suggestions({ start }: { start: boolean }): ReactElement {
           key={s.text}
           type="button"
           onClick={() => {
-            setDraft(s.text)
+            fillDraft(s.text)
             requestAnimationFrame(() => document.getElementById('chat-composer')?.focus())
           }}
           style={{ animationDelay: `${80 + i * 50}ms` }}

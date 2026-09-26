@@ -36,6 +36,7 @@ import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
 import { remocnCatalog, setupStudio, studioStatus } from './remocn'
 import { Channels, broadcast, handle, listen } from './ipc'
+import { invalidateLibrary } from './library'
 import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
 import {
@@ -116,7 +117,8 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     return p
   }
   onTurnEnd((p, e) => {
-    if (e.isError) return
+    // a stopped turn's edits are kept, so they get a checkpoint too (undo takes back just them)
+    if (e.isError && !e.stopped) return
     checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72)).catch(
       warnCheckpoint
     )
@@ -257,11 +259,20 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.agentRestart, () => agentFor(requireProject()).restart())
 
   // catalog
-  handle(Channels.catalogList, (args?: { refresh?: boolean }) =>
-    catalog({ refresh: args?.refresh, cwd: currentProject()?.dir ?? app.getPath('userData') })
-  )
+  handle(Channels.catalogList, async (args?: { refresh?: boolean }) => {
+    const items = await catalog({
+      refresh: args?.refresh,
+      cwd: currentProject()?.dir ?? app.getPath('userData')
+    })
+    if (args?.refresh) invalidateLibrary()
+    return items
+  })
   handle(Channels.catalogAdd, (name: string) => addCatalogItem(requireProject().dir, name))
-  handle(Channels.catalogRemocn, (args?: { refresh?: boolean }) => remocnCatalog(args?.refresh))
+  handle(Channels.catalogRemocn, async (args?: { refresh?: boolean }) => {
+    const items = await remocnCatalog(args?.refresh)
+    if (args?.refresh) invalidateLibrary()
+    return items
+  })
   handle(Channels.catalogRemocnPreview, () => null)
   handle(Channels.catalogRemocnStudioStatus, () => studioStatus())
   handle(Channels.catalogRemocnSetup, () => setupStudio())
