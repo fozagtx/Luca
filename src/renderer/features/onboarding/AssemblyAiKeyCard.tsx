@@ -18,11 +18,21 @@ export function AssemblyAiKeyCard({
   className?: string
 }): ReactElement {
   const [key, setKey] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const save = async (): Promise<void> => {
     if (!key.trim()) return
-    const ok = await luca.env.setAssemblyAiKey(key.trim())
-    setKey('')
-    onSaved(ok)
+    setError(null)
+    try {
+      const ok = await luca.env.setAssemblyAiKey(key.trim())
+      setKey('')
+      if (!ok) setError('The key wasn’t saved. Try again.')
+      onSaved(ok)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(
+        `Couldn’t save the key: ${msg.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`
+      )
+    }
   }
   return (
     <div className={cn('card p-2.5 text-[11px] leading-[1.45] text-text-2', className)}>
@@ -53,6 +63,7 @@ export function AssemblyAiKeyCard({
           Save
         </Button>
       </div>
+      {error ? <p className="mt-1.5 text-danger select-text">{error}</p> : null}
     </div>
   )
 }

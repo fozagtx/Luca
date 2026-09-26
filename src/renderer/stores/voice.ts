@@ -22,8 +22,13 @@ const IDLE_MS = 2 * 60_000
 /** Room echo of the reply can still reach the mic just after speech ends. */
 const UNMUTE_DELAY_MS = 250
 
-const MIC_DENIED =
-  'Luca can’t use the microphone. Allow it in System Settings → Privacy & Security → Microphone.'
+const MAC = luca.platform === 'darwin'
+const MIC_DENIED = MAC
+  ? 'Luca can’t use the microphone. Allow it in System Settings → Privacy & Security → Microphone.'
+  : 'Luca can’t use the microphone. Allow microphone access for Luca in your system settings.'
+const NO_SPEECH = MAC
+  ? 'Didn’t catch anything. Check the input device in System Settings → Sound.'
+  : 'Didn’t catch anything. Check your microphone input.'
 
 type VoiceStore = {
   mode: VoiceMode | null
@@ -179,7 +184,7 @@ export const useVoice = create<VoiceStore>((set, get) => ({
     teardown()
     set({ ...OFF })
     if (!heard) {
-      set({ error: 'Didn’t catch anything. Check the input device in System Settings → Sound.' })
+      set({ error: NO_SPEECH })
       return
     }
     const chat = useChat.getState()

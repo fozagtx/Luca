@@ -23,7 +23,7 @@ export async function openMic(onPcm: (pcm: ArrayBuffer) => void): Promise<Mic> {
       autoGainControl: true
     }
   })
-  const ctx = new AudioContext({ sampleRate: MIC_SAMPLE_RATE, latencyHint: 'interactive' })
+  let ctx: AudioContext | null = null
   let level = 0
   let muted = false
   let closed = false
@@ -32,11 +32,14 @@ export async function openMic(onPcm: (pcm: ArrayBuffer) => void): Promise<Mic> {
     closed = true
     level = 0
     for (const t of stream.getTracks()) t.stop()
-    void ctx.close().catch(() => undefined)
+    void ctx?.close().catch(() => undefined)
   }
   try {
-    await ctx.audioWorklet.addModule(workletUrl)
-    const node = new AudioWorkletNode(ctx, 'luca-pcm', {
+    // Inside the try: if the context can't be created, the mic tracks must still be stopped.
+    const audio = new AudioContext({ sampleRate: MIC_SAMPLE_RATE, latencyHint: 'interactive' })
+    ctx = audio
+    await audio.audioWorklet.addModule(workletUrl)
+    const node = new AudioWorkletNode(audio, 'luca-pcm', {
       numberOfInputs: 1,
       numberOfOutputs: 0,
       channelCount: 1,
@@ -48,8 +51,8 @@ export async function openMic(onPcm: (pcm: ArrayBuffer) => void): Promise<Mic> {
       level = toLevel(e.data.rms)
       onPcm(muted ? new ArrayBuffer(e.data.pcm.byteLength) : e.data.pcm)
     }
-    ctx.createMediaStreamSource(stream).connect(node)
-    if (ctx.state === 'suspended') await ctx.resume()
+    audio.createMediaStreamSource(stream).connect(node)
+    if (audio.state === 'suspended') await audio.resume()
   } catch (err) {
     close()
     throw err
