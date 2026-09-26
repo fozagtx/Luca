@@ -25,7 +25,7 @@ import { PaneHead } from '../Sidebar'
 
 const CLEAN_STEPS: (Step & { weight: number })[] = [
   { id: 'extracting', label: 'Pulling the audio out', weight: 6 },
-  { id: 'uploading', label: 'Uploading to AssemblyAI', weight: 12 },
+  { id: 'uploading', label: 'Uploading the audio', weight: 12 },
   { id: 'transcribing', label: 'Transcribing every word (fillers kept)', weight: 32 },
   { id: 'candidates', label: 'Finding fillers and long pauses', weight: 2 },
   { id: 'reviewing', label: 'Luca reviews the cuts (retakes, false starts)', weight: 26 },
@@ -188,8 +188,8 @@ export function TranscriptTab(): ReactElement {
       <div className="flex flex-col gap-3 border-b border-border p-3">
         {hasKey === false ? (
           <AssemblyAiKeyCard onSaved={setHasKey}>
-            Transcription uploads a mono FLAC of the audio and deletes the transcript from
-            AssemblyAI afterwards. The key is stored in the macOS Keychain (safeStorage).
+            Luca sends only the audio for transcription and deletes the transcript from AssemblyAI
+            afterwards. Your key stays in the macOS Keychain.
           </AssemblyAiKeyCard>
         ) : null}
         {noAudio ? (
@@ -295,7 +295,7 @@ export function TranscriptTab(): ReactElement {
       {!transcript ? (
         <EmptyPane
           title="No transcript yet"
-          hint="Clean edit transcribes the video with AssemblyAI (fillers kept), proposes cuts, lets Luca judge retakes and produces a clean master clip."
+          hint="Clean edit transcribes your video word by word, suggests cuts for ums, pauses and retakes, lets Luca pick the best takes and gives you a clean master clip."
         />
       ) : (
         <>

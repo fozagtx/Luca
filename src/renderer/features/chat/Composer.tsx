@@ -131,8 +131,8 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
             if (ok) void startVoice(needsKey)
           }}
         >
-          Voice input streams your microphone to AssemblyAI’s real-time speech-to-text while you
-          talk. The key is stored in the macOS Keychain (safeStorage).
+          Voice input turns your speech into text live with AssemblyAI while you talk. Nothing is
+          sent to Luca until you approve it. Your key stays in the macOS Keychain.
         </AssemblyAiKeyCard>
       ) : null}
       {noProject && !voiceMode ? (

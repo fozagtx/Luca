@@ -5,10 +5,10 @@ import { Channels, broadcast } from './ipc'
 import { getSecret } from './secrets'
 import { getSettings } from './settings'
 
-/** Universal-Streaming model: multilingual with native code-switching. */
+/** Universal-3.5 Pro Streaming: multilingual with native code-switching. */
 const SPEECH_MODEL = 'universal-3-5-pro'
-/** Words the recognizer should expect when someone talks to Luca. */
-const KEYTERMS = ['Luca', 'HyperFrames', 'Remocn', 'Claude', 'B-roll', 'lower third']
+/** Words the recognizer should expect when someone talks to Luca about a video. */
+const KEYTERMS = ['Luca', 'B-roll', 'lower third', 'kinetic title', 'jump cut', 'voiceover']
 /** An unformatted end of turn is usually followed by its formatted text within a few hundred ms. */
 const FORMAT_GRACE_MS = 400
 /** Audio that arrives while the socket is still opening; 200 chunks is about 10 s. */

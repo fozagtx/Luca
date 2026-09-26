@@ -138,11 +138,7 @@ export function buildAppMenu(): void {
       label: 'Help',
       submenu: [
         {
-          label: 'HyperFrames Documentation',
-          click: () => shell.openExternal('https://hyperframes.heygen.com/')
-        },
-        {
-          label: 'Claude Code',
+          label: 'Setting Up Claude',
           click: () => shell.openExternal('https://docs.anthropic.com/en/docs/claude-code')
         },
         { type: 'separator' },

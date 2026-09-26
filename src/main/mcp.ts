@@ -86,7 +86,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
           if (!st.ready)
             return text({
               ok: false,
-              error: `Remocn studio not ready (${st.step ?? 'unknown'}). Ask the user to set it up from the Catalog › Remocn tab.`
+              error: `Remocn studio not ready (${st.step ?? 'unknown'}). Ask the user to set it up from the Catalog › Extras tab.`
             })
           return text(await installComponent(name))
         }

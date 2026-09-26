@@ -203,7 +203,7 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
             <StepList
               steps={[
                 { id: 'extracting', label: 'Pulling the audio out' },
-                { id: 'uploading', label: 'Uploading to AssemblyAI' },
+                { id: 'uploading', label: 'Uploading the audio' },
                 { id: 'transcribing', label: 'Transcribing every word' }
               ]}
               current={clean!.stage}
@@ -216,8 +216,8 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
           <>
             <div className="text-[14px] font-semibold text-text">First, the words</div>
             <p className="max-w-[420px] text-[12.5px] leading-[1.55] text-text-2">
-              Luca transcribes your video with AssemblyAI (an API key is needed, set in the
-              Transcript tab), then you pick how the captions look.
+              Luca transcribes your video word by word (add your AssemblyAI key in the Transcript
+              tab first), then you pick how the captions look.
             </p>
             <GenerateButton
               label="Transcribe now"

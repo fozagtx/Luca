@@ -2,7 +2,7 @@
   "name": "luca",
   "productName": "Luca",
   "version": "0.1.0",
-  "description": "Luca: a personal macOS agentic video editor built on Electron and HyperFrames",
+  "description": "Luca: a personal macOS video editor where you talk and Luca edits",
   "main": "./out/main/index.js",
   "author": "fozagtx",
   "private": true,

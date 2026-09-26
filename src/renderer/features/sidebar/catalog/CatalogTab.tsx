@@ -490,6 +490,7 @@ function RemocnSetup({
 }): ReactElement {
   const [settingUp, setSettingUp] = useState(false)
   const [err, setErr] = useState<string | null>(studio.error ?? null)
+  const [details, setDetails] = useState(false)
 
   useEffect(() => {
     if (!settingUp) return
@@ -517,7 +518,23 @@ function RemocnSetup({
         takes about two minutes.
       </p>
       {err ? (
-        <p className="mt-1 line-clamp-3 text-[10.5px] text-danger select-text">{err}</p>
+        <div className="mt-1.5 text-[11px] leading-[1.45]">
+          <span className="text-danger">
+            Setup couldn’t finish. Check your internet connection and try again.
+          </span>{' '}
+          <button
+            type="button"
+            onClick={() => setDetails((d) => !d)}
+            className="text-text-3 underline decoration-dotted underline-offset-2 hover:text-text"
+          >
+            {details ? 'Hide details' : 'Details'}
+          </button>
+          {details ? (
+            <pre className="fade-in mt-1 max-h-24 overflow-auto rounded-[6px] bg-bg-muted p-2 font-mono text-[10px] whitespace-pre-wrap text-text-2 select-text">
+              {err}
+            </pre>
+          ) : null}
+        </div>
       ) : null}
       <div className="mt-2 flex items-center gap-2">
         <Button size="sm" variant="primary" disabled={settingUp} onClick={() => void setup()}>

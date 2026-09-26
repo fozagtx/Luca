@@ -15,6 +15,7 @@ import {
   Puzzle,
   Scissors,
   Shapes,
+  Sparkles,
   Trash2,
   Volume2,
   VolumeX
@@ -633,7 +634,11 @@ const ClipFace = memo(function ClipFace({
         />
       ) : null}
       <span className="luca-clip-label">
-        {clip.remocn ? <span className="luca-clip-badge">R</span> : null}
+        {clip.remocn ? (
+          <span className="luca-clip-badge" title="Animated component">
+            <Sparkles size={8} strokeWidth={2.5} />
+          </span>
+        ) : null}
         {clip.volume === 0 ? <VolumeX size={10} strokeWidth={2.2} className="shrink-0" /> : null}
         <span className="truncate">{clip.label}</span>
       </span>
