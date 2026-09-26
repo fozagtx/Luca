@@ -1,6 +1,5 @@
 import type { ChatContentPart, ChatMessage, Chip } from '@shared/types'
 import {
-  ArrowUp,
   Check,
   ChevronRight,
   CircleAlert,
@@ -23,6 +22,7 @@ import {
   type ReactElement
 } from 'react'
 import { Button } from '../../components/ui/button'
+import { GenerateButton } from '../../components/ui/generate-button'
 import { cn } from '../../lib/cn'
 import { catalogChip, hasCatalogDrag, readCatalogDrag } from '../../lib/drag'
 import { clock } from '../../lib/timecode'
@@ -42,8 +42,8 @@ export function Chat(): ReactElement {
   }, [projectDir, load])
 
   return (
-    <section className="flex h-full flex-col bg-bg">
-      <header className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3 text-[12px] font-medium text-text-2">
+    <section className="flex h-full flex-col bg-panel">
+      <header className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3 text-[12px] font-medium text-text-2">
         <span>Chat</span>
         <StatusDot />
       </header>
@@ -199,7 +199,7 @@ function Assistant({ m }: { m: ChatMessage }): ReactElement {
         </div>
       ) : null}
       {m.isError && !m.pending ? (
-        <div className="flex items-center gap-1.5 text-[11px] text-[#FF3B30]">
+        <div className="flex items-center gap-1.5 text-[11px] text-danger">
           <CircleAlert size={12} /> The turn ended with an error.
         </div>
       ) : null}
@@ -226,7 +226,7 @@ function ToolRow({ part }: { part: Extract<ChatContentPart, { type: 'tool' }> })
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 rounded-[6px] px-1.5 py-1 text-left text-text-2 hover:bg-black/[0.04]"
+        className="flex w-full items-center gap-1.5 rounded-[6px] px-1.5 py-1 text-left text-text-2 hover:bg-hover"
       >
         <ChevronRight
           size={12}
@@ -235,7 +235,7 @@ function ToolRow({ part }: { part: Extract<ChatContentPart, { type: 'tool' }> })
         {part.status === 'running' ? (
           <LoaderCircle size={12} className="shrink-0 animate-spin text-accent" />
         ) : part.status === 'error' ? (
-          <CircleAlert size={12} className="shrink-0 text-[#FF3B30]" />
+          <CircleAlert size={12} className="shrink-0 text-danger" />
         ) : (
           <Check size={12} className="shrink-0 text-[#34C759]" />
         )}
@@ -393,7 +393,7 @@ function Composer({ disabled }: { disabled: boolean }): ReactElement {
       }}
     >
       {error ? (
-        <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] text-[#FF3B30]">
+        <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] text-danger">
           <CircleAlert size={12} />{' '}
           {error.replace(/^Error invoking remote method '[^']+': Error: /, '')}
         </div>
@@ -418,26 +418,26 @@ function Composer({ disabled }: { disabled: boolean }): ReactElement {
           className="flex-1 resize-none select-text bg-transparent text-[13px] leading-[19px] text-text outline-none placeholder:text-text-3"
         />
         {working ? (
-          <Button
-            variant="icon"
+          <GenerateButton
             size="sm"
-            className="size-6 rounded-full bg-text text-white hover:bg-text"
+            hue={210}
+            generating
+            label="Send"
+            generatingLabel="Stop"
+            icon={<Square size={10} fill="currentColor" />}
             onClick={() => void stop()}
             title="Stop"
-          >
-            <Square size={10} fill="currentColor" />
-          </Button>
+          />
         ) : (
-          <Button
-            variant="primary"
+          <GenerateButton
             size="sm"
-            className="size-6 rounded-full px-0"
+            hue={210}
+            label="Send"
+            generatingLabel="Sending"
             disabled={disabled || !draft.trim()}
             onClick={submit}
-            title="Send"
-          >
-            <ArrowUp size={13} />
-          </Button>
+            title="Send (↩)"
+          />
         )}
       </div>
     </div>

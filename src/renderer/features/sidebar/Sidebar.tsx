@@ -29,26 +29,25 @@ export function Sidebar(): ReactElement {
   const tab = useUi((s) => s.tab)
   const setTab = useUi((s) => s.setTab)
   return (
-    <aside className="sidebar-vibrancy flex h-full min-w-0 flex-col border-r border-border">
-      <div
-        role="tablist"
-        aria-label="Sidebar"
-        className="flex h-10 shrink-0 items-center gap-0.5 border-b border-border px-2"
-      >
-        {tabs.map((t) => (
-          <Tip key={t.id} label={t.label} shortcut={t.shortcut}>
-            <Button
-              role="tab"
-              aria-selected={tab === t.id}
-              aria-label={t.label}
-              variant="icon"
-              active={tab === t.id}
-              onClick={() => setTab(t.id)}
-            >
-              {t.icon}
-            </Button>
-          </Tip>
-        ))}
+    <aside className="sidebar-vibrancy flex h-full min-w-0 flex-col">
+      <div className="flex h-11 shrink-0 items-center border-b border-border px-2">
+        <div role="tablist" aria-label="Sidebar" className="dock">
+          {tabs.map((t) => (
+            <Tip key={t.id} label={t.label} shortcut={t.shortcut}>
+              <Button
+                role="tab"
+                aria-selected={tab === t.id}
+                aria-label={t.label}
+                variant="icon"
+                active={tab === t.id}
+                className="h-6 w-7 rounded-[5px] data-[active=true]:bg-bg data-[active=true]:shadow-[0_1px_2px_rgba(0,0,0,0.12)]"
+                onClick={() => setTab(t.id)}
+              >
+                {t.icon}
+              </Button>
+            </Tip>
+          ))}
+        </div>
         <span className="ml-auto pr-1 text-[11px] font-medium text-text-3">
           {tabs.find((t) => t.id === tab)?.label}
         </span>

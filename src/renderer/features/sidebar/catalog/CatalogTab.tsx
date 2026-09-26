@@ -265,7 +265,7 @@ function RemocnCatalog(): ReactElement {
             min, one time).
           </p>
           {studio.error ? (
-            <pre className="mt-1 max-h-20 overflow-auto whitespace-pre-wrap text-[10px] text-[#FF3B30]">
+            <pre className="mt-1 max-h-20 overflow-auto whitespace-pre-wrap text-[10px] text-danger">
               {studio.error}
             </pre>
           ) : null}

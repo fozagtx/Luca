@@ -117,7 +117,7 @@ function NewProjectForm({
                   'flex flex-col items-center gap-2 rounded-[6px] border px-3 py-3 transition-colors',
                   aspect === a.id
                     ? 'border-accent bg-accent/[0.05]'
-                    : 'border-border hover:bg-black/[0.03]'
+                    : 'border-border hover:bg-hover'
                 )}
               >
                 <div className="flex h-10 items-center">
@@ -160,7 +160,7 @@ function NewProjectForm({
           </div>
         )}
         {error && (
-          <div className="selectable rounded-[6px] bg-[#FFF1F0] px-3 py-2 text-[12px] text-[#B42318]">
+          <div className="selectable rounded-[6px] bg-danger/10 px-3 py-2 text-[12px] text-danger">
             {error}
           </div>
         )}

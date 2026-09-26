@@ -80,7 +80,7 @@ export function FilesTab(): ReactElement {
               <button
                 key={f.path}
                 type="button"
-                className="group flex w-full items-center gap-2 px-3 py-[3px] text-left hover:bg-black/[0.04]"
+                className="group flex w-full items-center gap-2 px-3 py-[3px] text-left hover:bg-hover"
                 onDoubleClick={() => luca.project.revealInFinder(f.path)}
                 draggable
                 onDragStart={(e) => {

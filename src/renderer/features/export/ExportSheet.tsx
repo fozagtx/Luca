@@ -1,5 +1,7 @@
 import type { ExportOptions, ExportProgress } from '@shared/types'
 import { useEffect, useState, type ReactElement } from 'react'
+import { AnimatedButton } from '../../components/ui/animated-button'
+import { AnimatedNumber } from '../../components/ui/animated-number'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Sheet } from '../../components/ui/sheet'
@@ -55,9 +57,9 @@ export function ExportSheet(): ReactElement {
       footer={
         <>
           <Button onClick={() => setExport(false)}>Cancel</Button>
-          <Button variant="primary" disabled={!project} onClick={() => void start()}>
+          <AnimatedButton disabled={!project} onClick={() => void start()}>
             Export MP4
-          </Button>
+          </AnimatedButton>
         </>
       }
     >
@@ -86,7 +88,7 @@ export function ExportSheet(): ReactElement {
                   'flex flex-col items-start rounded-[6px] border px-3 py-2 text-left transition-colors',
                   quality === q.id
                     ? 'border-accent bg-accent/[0.05]'
-                    : 'border-border hover:bg-black/[0.03]'
+                    : 'border-border hover:bg-hover'
                 )}
               >
                 <span className="text-[12px] font-medium text-text">{q.label}</span>
@@ -100,7 +102,7 @@ export function ExportSheet(): ReactElement {
           {freeMB !== null ? ` · ${Math.round(freeMB / 1024)} GB free memory` : ''}
         </div>
         {error && (
-          <div className="selectable rounded-[6px] bg-[#FFF1F0] px-3 py-2 text-[12px] text-[#B42318]">
+          <div className="selectable rounded-[6px] bg-danger/10 px-3 py-2 text-[12px] text-danger">
             {error}
           </div>
         )}
@@ -132,8 +134,8 @@ export function ExportBar(): ReactElement | null {
             style={{ width: `${Math.max(2, Math.round(p.progress * 100))}%` }}
           />
         </div>
-        <span className="w-[200px] truncate">
-          {Math.round(p.progress * 100)}% · {p.stage}
+        <span className="flex w-[200px] items-center gap-1 truncate">
+          <AnimatedNumber value={p.progress * 100} format={(n) => `${Math.round(n)}%`} />· {p.stage}
         </span>
         <Button size="sm" variant="ghost" onClick={() => void luca.export.cancel()}>
           Cancel
@@ -145,7 +147,7 @@ export function ExportBar(): ReactElement | null {
     <div
       className={cn(
         'flex h-7 shrink-0 items-center gap-2 border-b border-border px-3 text-[11px]',
-        p.status === 'error' ? 'bg-[#FFF1F0] text-[#B42318]' : 'bg-bg-muted text-text-2'
+        p.status === 'error' ? 'bg-danger/10 text-danger' : 'bg-bg-muted text-text-2'
       )}
     >
       <span className="min-w-0 flex-1 truncate">

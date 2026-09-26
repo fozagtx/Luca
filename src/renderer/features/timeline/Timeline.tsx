@@ -57,14 +57,14 @@ export function Timeline(): ReactElement {
 
   if (!project) {
     return (
-      <div className="flex h-full items-center justify-center bg-bg-subtle text-[12px] text-text-3">
+      <div className="flex h-full items-center justify-center bg-panel text-[12px] text-text-3">
         Open a project to see its timeline
       </div>
     )
   }
 
   return (
-    <div className="relative flex h-full flex-col bg-bg-subtle">
+    <div className="relative flex h-full flex-col bg-panel">
       {timeline ? (
         <Tracks key={project.id} projectId={project.id} />
       ) : (
@@ -72,7 +72,7 @@ export function Timeline(): ReactElement {
           {error ?? 'Reading timeline…'}
         </div>
       )}
-      <div className="absolute bottom-1.5 right-2 flex items-center gap-0.5 rounded-[6px] bg-bg/80 p-0.5 shadow-sm backdrop-blur">
+      <div className="absolute bottom-1.5 right-2 flex items-center gap-0.5 dock">
         <Button
           variant="icon"
           aria-label="Zoom out"
@@ -92,7 +92,7 @@ export function Timeline(): ReactElement {
         </Button>
       </div>
       {error && timeline ? (
-        <div className="pointer-events-none absolute left-[104px] top-9 rounded-[6px] bg-[#FF3B30] px-2 py-1 text-[11px] text-white shadow-popover">
+        <div className="pointer-events-none absolute left-[104px] top-9 rounded-[6px] bg-danger px-2 py-1 text-[11px] text-white shadow-popover">
           {error}
         </div>
       ) : null}
@@ -218,7 +218,7 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
 
   return (
     <div className="flex min-h-0 flex-1">
-      <div className="shrink-0 border-r border-border" style={{ width: LABEL_WIDTH }}>
+      <div className="shrink-0 border-r border-border bg-bg-subtle" style={{ width: LABEL_WIDTH }}>
         <div className="h-8 border-b border-border" />
         <div style={{ height: 10 }} />
         {rows.map((r) => {
@@ -257,7 +257,7 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
           </div>
         ) : null}
         {dropError ? (
-          <div className="absolute right-2 bottom-2 z-10 rounded-[4px] bg-[#FF3B30] px-1.5 py-0.5 text-[10px] text-white">
+          <div className="absolute right-2 bottom-2 z-10 rounded-[4px] bg-danger px-1.5 py-0.5 text-[10px] text-white">
             {dropError}
           </div>
         ) : null}

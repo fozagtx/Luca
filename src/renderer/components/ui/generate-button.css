@@ -1,0 +1,263 @@
+/* Vengeance UI generate-button styles, tuned to Luca's scale and tokens. */
+.gen-btn {
+  --border-radius: 999px;
+  --padding: 3px;
+  --transition: 0.4s;
+  --button-color: hsl(var(--highlight-color-hue), 100%, 50%);
+  --highlight-color-hue: 210deg;
+
+  position: relative;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px 0 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: #fff;
+  background-color: var(--button-color);
+  border: solid 1px rgba(255, 255, 255, 0.14);
+  border-radius: var(--border-radius);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 2px 2px rgba(255, 255, 255, 0.12),
+    inset 0 6px 8px rgba(255, 255, 255, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.25);
+  transition:
+    box-shadow var(--transition),
+    border var(--transition),
+    background-color var(--transition),
+    transform 150ms ease-out,
+    opacity 150ms ease-out;
+}
+.gen-btn[data-size='sm'] {
+  height: 24px;
+  padding: 0 10px 0 8px;
+  font-size: 11px;
+}
+.gen-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.gen-btn:active {
+  transform: scale(0.97);
+}
+
+.gen-btn::before {
+  content: '';
+  position: absolute;
+  inset: calc(0px - var(--padding));
+  border-radius: calc(var(--border-radius) + var(--padding));
+  pointer-events: none;
+  background-image: linear-gradient(0deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.3));
+  z-index: -1;
+  transition:
+    box-shadow var(--transition),
+    filter var(--transition);
+  box-shadow:
+    0 -8px 8px -6px rgba(0, 0, 0, 0) inset,
+    0 -16px 16px -8px rgba(0, 0, 0, 0) inset,
+    1px 1px 1px rgba(255, 255, 255, 0.1),
+    -1px -1px 1px rgba(0, 0, 0, 0.1);
+}
+.dark .gen-btn::before {
+  background-image: linear-gradient(0deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.7));
+}
+
+.gen-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: linear-gradient(
+    0deg,
+    #fff,
+    hsl(var(--highlight-color-hue), 100%, 70%),
+    hsla(var(--highlight-color-hue), 100%, 70%, 50%),
+    8%,
+    transparent
+  );
+  opacity: 0;
+  transition:
+    opacity var(--transition),
+    filter var(--transition);
+}
+
+.gen-btn-letter {
+  position: relative;
+  display: inline-block;
+  color: rgba(255, 255, 255, 0.55);
+  animation: gen-letter-anim 2s ease-in-out infinite;
+  transition:
+    color var(--transition),
+    text-shadow var(--transition),
+    opacity var(--transition);
+}
+@keyframes gen-letter-anim {
+  50% {
+    text-shadow: 0 0 3px rgba(255, 255, 255, 0.5);
+    color: #fff;
+  }
+}
+
+.gen-btn-svg,
+.gen-btn > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  fill: #e8e8e8;
+  animation: gen-flicker 2s linear infinite;
+  animation-delay: 0.5s;
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.6));
+  transition:
+    fill var(--transition),
+    filter var(--transition),
+    opacity var(--transition);
+}
+@keyframes gen-flicker {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.gen-txt-wrapper {
+  position: relative;
+  display: inline-grid;
+  align-items: center;
+}
+.gen-txt-1,
+.gen-txt-2,
+.gen-txt-measure {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+.gen-txt-measure {
+  visibility: hidden;
+}
+.gen-txt-1 {
+  animation: gen-appear-anim 0.6s ease-in-out forwards;
+}
+.gen-txt-2 {
+  opacity: 0;
+}
+@keyframes gen-appear-anim {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Generating state */
+.gen-btn[data-generating='true'] .gen-txt-1 {
+  animation: gen-opacity-anim 0.3s ease-in-out forwards;
+}
+.gen-btn[data-generating='true'] .gen-txt-2 {
+  animation: gen-opacity-anim 0.3s ease-in-out reverse forwards;
+}
+@keyframes gen-opacity-anim {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.gen-btn[data-generating='true'] .gen-btn-letter {
+  animation: gen-letter-anim 1.2s ease-in-out infinite;
+}
+.gen-btn[data-generating='true'] .gen-btn-svg {
+  animation-duration: 1.2s;
+  animation-delay: 0.2s;
+}
+.gen-btn[data-generating='true']::before {
+  box-shadow:
+    0 -8px 12px -6px rgba(255, 255, 255, 0.2) inset,
+    0 -16px 16px -8px hsla(var(--highlight-color-hue), 100%, 70%, 20%) inset,
+    1px 1px 1px rgba(255, 255, 255, 0.2),
+    -1px -1px 1px rgba(0, 0, 0, 0.13);
+}
+.gen-btn[data-generating='true']::after {
+  opacity: 0.6;
+  mask-image: linear-gradient(0deg, #fff, transparent);
+}
+
+.gen-btn-letter:nth-child(1) {
+  animation-delay: 0s;
+}
+.gen-btn-letter:nth-child(2) {
+  animation-delay: 0.08s;
+}
+.gen-btn-letter:nth-child(3) {
+  animation-delay: 0.16s;
+}
+.gen-btn-letter:nth-child(4) {
+  animation-delay: 0.24s;
+}
+.gen-btn-letter:nth-child(5) {
+  animation-delay: 0.32s;
+}
+.gen-btn-letter:nth-child(6) {
+  animation-delay: 0.4s;
+}
+.gen-btn-letter:nth-child(7) {
+  animation-delay: 0.48s;
+}
+.gen-btn-letter:nth-child(8) {
+  animation-delay: 0.56s;
+}
+.gen-btn-letter:nth-child(9) {
+  animation-delay: 0.64s;
+}
+.gen-btn-letter:nth-child(10) {
+  animation-delay: 0.72s;
+}
+.gen-btn-letter:nth-child(11) {
+  animation-delay: 0.8s;
+}
+.gen-btn-letter:nth-child(12) {
+  animation-delay: 0.88s;
+}
+.gen-btn-letter:nth-child(n + 13) {
+  animation-delay: 0.96s;
+}
+
+/* Hover & active */
+.gen-btn:hover {
+  border: solid 1px hsla(var(--highlight-color-hue), 100%, 80%, 40%);
+}
+.gen-btn:hover::before {
+  box-shadow:
+    0 -8px 8px -6px rgba(255, 255, 255, 0.6) inset,
+    0 -16px 16px -8px hsla(var(--highlight-color-hue), 100%, 70%, 30%) inset,
+    1px 1px 1px rgba(255, 255, 255, 0.13),
+    -1px -1px 1px rgba(0, 0, 0, 0.13);
+}
+.gen-btn:hover::after {
+  opacity: 1;
+  mask-image: linear-gradient(0deg, #fff, transparent);
+}
+.gen-btn:hover .gen-btn-svg {
+  fill: #fff;
+  filter: drop-shadow(0 0 3px hsl(var(--highlight-color-hue), 100%, 70%));
+  animation: none;
+}
+.gen-btn:active {
+  border: solid 1px hsla(var(--highlight-color-hue), 100%, 80%, 70%);
+  background-color: hsl(var(--highlight-color-hue), 100%, 42%);
+}
+.gen-btn:active::after {
+  opacity: 1;
+  mask-image: linear-gradient(0deg, #fff, transparent);
+  filter: brightness(200%);
+}
+.gen-btn:active .gen-btn-letter {
+  text-shadow: 0 0 1px hsla(var(--highlight-color-hue), 100%, 90%, 90%);
+  animation: none;
+}

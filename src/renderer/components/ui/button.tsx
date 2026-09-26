@@ -5,14 +5,17 @@ type Variant = 'primary' | 'secondary' | 'ghost' | 'icon' | 'danger'
 type Size = 'sm' | 'md'
 
 const base =
-  'inline-flex items-center justify-center gap-1.5 whitespace-nowrap select-none rounded-[6px] text-[12px] font-medium leading-none transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none no-drag'
+  'inline-flex items-center justify-center gap-1.5 whitespace-nowrap select-none rounded-[6px] text-[12px] font-medium leading-none no-drag ' +
+  'transition-[background-color,color,transform,box-shadow] duration-150 ease-out active:scale-[0.97] ' +
+  'disabled:opacity-40 disabled:pointer-events-none [&_svg]:shrink-0'
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-accent text-white hover:bg-[#0A6FE0] active:bg-[#0663CC]',
-  secondary: 'bg-bg-muted text-text hover:bg-[#EBEBEE] active:bg-[#E2E2E6] border border-border',
-  ghost: 'text-text-2 hover:bg-black/[0.05] hover:text-text active:bg-black/[0.08]',
-  icon: 'text-text-2 hover:bg-black/[0.05] hover:text-text active:bg-black/[0.08] data-[active=true]:bg-black/[0.06] data-[active=true]:text-text',
-  danger: 'bg-[#FF3B30] text-white hover:bg-[#E5342A]'
+  primary:
+    'bg-accent text-accent-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] hover:brightness-110 active:brightness-95',
+  secondary: 'border border-border bg-bg text-text hover:bg-hover active:bg-press',
+  ghost: 'text-text-2 hover:bg-hover hover:text-text active:bg-press',
+  icon: 'text-text-2 hover:bg-hover hover:text-text active:bg-press data-[active=true]:bg-accent/12 data-[active=true]:text-accent',
+  danger: 'bg-danger text-white hover:brightness-110'
 }
 
 const sizes: Record<Size, string> = {

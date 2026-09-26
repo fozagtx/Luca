@@ -2,6 +2,7 @@ import { Scissors } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import type { CleanStatus, Cut, Edl, Transcript, Word } from '../../../../shared/types'
 import { Button } from '../../../components/ui/button'
+import { GenerateButton } from '../../../components/ui/generate-button'
 import { Input } from '../../../components/ui/input'
 import { cn } from '../../../lib/cn'
 import { luca } from '../../../lib/luca'
@@ -176,19 +177,26 @@ export function TranscriptTab(): ReactElement {
           </div>
         ) : null}
         <div className="flex items-center gap-2">
-          <Button size="sm" disabled={busy || hasKey !== true} onClick={() => void run()}>
-            <Scissors size={12} /> {transcript ? 'Re-run clean edit' : 'Clean edit'}
-          </Button>
+          <GenerateButton
+            size="sm"
+            hue={210}
+            label={transcript ? 'Re-run clean edit' : 'Clean edit'}
+            generatingLabel="Cleaning"
+            generating={busy}
+            icon={<Scissors size={12} />}
+            disabled={busy || hasKey !== true}
+            onClick={() => void run()}
+          />
           <span
             className={cn(
               'truncate text-[10.5px] text-text-3',
-              status.stage === 'error' && 'text-[#FF3B30]'
+              status.stage === 'error' && 'text-danger'
             )}
           >
             {busy ? STAGE_LABEL[status.stage] : (status.message ?? '')}
           </span>
         </div>
-        {error ? <p className="mt-1 text-[10.5px] text-[#FF3B30]">{error}</p> : null}
+        {error ? <p className="mt-1 text-[10.5px] text-danger">{error}</p> : null}
       </div>
       {!transcript ? (
         <EmptyPane
@@ -235,7 +243,7 @@ export function TranscriptTab(): ReactElement {
                   className={cn(
                     'cursor-pointer rounded-[3px] px-[2px]',
                     w.filler && 'text-text-3 line-through',
-                    cut && 'bg-[#FF3B30]/12 text-text-3 line-through',
+                    cut && 'bg-danger/12 text-text-3 line-through',
                     inSel && 'bg-accent/25'
                   )}
                 >

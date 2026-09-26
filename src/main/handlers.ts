@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, shell } from 'electron'
+import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type {
@@ -18,7 +18,7 @@ import { addCatalogItem, catalog, readTimeline } from './hyperframes'
 import { remocnCatalog, setupStudio, studioStatus } from './remocn'
 import { Channels, broadcast, handle } from './ipc'
 import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
-import { popupClipMenu, popupLookMenu } from './menu'
+import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
 import { createProject, listFiles, openProject, recentProjects, safeJoin } from './projects'
 import { hasSecret, setSecret } from './secrets'
 import type { LucaServer } from './server'
@@ -55,7 +55,14 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
 
   // settings
   handle(Channels.settingsGet, getSettings)
-  handle(Channels.settingsUpdate, (patch: Partial<Settings>) => updateSettings(patch))
+  handle(Channels.settingsUpdate, (patch: Partial<Settings>) => {
+    const next = updateSettings(patch)
+    if (patch.theme) {
+      nativeTheme.themeSource = next.theme
+      buildAppMenu()
+    }
+    return next
+  })
   handle(Channels.settingsSavePanes, (key: string, sizes: number[]) => {
     updateSettings({ panes: { ...(getSettings().panes ?? {}), [key]: sizes } })
   })

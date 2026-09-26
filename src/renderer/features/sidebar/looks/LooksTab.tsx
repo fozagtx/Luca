@@ -2,6 +2,7 @@ import type { Look } from '@shared/types'
 import { Check, MoreHorizontal, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
 import { Button } from '../../../components/ui/button'
+import { GenerateButton } from '../../../components/ui/generate-button'
 import { Input } from '../../../components/ui/input'
 import { cn } from '../../../lib/cn'
 import { luca } from '../../../lib/luca'
@@ -119,7 +120,7 @@ export function LooksTab(): ReactElement {
             Claude is writing LOOK.md, then components and a thumbnail are captured…
           </p>
         ) : null}
-        {error ? <p className="mt-1 text-[10.5px] text-[#FF3B30]">{error}</p> : null}
+        {error ? <p className="mt-1 text-[10.5px] text-danger">{error}</p> : null}
       </div>
       {!looks ? null : looks.length === 0 ? (
         <EmptyPane
@@ -153,7 +154,7 @@ export function LooksTab(): ReactElement {
                   </div>
                 </div>
                 <button
-                  className="rounded p-0.5 text-text-3 hover:bg-black/[0.05]"
+                  className="rounded p-0.5 text-text-3 hover:bg-hover"
                   onClick={() => void luca.menu.popupLook(l.slug)}
                   aria-label="Look menu"
                 >
@@ -166,13 +167,15 @@ export function LooksTab(): ReactElement {
                     <Check size={11} /> Active
                   </span>
                 ) : (
-                  <Button
+                  <GenerateButton
                     size="sm"
+                    hue={210}
+                    label="Apply Look"
+                    generatingLabel="Applying"
+                    generating={busy === l.slug}
                     disabled={!project || busy !== null}
                     onClick={() => void apply(l.slug)}
-                  >
-                    {busy === l.slug ? 'Applying…' : 'Apply'}
-                  </Button>
+                  />
                 )}
               </div>
             </div>
