@@ -34,9 +34,9 @@ import { cn } from '../../lib/cn'
 import { catalogChip, hasCatalogDrag, readCatalogDrag, type CatalogDrag } from '../../lib/drag'
 import { luca } from '../../lib/luca'
 import { clock, timecode } from '../../lib/timecode'
-import { useChat } from '../../stores/chat'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
+import { useQueue } from '../../stores/queue'
 import { useTimeline } from '../../stores/timeline'
 import { useUi } from '../../stores/ui'
 import { PlayheadTimecode } from '../viewer/PlayheadTimecode'
@@ -386,8 +386,6 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
       setTimeout(() => setDropError(null), 6000)
       return
     }
-    const chat = useChat.getState()
-    chat.addChip(catalogChip(d))
     const tc = timecode(at, fps)
     // what people see in the chat stays plain; the technical part rides along as hidden context
     const note =
@@ -395,7 +393,13 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
         ? `Place remocn \`${d.name}\` at ${tc}.`
         : `Insert \`${d.name}\` at ${tc} on a new track. It is installed; the \`add\` snippet was:\n\n\`\`\`html\n${(res.snippet ?? '').trim()}\n\`\`\``
     if (!useUi.getState().chatOpen) useUi.getState().setChat(true)
-    await chat.send(`Add ${d.title || d.name} at ${clock(at)}`, { time: at, note })
+    // through the queue: it starts now if Luca is free, or waits its turn in view
+    useQueue
+      .getState()
+      .enqueue(`Add ${d.title || d.name} at ${clock(at)}`, [catalogChip(d)], 'typed', {
+        time: at,
+        note
+      })
   }
 
   const snap = (t: number, self: Clip): number => {

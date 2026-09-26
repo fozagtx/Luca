@@ -4,11 +4,14 @@ import { luca } from '../lib/luca'
 import { MIC_SAMPLE_RATE, openMic, type Mic } from '../lib/mic'
 import { cancelSpeech, onSpeaking, sentenceSplitter, speak } from '../lib/speech'
 import { useChat } from './chat'
-import { usePlayer } from './player'
 import { useProject } from './project'
+import { useQueue } from './queue'
 import { useUi } from './ui'
 
-/** `dictate` types into the composer; `converse` is the voice agent: speak, Claude acts and answers aloud. */
+/**
+ * `dictate` records one request; `converse` is the voice agent: speak, approve, Claude acts and
+ * answers aloud. Either way what you said waits in the queue for your OK before Luca sees it.
+ */
 export type VoiceMode = 'dictate' | 'converse'
 
 /**
@@ -34,7 +37,7 @@ type VoiceStore = {
   mode: VoiceMode | null
   phase: VoicePhase
   startedAt: number
-  /** Finished turns of the current dictation (voice mode sends each one to Claude instead). */
+  /** Finished turns of the current dictation (voice mode adds each one to the open request). */
   finals: string[]
   /** The turn being spoken right now. */
   partial: string
@@ -44,7 +47,7 @@ type VoiceStore = {
   bound: boolean
   bind: () => void
   start: (mode: VoiceMode) => Promise<void>
-  /** Dictation: stop and put the transcript in the composer. Voice mode: end it. */
+  /** Dictation: stop and put the transcript in the queue for your OK. Voice mode: end it. */
   finish: () => Promise<void>
   cancel: () => void
   skipSpeech: () => void
@@ -187,13 +190,12 @@ export const useVoice = create<VoiceStore>((set, get) => ({
       set({ error: NO_SPEECH })
       return
     }
-    const chat = useChat.getState()
-    chat.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${heard}` : heard)
-    requestAnimationFrame(() => document.getElementById('chat-composer')?.focus())
+    useQueue.getState().review(heard, 'dictation')
   },
 
   cancel: () => {
     if (get().phase === 'off') return
+    if (get().mode === 'converse') useQueue.getState().closeTake()
     const id = sid++
     teardown()
     void luca.voice.cancel(id)
@@ -234,11 +236,18 @@ function onVoiceEvent(e: VoiceEvent): void {
     return
   }
   useVoice.setState({ partial })
-  if (e.text)
-    void useChat
-      .getState()
-      .send(e.text, { time: usePlayer.getState().currentTime, voice: true }, { keepDraft: true })
+  if (!e.text) return
+  // hands-free approval: a turn that is only "send it" or "scratch that" acts on the open request
+  const queue = useQueue.getState()
+  if (SEND.test(e.text) && queue.approveNext()) return
+  if (DISCARD.test(e.text) && queue.discardTake()) return
+  queue.hear(e.text)
 }
+
+const SEND =
+  /^\W*(?:(?:ok(?:ay)?|yes|yeah|yep|great|perfect|good)\W+)?(?:send(?: it| that)?|go(?: ahead)?|approve(?: it| that)?|do it|submit(?: it)?|that's it|sounds good)(?: luca)?\W*$/i
+const DISCARD =
+  /^\W*(?:scratch that|cancel(?: that| it)?|discard(?: it| that)?|never ?mind|forget (?:it|that)|delete (?:it|that))\W*$/i
 
 /** Voice mode's phase follows Claude's turn and the speech queue. */
 function sync(): void {

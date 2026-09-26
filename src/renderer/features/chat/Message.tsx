@@ -21,6 +21,7 @@ import { Button } from '../../components/ui/button'
 import { cn } from '../../lib/cn'
 import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
+import { stopLuca } from '../../stores/queue'
 import type { ToolPart } from './activity'
 import { Steps } from './Steps'
 
@@ -188,7 +189,6 @@ export function AssistantMessage({
   animate: boolean
   lastUserText?: string
 }): ReactElement {
-  const stop = useChat((s) => s.stop)
   const resend = useChat((s) => s.resend)
   const [copied, setCopied] = useState(false)
   const parts: ChatContentPart[] =
@@ -223,7 +223,7 @@ export function AssistantMessage({
           />
         )
       })}
-      {thinking ? <Thinking since={m.createdAt} onStop={() => void stop()} /> : null}
+      {thinking ? <Thinking since={m.createdAt} onStop={() => void stopLuca()} /> : null}
       {m.isError && !m.pending ? (
         <div className="fade-in flex items-start gap-2.5 rounded-[12px] border border-danger/20 bg-danger/[0.06] px-3 py-2.5">
           <CircleAlert size={14} className="mt-px shrink-0 text-danger" />

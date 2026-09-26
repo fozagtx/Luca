@@ -9,6 +9,7 @@ import { useProject } from '../../stores/project'
 import { Composer } from './Composer'
 import { AssistantMessage, UserMessage } from './Message'
 import { LucaAvatar, LucaProfile, Suggestions } from './Profile'
+import { QueueTray } from './Queue'
 
 // a streamed reply or a new step re-renders its own message, not the whole conversation
 const UserItem = memo(UserMessage)
@@ -46,6 +47,7 @@ export function Chat(): ReactElement {
           ) : null
         }
       />
+      <QueueTray />
       <Composer noProject={!projectDir} />
     </section>
   )

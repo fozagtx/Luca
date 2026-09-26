@@ -5,24 +5,29 @@ import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
+import { useProject } from '../../stores/project'
+import { stopLuca, useQueue } from '../../stores/queue'
 import { useVoice, type VoiceMode, type VoicePhase } from '../../stores/voice'
 
 const BARS = 36
 
-function hint(mode: VoiceMode, phase: VoicePhase): string {
+function hint(mode: VoiceMode, phase: VoicePhase, take: boolean): string {
   switch (phase) {
     case 'connecting':
-      return 'Connecting to AssemblyAI…'
+      return 'Getting the microphone ready…'
     case 'finishing':
       return 'Finishing the transcript…'
     case 'thinking':
-      return 'Luca is working on it. Keep talking to add more.'
+      return take
+        ? 'Luca is working. Say “send it” to line this up next.'
+        : 'Luca is working on it. Talk to line up the next change.'
     case 'speaking':
       return 'Luca is answering…'
     default:
-      return mode === 'dictate'
-        ? 'Listening… speak and your words appear here.'
-        : 'Listening… ask Luca to change your video.'
+      if (mode === 'dictate') return 'Listening… speak and your words appear here.'
+      return take
+        ? 'Say “send it” or press ↩ to send. Keep talking to add more, or say “scratch that”.'
+        : 'Listening… ask Luca to change your video. You approve it before it’s sent.'
   }
 }
 
@@ -30,7 +35,8 @@ function hint(mode: VoiceMode, phase: VoicePhase): string {
 export function VoiceRecorder(): ReactElement | null {
   const { mode, phase, finals, partial, startedAt, finish, cancel, skipSpeech } = useVoice()
   const working = useChat((s) => s.state === 'working')
-  const stopLuca = useChat((s) => s.stop)
+  const dir = useProject((s) => s.project?.dir ?? null)
+  const take = useQueue((s) => s.items.some((i) => i.open && i.dir === dir))
   const scroll = useRef<HTMLDivElement>(null)
   const heard = finals.join(' ')
 
@@ -47,10 +53,11 @@ export function VoiceRecorder(): ReactElement | null {
         e.preventDefault()
         e.stopPropagation()
         cancel()
-      } else if (e.key === 'Enter' && mode === 'dictate' && !e.isComposing) {
+      } else if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.isComposing) {
         e.preventDefault()
         e.stopPropagation()
-        void finish()
+        if (mode === 'dictate') void finish()
+        else useQueue.getState().approveNext()
       }
     }
     window.addEventListener('keydown', onKey, true)
@@ -78,7 +85,7 @@ export function VoiceRecorder(): ReactElement | null {
             <span className="text-text-2">{partial}</span>
           </>
         ) : (
-          <span className="text-text-3">{hint(mode, phase)}</span>
+          <span className="text-text-3">{hint(mode, phase, take)}</span>
         )}
       </div>
       <div className="flex items-center gap-2 pt-0.5 pr-2 pb-2 pl-3.5">
@@ -94,12 +101,12 @@ export function VoiceRecorder(): ReactElement | null {
                 <X size={15} />
               </button>
             </Tip>
-            <Tip label="Insert into message" shortcut="↩" side="top">
+            <Tip label="Done: review it before it’s sent" shortcut="↩" side="top">
               <button
                 type="button"
                 onClick={() => void finish()}
                 disabled={phase === 'finishing'}
-                aria-label="Insert into message"
+                aria-label="Done dictating"
                 className="no-drag flex size-8 items-center justify-center rounded-full bg-accent text-accent-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] transition-[filter,transform] duration-150 hover:brightness-110 active:scale-95"
               >
                 {phase === 'finishing' ? (
@@ -116,6 +123,18 @@ export function VoiceRecorder(): ReactElement | null {
               <Tip label="Skip the reply" side="top">
                 <button type="button" className="icon-btn" onClick={skipSpeech} aria-label="Skip">
                   <VolumeX size={15} />
+                </button>
+              </Tip>
+            ) : null}
+            {take ? (
+              <Tip label="Send what you said" shortcut="↩" side="top">
+                <button
+                  type="button"
+                  onClick={() => useQueue.getState().approveNext()}
+                  aria-label="Send what you said"
+                  className="btn-gradient no-drag flex size-8 items-center justify-center rounded-full"
+                >
+                  <Check size={16} strokeWidth={2.5} />
                 </button>
               </Tip>
             ) : null}
