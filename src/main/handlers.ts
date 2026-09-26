@@ -45,7 +45,9 @@ import {
   listFiles,
   openProject,
   recentProjects,
-  refreshCompositionPoster,
+  cancelPosterRefresh,
+  flushPosterRefresh,
+  schedulePosterRefresh,
   safeJoin,
   startProject,
   VIDEO_EXT
@@ -103,6 +105,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   // project
   const activate = async (dir: string): Promise<ReturnType<typeof openProject>> => {
     stopWatching()
+    flushPosterRefresh()
     const p = openProject(dir)
     await ensureRepo(p.dir)
     setCurrentProject(p)
@@ -118,7 +121,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
       warnCheckpoint
     )
     // projects without a source video take their thumbnail from the composition itself
-    if (!p.source) void refreshCompositionPoster(p).catch(() => undefined)
+    schedulePosterRefresh(p)
   })
   const start = async (args: StartArgs): Promise<Awaited<ReturnType<typeof startProject>>> => {
     const report = (p: CreateProgress): void => broadcast(Channels.projectCreateProgress, p)
@@ -178,6 +181,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     broadcast(Channels.projectRecentChanged, null)
   })
   handle(Channels.projectTrash, async (dir: string) => {
+    cancelPosterRefresh(dir)
     if (currentProject()?.dir === dir) {
       stopWatching()
       await closeAgent()
@@ -194,6 +198,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     await closeAgent()
     setCurrentProject(null)
     broadcast(Channels.projectOpened, null)
+    flushPosterRefresh()
   })
   handle(Channels.projectCurrent, currentProject)
   handle(Channels.projectRecent, recentProjects)
