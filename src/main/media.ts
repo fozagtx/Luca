@@ -37,6 +37,64 @@ function once<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return p
 }
 
+/**
+ * 640px poster frame at ~10% into the source → .luca/cache/poster.jpg, plus the source
+ * duration → .luca/cache/poster.json. Generated once per source; used by recent-project cards.
+ */
+export async function poster(p: Project): Promise<{ duration: number } | null> {
+  return once(`poster:${p.dir}`, async () => {
+    const out = cacheDir(p.dir, '')
+    const src = sourcePath(p)
+    if (!src) return null
+    const jpg = join(out, 'poster.jpg')
+    const meta = join(out, 'poster.json')
+    const sig = `${src}:${statSync(src).mtimeMs}`
+    if (existsSync(jpg) && existsSync(meta)) {
+      try {
+        const m = JSON.parse(readFileSync(meta, 'utf8')) as { sig: string; duration: number }
+        if (m.sig === sig) return { duration: m.duration }
+      } catch {
+        /* regenerate */
+      }
+    }
+    const ffprobe = await which('ffprobe')
+    const ffmpeg = await which('ffmpeg')
+    if (!ffprobe || !ffmpeg) throw new Error('ffmpeg not found')
+    const pr = await run(
+      ffprobe,
+      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'json', src],
+      { timeoutMs: 30_000 }
+    )
+    const duration = Number(
+      (JSON.parse(pr.stdout || '{}') as { format?: { duration?: string } }).format?.duration ?? 0
+    )
+    const at = Math.min(Math.max(duration * 0.1, 0.5), Math.max(duration - 0.1, 0))
+    await run(
+      ffmpeg,
+      [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-y',
+        '-ss',
+        at.toFixed(2),
+        '-i',
+        src,
+        '-frames:v',
+        '1',
+        '-vf',
+        'scale=640:-2',
+        '-q:v',
+        '4',
+        jpg
+      ],
+      { timeoutMs: 60_000 }
+    )
+    writeFileSync(meta, JSON.stringify({ sig, duration }))
+    return { duration }
+  })
+}
+
 /** One 160px JPEG per second in .luca/cache/thumbs/NNNN.jpg; generated once. */
 export async function thumbnails(
   p: Project

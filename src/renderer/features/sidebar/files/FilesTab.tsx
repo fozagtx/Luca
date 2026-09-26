@@ -1,19 +1,20 @@
 import { FileCode2, FileJson2, FileText, Film, FolderOpen } from 'lucide-react'
 import { useEffect, useState, type ReactElement } from 'react'
 import { Button } from '../../../components/ui/button'
+import { Tip } from '../../../components/ui/tooltip'
 import { luca } from '../../../lib/luca'
 import { formatBytes } from '../../../lib/timecode'
 import { useProject } from '../../../stores/project'
-import { EmptyPane } from '../EmptyPane'
+import { PaneHead } from '../Sidebar'
 
 type Entry = Awaited<ReturnType<typeof luca.project.files>>[number]
 
 const icon = (kind: Entry['kind']): ReactElement => {
-  const p = { size: 14, strokeWidth: 1.5, className: 'shrink-0 text-text-3' }
-  if (kind === 'html') return <FileCode2 {...p} />
-  if (kind === 'media') return <Film {...p} />
-  if (kind === 'json') return <FileJson2 {...p} />
-  return <FileText {...p} />
+  const p = { size: 14, strokeWidth: 1.6, className: 'shrink-0' }
+  if (kind === 'html') return <FileCode2 {...p} className="shrink-0 text-[#e0742f]" />
+  if (kind === 'media') return <Film {...p} className="shrink-0 text-[#8b5cf6]" />
+  if (kind === 'json') return <FileJson2 {...p} className="shrink-0 text-[#d4a017]" />
+  return <FileText {...p} className="shrink-0 text-text-3" />
 }
 
 export function FilesTab(): ReactElement {
@@ -43,7 +44,7 @@ export function FilesTab(): ReactElement {
     }
   }, [version])
 
-  if (!project) return <EmptyPane title="No project" hint="Drop a video in the viewer to start." />
+  if (!project) return <></>
 
   const groups = new Map<string, Entry[]>()
   for (const f of files) {
@@ -54,56 +55,67 @@ export function FilesTab(): ReactElement {
   }
 
   return (
-    <div className="scroll h-full py-1">
-      <div className="flex items-center justify-between px-3 py-1.5">
-        <span className="truncate text-[11px] text-text-3" title={project.dir}>
-          {project.dir.replace(/^\/Users\/[^/]+/, '~')}
-        </span>
-        <Button
-          variant="icon"
-          className="h-6 w-6"
-          aria-label="Reveal in Finder"
-          onClick={() => luca.project.revealInFinder()}
-        >
-          <FolderOpen size={14} strokeWidth={1.5} />
-        </Button>
+    <div className="flex h-full flex-col">
+      <PaneHead title="Files">
+        <Tip label="Reveal in Finder">
+          <Button
+            variant="icon"
+            className="h-6 w-6"
+            aria-label="Reveal in Finder"
+            onClick={() => luca.project.revealInFinder()}
+          >
+            <FolderOpen size={14} strokeWidth={1.5} />
+          </Button>
+        </Tip>
+      </PaneHead>
+      <div
+        className="truncate px-3 pt-2 pb-1 font-mono text-[10.5px] text-text-3"
+        title={project.dir}
+      >
+        {project.dir.replace(/^\/Users\/[^/]+/, '~')}
       </div>
-      {[...groups.entries()].map(([dir, entries]) => (
-        <div key={dir || '.'} className="mb-1">
-          {dir && (
-            <div className="px-3 pt-2 pb-0.5 text-[11px] font-medium text-text-3">{dir}/</div>
-          )}
-          {entries.map((f) => {
-            const name = f.path.slice(f.path.lastIndexOf('/') + 1)
-            const hot = changed.has(f.path)
-            return (
-              <button
-                key={f.path}
-                type="button"
-                className="group flex w-full items-center gap-2 px-3 py-[3px] text-left hover:bg-hover"
-                onDoubleClick={() => luca.project.revealInFinder(f.path)}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('text/plain', f.path)
-                  e.dataTransfer.setData('application/x-luca-file', f.path)
-                }}
-              >
-                {icon(f.kind)}
-                <span
-                  className={
-                    hot
-                      ? 'flex-1 truncate text-[12px] text-accent transition-colors'
-                      : 'flex-1 truncate text-[12px] text-text transition-colors duration-700'
-                  }
+      <div className="scroll flex-1 py-1">
+        {[...groups.entries()].map(([dir, entries]) => (
+          <div key={dir || '.'} className="mb-1">
+            {dir && (
+              <div className="px-3 pt-2 pb-0.5 text-[10.5px] font-semibold uppercase tracking-[0.04em] text-text-3">
+                {dir}
+              </div>
+            )}
+            {entries.map((f) => {
+              const name = f.path.slice(f.path.lastIndexOf('/') + 1)
+              const hot = changed.has(f.path)
+              return (
+                <button
+                  key={f.path}
+                  type="button"
+                  className="group mx-1.5 flex w-[calc(100%-12px)] items-center gap-2 rounded-[5px] px-1.5 py-[4px] text-left transition-colors hover:bg-hover active:bg-press"
+                  onDoubleClick={() => luca.project.revealInFinder(f.path)}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', f.path)
+                    e.dataTransfer.setData('application/x-luca-file', f.path)
+                  }}
                 >
-                  {name}
-                </span>
-                <span className="text-[11px] text-text-3">{formatBytes(f.size)}</span>
-              </button>
-            )
-          })}
-        </div>
-      ))}
+                  {icon(f.kind)}
+                  <span
+                    className={
+                      hot
+                        ? 'flex-1 truncate text-[12px] text-accent transition-colors'
+                        : 'flex-1 truncate text-[12px] text-text transition-colors duration-700'
+                    }
+                  >
+                    {name}
+                  </span>
+                  <span className="font-mono text-[10.5px] tabular-nums text-text-3">
+                    {formatBytes(f.size)}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

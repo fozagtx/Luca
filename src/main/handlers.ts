@@ -191,7 +191,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.exportStart, (opts: ExportOptions) => startExport(requireProject(), opts))
   handle(Channels.exportCancel, () => cancelExport())
   handle(Channels.exportReveal, (p: string) => shell.showItemInFolder(p))
-  handle(Channels.exportFreeMemory, () => Math.round(process.getSystemMemoryInfo().free / 1024))
+  handle(Channels.exportFreeMemory, () => Math.round(process.getSystemMemoryInfo().total / 1024))
 
   // capture
   handle(

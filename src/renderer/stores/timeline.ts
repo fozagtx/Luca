@@ -17,6 +17,10 @@ type TimelineStore = {
   select: (ref: string | null) => void
   setZoom: (z: number) => void
   zoomBy: (factor: number) => void
+  /** Width in px of the visible track area, reported by the Timeline for zoom-to-fit. */
+  viewportWidth: number
+  setViewportWidth: (w: number) => void
+  zoomToFit: (duration: number) => void
   /** Apply optimistically, then let the file watcher reconcile. */
   edit: (e: TimelineEdit) => Promise<void>
 }
@@ -58,6 +62,12 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   select: (selected) => set({ selected }),
   setZoom: (zoom) => set({ zoom: Math.min(600, Math.max(10, zoom)) }),
   zoomBy: (f) => get().setZoom(get().zoom * f),
+  viewportWidth: 0,
+  setViewportWidth: (viewportWidth) => set({ viewportWidth }),
+  zoomToFit: (duration) => {
+    const w = get().viewportWidth
+    if (w > 0 && duration > 0) get().setZoom((w - 24) / duration)
+  },
 
   edit: async (e) => {
     const t = get().timeline

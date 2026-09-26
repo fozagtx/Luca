@@ -6,7 +6,7 @@ export function Waveform({
   peaksPerSecond,
   start,
   end,
-  color = 'rgba(255,255,255,0.75)'
+  color
 }: {
   peaks: number[]
   peaksPerSecond: number
@@ -29,11 +29,14 @@ export function Waveform({
       if (!ctx) return
       ctx.scale(dpr, dpr)
       ctx.clearRect(0, 0, box.width, box.height)
-      ctx.fillStyle = color
+      ctx.fillStyle = color ?? getComputedStyle(canvas).color
       const first = Math.floor(start * peaksPerSecond)
       const last = Math.min(peaks.length, Math.ceil(end * peaksPerSecond))
       const n = last - first
       if (n <= 0) return
+      let top = 0
+      for (let i = first; i < last; i++) if (peaks[i] > top) top = peaks[i]
+      const gain = top > 0 ? Math.min(1 / top, 4) : 1
       const perPx = n / box.width
       const mid = box.height / 2
       for (let x = 0; x < box.width; x++) {
@@ -41,7 +44,7 @@ export function Waveform({
         const b = Math.max(a + 1, first + Math.floor((x + 1) * perPx))
         let max = 0
         for (let i = a; i < b && i < last; i++) if (peaks[i] > max) max = peaks[i]
-        const h = Math.max(1, max * (box.height - 4))
+        const h = Math.max(1, Math.min(1, max * gain) * (box.height - 6))
         ctx.fillRect(x, mid - h / 2, 1, h)
       }
     }
@@ -51,5 +54,10 @@ export function Waveform({
     return () => ro.disconnect()
   }, [peaks, peaksPerSecond, start, end, color])
 
-  return <canvas ref={ref} className="pointer-events-none absolute inset-0 h-full w-full" />
+  return (
+    <canvas
+      ref={ref}
+      className="pointer-events-none absolute inset-0 h-full w-full text-[var(--waveform)]"
+    />
+  )
 }

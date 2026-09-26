@@ -62,6 +62,7 @@ export type LucaApi = {
     revealInFinder: (rel?: string) => Promise<void>
     onChanged: (cb: (e: ProjectChanged) => void) => Unsubscribe
     onOpened: (cb: (p: Project | null) => void) => Unsubscribe
+    onRecentChanged: (cb: () => void) => Unsubscribe
     onDropFile: (cb: (path: string) => void) => Unsubscribe
     pathForFile: (file: File) => string
   }

@@ -44,6 +44,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
       set({ project: p, version: 0 })
       void get().refreshRecent()
     })
+    luca.project.onRecentChanged(() => void get().refreshRecent())
     luca.project.onChanged((e) => set({ version: e.version, changedPaths: e.paths }))
   },
 

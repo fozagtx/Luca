@@ -99,7 +99,7 @@ export function ExportSheet(): ReactElement {
         </div>
         <div className="text-[11px] text-text-3">
           Format MP4 (H.264, VideoToolbox) · 2 render workers
-          {freeMB !== null ? ` · ${Math.round(freeMB / 1024)} GB free memory` : ''}
+          {freeMB !== null ? ` · ${Math.round(freeMB / 1024)} GB memory` : ''}
         </div>
         {error && (
           <div className="selectable rounded-[6px] bg-danger/10 px-3 py-2 text-[12px] text-danger">

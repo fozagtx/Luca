@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { basename, extname, join, relative } from 'node:path'
 import type { Aspect, Project, RecentProject } from '../shared/types'
 import { runHyperframes } from './env'
+import { Channels, broadcast } from './ipc'
+import { poster } from './media'
 import { getSettings, updateSettings } from './settings'
 
 export const VIDEO_EXT = new Set(['.mp4', '.mov', '.m4v', '.webm'])
@@ -95,6 +97,7 @@ export async function createProject(args: {
   }
   writeProject(project)
   touchRecent(project)
+  void ensurePoster(project)
   return project
 }
 
@@ -120,7 +123,20 @@ export function openProject(dir: string): Project {
   p.lastOpenedAt = new Date().toISOString()
   writeProject(p)
   touchRecent(p)
+  void ensurePoster(p)
   return p
+}
+
+async function ensurePoster(p: Project): Promise<void> {
+  try {
+    const r = await poster(p)
+    if (r) {
+      touchRecent(p, r.duration)
+      broadcast(Channels.projectRecentChanged, null)
+    }
+  } catch (e) {
+    console.warn('[luca] poster failed', e)
+  }
 }
 
 function detectAspect(dir: string): Aspect {
@@ -135,31 +151,57 @@ function detectAspect(dir: string): Aspect {
   }
 }
 
-function touchRecent(p: Project): void {
+function touchRecent(p: Project, duration?: number): void {
   const s = getSettings()
+  const prev = s.recentProjects.find((r) => r.dir === p.dir)
   const entry: RecentProject = {
     id: p.id,
     name: p.name,
     dir: p.dir,
     aspect: p.aspect,
     lastOpenedAt: p.lastOpenedAt,
+    duration: duration ?? prev?.duration ?? durationFor(p.dir),
     thumb: thumbFor(p.dir)
   }
   const rest = s.recentProjects.filter((r) => r.dir !== p.dir)
   updateSettings({ recentProjects: [entry, ...rest].slice(0, 12) })
 }
 
+function durationFor(dir: string): number | null {
+  try {
+    const m = JSON.parse(readFileSync(join(dir, '.luca', 'cache', 'poster.json'), 'utf8')) as {
+      duration?: number
+    }
+    return typeof m.duration === 'number' ? m.duration : null
+  } catch {
+    return null
+  }
+}
+
 function thumbFor(dir: string): string | null {
-  const t = join(dir, '.luca', 'cache', 'thumbs', 'poster.jpg')
+  const t = join(dir, '.luca', 'cache', 'poster.jpg')
   if (!existsSync(t)) return null
   return `data:image/jpeg;base64,${readFileSync(t).toString('base64')}`
 }
+
+const posterQueued = new Set<string>()
 
 export function recentProjects(): RecentProject[] {
   const s = getSettings()
   const alive = s.recentProjects.filter((r) => existsSync(join(r.dir, 'index.html')))
   if (alive.length !== s.recentProjects.length) updateSettings({ recentProjects: alive })
-  return alive.map((r) => ({ ...r, thumb: thumbFor(r.dir) }))
+  for (const r of alive) {
+    if (!existsSync(join(r.dir, '.luca', 'cache', 'poster.jpg')) && !posterQueued.has(r.dir)) {
+      posterQueued.add(r.dir)
+      const p = readProject(r.dir)
+      if (p) void ensurePoster(p)
+    }
+  }
+  return alive.map((r) => ({
+    ...r,
+    thumb: thumbFor(r.dir),
+    duration: r.duration ?? durationFor(r.dir)
+  }))
 }
 
 export type ProjectFile = { path: string; size: number; kind: 'html' | 'media' | 'json' | 'other' }

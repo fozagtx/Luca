@@ -140,6 +140,15 @@ export function useShortcuts(): void {
         case 'toggle-grab':
           player.toggleGrab()
           break
+        case 'zoom-in':
+          useTimeline.getState().zoomBy(1.25)
+          break
+        case 'zoom-out':
+          useTimeline.getState().zoomBy(0.8)
+          break
+        case 'zoom-fit':
+          useTimeline.getState().zoomToFit(Math.max(player.duration, 1))
+          break
         case 'history':
           ui.setHistory(!ui.historyOpen)
           break
