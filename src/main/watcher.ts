@@ -11,6 +11,26 @@ let listeners: ((e: ProjectChanged) => void)[] = []
 
 const IGNORED_TOP = new Set(['.hyperframes', 'media', 'renders', '.git', 'node_modules'])
 
+/**
+ * What Luca and the agent keep beside the composition that the preview never loads: Luca's own
+ * state, the cut list, remocn wrapper sources (their render lands in index.html) and project
+ * notes. Changing only these doesn't need a preview reload or a timeline re-read.
+ */
+const METADATA_TOP = new Set(['.luca', '.claude', 'remocn'])
+const METADATA_FILES = new Set([
+  'edl.json',
+  'CLAUDE.md',
+  'AGENTS.md',
+  'meta.json',
+  'package.json',
+  'package-lock.json',
+  '.gitignore'
+])
+
+export function affectsComposition(rel: string): boolean {
+  return !METADATA_TOP.has(rel.split(sep)[0]) && !METADATA_FILES.has(rel)
+}
+
 export function onProjectChanged(cb: (e: ProjectChanged) => void): () => void {
   listeners.push(cb)
   return () => {
@@ -50,7 +70,8 @@ function flush(): void {
   timer = null
   if (pending.size === 0) return
   version += 1
-  const e: ProjectChanged = { paths: [...pending], version }
+  const paths = [...pending]
+  const e: ProjectChanged = { paths, version, composition: paths.some(affectsComposition) }
   pending = new Set()
   broadcast(Channels.projectChanged, e)
   for (const l of listeners) l(e)

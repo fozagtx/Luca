@@ -31,7 +31,7 @@ declare module 'react' {
  */
 export function Player(): ReactElement | null {
   const project = useProject((s) => s.project)
-  const version = useProject((s) => s.version)
+  const version = useProject((s) => s.previewVersion)
   const ref = useRef<HyperframesPlayer | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const restore = useRef<{ time: number; playing: boolean } | null>(null)

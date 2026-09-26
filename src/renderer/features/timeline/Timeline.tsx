@@ -146,7 +146,7 @@ function TrackHead({
 export function Timeline(): ReactElement {
   const project = useProject((s) => s.project)
   const projectDir = project?.dir ?? null
-  const version = useProject((s) => s.version)
+  const version = useProject((s) => s.previewVersion)
   const { timeline, load, loadMedia, reset, error } = useTimeline()
 
   useEffect(() => {

@@ -6,8 +6,10 @@ type ProjectStore = {
   project: Project | null
   recent: RecentProject[]
   settings: Settings | null
-  /** Bumps on every project:changed broadcast; the player reloads with ?v=version. */
+  /** Bumps on every project:changed broadcast. */
   version: number
+  /** Bumps only when the composition may have changed; the player reloads with ?v=previewVersion. */
+  previewVersion: number
   changedPaths: string[]
   loading: boolean
   error: string | null
@@ -29,6 +31,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
   recent: [],
   settings: null,
   version: 0,
+  previewVersion: 0,
   changedPaths: [],
   loading: false,
   error: null,
@@ -41,18 +44,24 @@ export const useProject = create<ProjectStore>((set, get) => ({
     ])
     set({ project, recent, settings })
     luca.project.onOpened((p) => {
-      set({ project: p, version: 0 })
+      set({ project: p, version: 0, previewVersion: 0 })
       void get().refreshRecent()
     })
     luca.project.onRecentChanged(() => void get().refreshRecent())
-    luca.project.onChanged((e) => set({ version: e.version, changedPaths: e.paths }))
+    luca.project.onChanged((e) =>
+      set({
+        version: e.version,
+        changedPaths: e.paths,
+        ...(e.composition ? { previewVersion: e.version } : {})
+      })
+    )
   },
 
   create: async (args) => {
     set({ loading: true, error: null })
     try {
       const p = await luca.project.create(args)
-      set({ project: p, version: 0 })
+      set({ project: p, version: 0, previewVersion: 0 })
     } catch (err) {
       set({ error: errorMessage(err) })
       throw err
@@ -65,7 +74,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
     set({ loading: true, error: null })
     try {
       const p = await luca.project.open(dir)
-      set({ project: p, version: 0 })
+      set({ project: p, version: 0, previewVersion: 0 })
     } catch (err) {
       set({ error: errorMessage(err) })
       throw err
@@ -76,7 +85,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
 
   close: async () => {
     await luca.project.close()
-    set({ project: null, version: 0 })
+    set({ project: null, version: 0, previewVersion: 0 })
   },
 
   refreshRecent: async () => set({ recent: await luca.project.recent() }),
