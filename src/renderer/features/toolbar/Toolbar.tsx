@@ -1,6 +1,7 @@
 import {
   Captions,
   Crosshair,
+  House,
   MessageSquare,
   Moon,
   PanelLeftClose,
@@ -17,6 +18,7 @@ import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
 import higgsfield from '../../assets/higgsfield.png'
+import { goHome } from '../command/go-home'
 import { HistoryPopover } from '../history/HistoryPopover'
 
 const swap =
@@ -82,7 +84,13 @@ function Higgsfield(): ReactElement {
 
 export function Toolbar(): ReactElement {
   const project = useProject((s) => s.project)
-  const { sidebarOpen, chatOpen, setSidebar, setChat, setExport, setCaptions, fullscreen } = useUi()
+  const sidebarOpen = useUi((s) => s.sidebarOpen)
+  const chatOpen = useUi((s) => s.chatOpen)
+  const setSidebar = useUi((s) => s.setSidebar)
+  const setChat = useUi((s) => s.setChat)
+  const setExport = useUi((s) => s.setExport)
+  const setCaptions = useUi((s) => s.setCaptions)
+  const fullscreen = useUi((s) => s.fullscreen)
   const grab = usePlayer((s) => s.grab)
   const toggleGrab = usePlayer((s) => s.toggleGrab)
 
@@ -95,6 +103,16 @@ export function Toolbar(): ReactElement {
       )}
     >
       <div className="flex items-center gap-1">
+        <Tip label="Home: close this project" shortcut="⇧⌘W">
+          <Button
+            variant="icon"
+            disabled={!project}
+            onClick={() => void goHome()}
+            aria-label="Home"
+          >
+            <House size={16} strokeWidth={1.5} />
+          </Button>
+        </Tip>
         <Tip label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'} shortcut="⇧⌘S">
           <Button
             variant="icon"

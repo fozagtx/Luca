@@ -5,6 +5,7 @@ import {
   Crosshair,
   FolderOpen,
   History,
+  House,
   Mic,
   Moon,
   Palette,
@@ -19,6 +20,7 @@ import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
 import { useVoice } from '../../stores/voice'
+import { goHome } from './go-home'
 
 type Item = {
   id: string
@@ -57,6 +59,14 @@ export function CommandPalette(): ReactElement {
         const dir = await luca.project.pickProjectDir()
         if (dir) await openProject(dir)
       }
+    },
+    {
+      id: 'home',
+      label: 'Go Home (close project)',
+      shortcut: '⇧⌘W',
+      icon: <House size={14} strokeWidth={1.5} />,
+      run: () => void goHome(),
+      needsProject: true
     },
     {
       id: 'export',

@@ -88,6 +88,9 @@ export function Player(): ReactElement | null {
       setHandle(null)
       setReady(false)
       setPlaying(false)
+      // Home (or the next project) shouldn't show this project's playhead and length
+      setTime(0)
+      setDuration(0)
     }
   }, [project?.id, setHandle, setReady, setPlaying, setTime, setDuration])
 
