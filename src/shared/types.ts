@@ -233,3 +233,12 @@ export type CleanStatus = {
 }
 
 export type CleanResult = { cuts: number; cleanFile: string }
+
+/**
+ * Real-time speech-to-text events (AssemblyAI Universal-Streaming), tagged with the session id
+ * the renderer chose. Each turn sends `partial` updates, then exactly one `final`.
+ */
+export type VoiceEvent =
+  | { type: 'partial'; sid: number; order: number; text: string }
+  | { type: 'final'; sid: number; order: number; text: string; language?: string }
+  | { type: 'closed'; sid: number; reason?: string }

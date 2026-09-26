@@ -16,7 +16,7 @@ import { cancelExport, startExport } from './export'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
 import { remocnCatalog, setupStudio, studioStatus } from './remocn'
-import { Channels, broadcast, handle } from './ipc'
+import { Channels, broadcast, handle, listen } from './ipc'
 import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
 import { createProject, listFiles, openProject, recentProjects, safeJoin } from './projects'
@@ -26,6 +26,7 @@ import { getSettings, updateSettings } from './settings'
 import { currentProject, requireProject, setCurrentProject } from './state'
 import { applyEdit, editLabel, peaks, thumbnails } from './media'
 import { checkpoint, ensureRepo, history, restore, undo } from './versions'
+import { cancelVoice, micAccess, pushVoiceAudio, startVoice, stopVoice } from './voice'
 import { stopWatching, watchProject } from './watcher'
 
 type WinGetter = () => BrowserWindow | null
@@ -208,6 +209,15 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
       return img.resize({ width: 640 }).toDataURL()
     }
   )
+
+  // voice (AssemblyAI real-time speech-to-text)
+  handle(Channels.voiceMicAccess, micAccess)
+  handle(Channels.voiceStart, (args: { sid: number; sampleRate: number }) => startVoice(args))
+  listen(Channels.voiceAudio, (sid: number, pcm: ArrayBuffer | Uint8Array) =>
+    pushVoiceAudio(sid, pcm)
+  )
+  handle(Channels.voiceStop, (sid: number) => stopVoice(sid))
+  handle(Channels.voiceCancel, (sid: number) => cancelVoice(sid))
 
   // menus
   handle(

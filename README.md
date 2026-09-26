@@ -20,6 +20,7 @@ A personal macOS video editor where Claude does the editing and HyperFrames HTML
 | F10 | **Export**       | Render MP4 (Draft or Final) in a background process with progress and cancel, then Reveal in Finder.                                                                                   |
 | F11 | **Remocn**       | Browse Remocn's Remotion components beside the HyperFrames catalog; placed components render to transparent WebM clips on the timeline.                                                |
 | F12 | **Inspiration**  | Ready-made ideas (titles, captions, transitions, social cards) with previews; one click puts the idea in the chat for you to finish.                                                   |
+| F13 | **Voice**        | Dictate into the chat, or talk with Luca hands-free: AssemblyAI real-time speech-to-text, then Luca's replies read aloud.                                                              |
 
 ## Screenshots
 
@@ -52,7 +53,7 @@ Prerequisites:
 - Node 22+, ffmpeg, git (`brew install node ffmpeg git`)
 - Claude Code: `npm install -g @anthropic-ai/claude-code`, then `claude` → `/login` with your Claude subscription. Luca never stores your credentials.
 - HyperFrames browser: `npx hyperframes browser ensure`
-- Optional: an [AssemblyAI](https://www.assemblyai.com/) API key for Clean edit — entered in the Transcript tab and kept in macOS Keychain via Electron `safeStorage`.
+- Optional: an [AssemblyAI](https://www.assemblyai.com/) API key for Clean edit and voice input — entered in the Transcript tab (or when you first click the mic) and kept in macOS Keychain via Electron `safeStorage`.
 
 ```bash
 npm install
@@ -68,6 +69,7 @@ npm run dist       # unsigned .dmg + .zip in dist/
 - **Claude Code via the Agent SDK.** The stock `claude` binary runs in the project directory with a Luca MCP server (`catalog_search` over HyperFrames + Remocn, and the remocn tools) and permission callbacks that surface as approval cards in chat.
 - **Catalog data.** The HyperFrames catalog comes from `hyperframes catalog --json` and the Remocn index from remocn.dev, cached daily; copies bundled in `src/main/catalog/` keep both available offline. Search and categories live in `src/shared/catalog.ts`, shared by the Catalog tab and the agent.
 - **Git is the version store.** Each agent turn or manual edit becomes a commit; History restores any checkpoint.
+- **Voice** is AssemblyAI Universal-Streaming over WebSocket. The renderer captures the mic in an AudioWorklet (16 kHz PCM, 50 ms chunks) and streams it over IPC to main, which holds the socket, so the key never reaches the renderer. The mic button dictates into the composer; voice mode sends each finished turn to Luca and reads the reply aloud sentence by sentence with the system voice (`src/renderer/lib/speech.ts` is the seam to bring your own TTS).
 - **Export** runs `@hyperframes/producer` in an Electron `utilityProcess` (2 workers, VideoToolbox) and writes `renders/<name>-<date>.mp4`.
 - **UI**: React 19, TypeScript, Tailwind v4, shadcn Base UI, three resizable panes (Inspiration/Catalog/Transcript/Looks · Preview/Timeline · Chat). Chat patterns (shimmering status text, steps, prompt input, suggestions, scroll button) are adapted from [prompt-kit](https://www.prompt-kit.com/) (MIT).
 

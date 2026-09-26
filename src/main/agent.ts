@@ -343,10 +343,14 @@ export class ProjectAgent {
       }
     }
     if (turn.context && typeof turn.context === 'object') {
-      const ctx = turn.context as { time?: number; note?: string }
+      const ctx = turn.context as { time?: number; note?: string; voice?: boolean }
       if (typeof ctx.time === 'number') lines.push(`Playhead is at ${ctx.time.toFixed(2)}s.`)
       // technical detail the UI keeps out of the visible message (e.g. a catalog snippet)
       if (typeof ctx.note === 'string' && ctx.note.trim()) lines.push(ctx.note.trim())
+      if (ctx.voice)
+        lines.push(
+          'The user said this out loud in voice mode (speech recognition, so allow for misheard words) and your reply will be read aloud: answer in one or two short spoken sentences, with no markdown, lists or code.'
+        )
     }
     if (existsSync(join(lucaDir(this.project.dir), 'LOOK.md')))
       lines.push('An active Look is set: read .luca/LOOK.md and follow it for every visual choice.')

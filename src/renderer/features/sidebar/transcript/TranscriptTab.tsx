@@ -1,15 +1,15 @@
-import { CircleAlert, KeyRound, Scissors } from 'lucide-react'
+import { CircleAlert, Scissors } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import type { CleanStatus, Cut, Edl, Transcript, Word } from '../../../../shared/types'
 import { Button } from '../../../components/ui/button'
 import { GenerateButton } from '../../../components/ui/generate-button'
-import { Input } from '../../../components/ui/input'
 import { cn } from '../../../lib/cn'
 import { luca } from '../../../lib/luca'
 import { useChat } from '../../../stores/chat'
 import { usePlayer } from '../../../stores/player'
 import { useProject } from '../../../stores/project'
 import { useUi } from '../../../stores/ui'
+import { AssemblyAiKeyCard } from '../../onboarding/AssemblyAiKeyCard'
 import { EmptyPane } from '../EmptyPane'
 import { PaneHead } from '../Sidebar'
 
@@ -43,7 +43,6 @@ export function TranscriptTab(): ReactElement {
   const [edl, setEdl] = useState<Edl | null>(null)
   const [status, setStatus] = useState<CleanStatus>({ stage: 'idle' })
   const [hasKey, setHasKey] = useState<boolean | null>(null)
-  const [key, setKey] = useState('')
   const [sel, setSel] = useState<{ a: number; b: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -102,12 +101,6 @@ export function TranscriptTab(): ReactElement {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }
-
-  const saveKey = async (): Promise<void> => {
-    if (!key.trim()) return
-    setHasKey(await luca.env.setAssemblyAiKey(key.trim()))
-    setKey('')
   }
 
   const selected = (): Word[] => {
@@ -170,27 +163,10 @@ export function TranscriptTab(): ReactElement {
       </PaneHead>
       <div className="border-b border-border p-2.5">
         {hasKey === false ? (
-          <div className="card mb-2.5 p-2.5 text-[11px] leading-[1.45] text-text-2">
-            <div className="flex items-center gap-1.5 font-medium text-text">
-              <KeyRound size={12} className="text-text-3" /> AssemblyAI key
-            </div>
-            <p className="mt-1">
-              Clean edit uploads a mono FLAC of the audio and deletes the transcript from AssemblyAI
-              afterwards. The key is stored in the macOS Keychain (safeStorage).
-            </p>
-            <div className="mt-1.5 flex gap-1.5">
-              <Input
-                type="password"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder="AssemblyAI API key"
-                onKeyDown={(e) => e.key === 'Enter' && void saveKey()}
-              />
-              <Button variant="primary" onClick={() => void saveKey()} disabled={!key.trim()}>
-                Save
-              </Button>
-            </div>
-          </div>
+          <AssemblyAiKeyCard className="mb-2.5" onSaved={setHasKey}>
+            Clean edit uploads a mono FLAC of the audio and deletes the transcript from AssemblyAI
+            afterwards. The key is stored in the macOS Keychain (safeStorage).
+          </AssemblyAiKeyCard>
         ) : null}
         <div className="flex items-center gap-2">
           <GenerateButton

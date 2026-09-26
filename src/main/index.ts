@@ -9,6 +9,7 @@ import { DEV_PORT, LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, setCurrentProject } from './state'
 import { loginShellPath } from './env'
+import { cancelVoice } from './voice'
 import { stopWatching } from './watcher'
 
 export const server = new LucaServer(is.dev ? null : join(__dirname, '../renderer'), (id) => {
@@ -124,12 +125,14 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  void cancelVoice()
   stopWatching()
   setCurrentProject(null)
   if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
+  void cancelVoice()
   stopWatching()
   server.stop()
 })
