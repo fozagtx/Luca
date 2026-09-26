@@ -29,12 +29,12 @@ export function Sheet({
         <Dialog.Popup
           style={{ width }}
           className={cn(
-            'sheet-popup fixed left-1/2 top-[52px] z-50 -translate-x-1/2 rounded-b-[10px] bg-bg shadow-popover outline-none',
+            'sheet-popup fixed left-1/2 top-[52px] z-50 flex max-h-[calc(100vh-64px)] -translate-x-1/2 flex-col rounded-b-[12px] bg-bg shadow-popover outline-none',
             'transition-[transform,opacity] duration-200 ease-[cubic-bezier(.2,.8,.2,1)]',
             'data-[starting-style]:-translate-y-4 data-[starting-style]:opacity-0 data-[ending-style]:-translate-y-4 data-[ending-style]:opacity-0'
           )}
         >
-          <div className="flex items-start justify-between px-5 pt-4 pb-2">
+          <div className="flex shrink-0 items-start justify-between px-5 pt-4 pb-3">
             <div>
               <Dialog.Title className="text-[15px] font-semibold text-text">{title}</Dialog.Title>
               {description && (
@@ -47,7 +47,7 @@ export function Sheet({
               <X size={16} strokeWidth={1.5} />
             </Dialog.Close>
           </div>
-          <div className="px-5 pb-4">{children}</div>
+          <div className="scroll min-h-0 flex-1 px-5 pb-4">{children}</div>
           {footer && (
             <div className="flex justify-end gap-2 border-t border-border px-5 py-3">{footer}</div>
           )}

@@ -77,6 +77,8 @@ export function run(
     timeoutMs?: number
     input?: string
     signal?: AbortSignal
+    /** Streamed output, e.g. ffmpeg's `-progress pipe:1` lines. */
+    onStdout?: (chunk: string) => void
   } = {}
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
@@ -88,7 +90,11 @@ export function run(
     })
     let stdout = ''
     let stderr = ''
-    child.stdout.on('data', (d) => (stdout += d.toString()))
+    child.stdout.on('data', (d) => {
+      const text = d.toString()
+      stdout += text
+      opts.onStdout?.(text)
+    })
     child.stderr.on('data', (d) => (stderr += d.toString()))
     const timer = opts.timeoutMs
       ? setTimeout(() => {
@@ -111,7 +117,13 @@ export function run(
 /** Run an `npx hyperframes …` command with the login PATH. */
 export async function runHyperframes(
   args: string[],
-  opts: { cwd: string; timeoutMs?: number; env?: Record<string, string>; signal?: AbortSignal }
+  opts: {
+    cwd: string
+    timeoutMs?: number
+    env?: Record<string, string>
+    signal?: AbortSignal
+    onStdout?: (chunk: string) => void
+  }
 ): Promise<RunResult> {
   const env = await childEnv({
     HYPERFRAMES_SKIP_SKILLS: '1',
@@ -124,7 +136,58 @@ export async function runHyperframes(
     cwd: opts.cwd,
     env,
     timeoutMs: opts.timeoutMs ?? 120_000,
-    signal: opts.signal
+    signal: opts.signal,
+    onStdout: opts.onStdout
+  })
+}
+
+/** Duration (s) and overall bitrate (bit/s) of a media file, from ffprobe. */
+export async function probeMedia(file: string): Promise<{ duration: number; bitrate: number }> {
+  const ffprobe = (await which('ffprobe')) ?? 'ffprobe'
+  const r = await run(
+    ffprobe,
+    ['-v', 'error', '-show_entries', 'format=duration,bit_rate', '-of', 'json', file],
+    { env: await childEnv(), timeoutMs: 30_000 }
+  )
+  const j = JSON.parse(r.stdout || '{}') as { format?: { duration?: string; bit_rate?: string } }
+  return {
+    duration: Number(j.format?.duration ?? 0),
+    bitrate: Number(j.format?.bit_rate ?? 0)
+  }
+}
+
+/**
+ * Run ffmpeg and report real progress (0..1) from its `-progress` stream against the length of
+ * the output in seconds.
+ */
+export async function ffmpegProgress(
+  args: string[],
+  outputSeconds: number,
+  onProgress: (p: number) => void,
+  opts: { timeoutMs?: number } = {}
+): Promise<RunResult> {
+  const ffmpeg = (await which('ffmpeg')) ?? 'ffmpeg'
+  let buf = ''
+  let last = -1
+  return run(ffmpeg, ['-progress', 'pipe:1', '-nostats', ...args], {
+    env: await childEnv(),
+    timeoutMs: opts.timeoutMs,
+    onStdout: (chunk) => {
+      buf += chunk
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''
+      for (const line of lines) {
+        const m = /^out_time_(?:us|ms)=(\d+)/.exec(line)
+        let p: number | null = null
+        if (m && outputSeconds > 0) p = Math.min(1, Number(m[1]) / 1e6 / outputSeconds)
+        else if (line.startsWith('progress=end')) p = 1
+        // ~100 updates at most; IPC and React don't need every frame
+        if (p !== null && (p - last >= 0.01 || p === 1)) {
+          last = p
+          onProgress(p)
+        }
+      }
+    }
   })
 }
 

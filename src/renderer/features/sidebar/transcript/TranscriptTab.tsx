@@ -1,29 +1,46 @@
-import { CircleAlert, Scissors } from 'lucide-react'
+import { AudioLines, Captions, Check, ChevronRight, CircleAlert, Scissors } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
-import type { CleanStatus, Cut, Edl, Transcript, Word } from '../../../../shared/types'
+import { captionStyle } from '../../../../shared/captions'
+import type {
+  CaptionState,
+  CleanStatus,
+  Cut,
+  Edl,
+  Transcript,
+  Word
+} from '../../../../shared/types'
+import { AnimatedNumber } from '../../../components/ui/animated-number'
 import { Button } from '../../../components/ui/button'
 import { GenerateButton } from '../../../components/ui/generate-button'
+import { ProgressBar, StepList, type Step } from '../../../components/ui/progress'
 import { cn } from '../../../lib/cn'
 import { luca } from '../../../lib/luca'
 import { useChat } from '../../../stores/chat'
 import { usePlayer } from '../../../stores/player'
-import { useProject } from '../../../stores/project'
+import { errorMessage, useProject } from '../../../stores/project'
 import { useUi } from '../../../stores/ui'
 import { AssemblyAiKeyCard } from '../../onboarding/AssemblyAiKeyCard'
 import { EmptyPane } from '../EmptyPane'
 import { PaneHead } from '../Sidebar'
 
-const STAGE_LABEL: Record<CleanStatus['stage'], string> = {
-  idle: '',
-  extracting: 'Extracting audio…',
-  uploading: 'Uploading audio to AssemblyAI…',
-  transcribing: 'Transcribing…',
-  candidates: 'Finding fillers and pauses…',
-  reviewing: 'Luca is reviewing the cut list…',
-  applying: 'Cutting the video…',
-  relinking: 'Relinking the timeline…',
-  done: 'Clean edit done',
-  error: 'Clean edit failed'
+const CLEAN_STEPS: (Step & { weight: number })[] = [
+  { id: 'extracting', label: 'Pulling the audio out', weight: 6 },
+  { id: 'uploading', label: 'Uploading to AssemblyAI', weight: 12 },
+  { id: 'transcribing', label: 'Transcribing every word (fillers kept)', weight: 32 },
+  { id: 'candidates', label: 'Finding fillers and long pauses', weight: 2 },
+  { id: 'reviewing', label: 'Luca reviews the cuts (retakes, false starts)', weight: 26 },
+  { id: 'applying', label: 'Cutting a clean master', weight: 19 },
+  { id: 'relinking', label: 'Putting it on the timeline', weight: 3 }
+]
+const TRANSCRIBE_STEPS = CLEAN_STEPS.slice(0, 3)
+
+/** Weighted overall progress across the steps, counting the running step's own progress. */
+function overall(steps: typeof CLEAN_STEPS, s: CleanStatus): number {
+  const total = steps.reduce((n, x) => n + x.weight, 0)
+  const at = steps.findIndex((x) => x.id === s.stage)
+  if (at < 0) return s.stage === 'done' ? 1 : 0
+  const done = steps.slice(0, at).reduce((n, x) => n + x.weight, 0)
+  return (done + steps[at].weight * (s.progress ?? 0.15)) / total
 }
 
 const BUSY = new Set<CleanStatus['stage']>([
@@ -45,18 +62,22 @@ export function TranscriptTab(): ReactElement {
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [sel, setSel] = useState<{ a: number; b: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [captions, setCaptionState] = useState<CaptionState | null>(null)
+  const setCaptions = useUi((s) => s.setCaptions)
 
   const load = useCallback(async (): Promise<void> => {
-    const [t, e, s, k] = await Promise.all([
+    const [t, e, s, k, c] = await Promise.all([
       luca.clean.transcript(),
       luca.clean.edl(),
       luca.clean.status(),
-      luca.env.hasAssemblyAiKey()
+      luca.env.hasAssemblyAiKey(),
+      luca.captions.state().catch(() => null)
     ])
     setTranscript(t)
     setEdl(e)
     setStatus(s)
     setHasKey(k)
+    setCaptionState(c)
   }, [])
 
   useEffect(() => {
@@ -93,13 +114,16 @@ export function TranscriptTab(): ReactElement {
     )
 
   const busy = BUSY.has(status.stage)
+  const task = status.task ?? 'clean'
+  const steps = task === 'transcribe' ? TRANSCRIBE_STEPS : CLEAN_STEPS
+  const noAudio = captions ? !captions.hasAudio : false
 
-  const run = async (): Promise<void> => {
+  const run = async (which: 'clean' | 'transcribe'): Promise<void> => {
     setError(null)
     try {
-      await luca.clean.run()
+      await (which === 'clean' ? luca.clean.run() : luca.clean.transcribe())
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
     }
   }
 
@@ -161,38 +185,111 @@ export function TranscriptTab(): ReactElement {
           </span>
         ) : null}
       </PaneHead>
-      <div className="border-b border-border p-2.5">
+      <div className="flex flex-col gap-3 border-b border-border p-3">
         {hasKey === false ? (
-          <AssemblyAiKeyCard className="mb-2.5" onSaved={setHasKey}>
-            Clean edit uploads a mono FLAC of the audio and deletes the transcript from AssemblyAI
-            afterwards. The key is stored in the macOS Keychain (safeStorage).
+          <AssemblyAiKeyCard onSaved={setHasKey}>
+            Transcription uploads a mono FLAC of the audio and deletes the transcript from
+            AssemblyAI afterwards. The key is stored in the macOS Keychain (safeStorage).
           </AssemblyAiKeyCard>
         ) : null}
-        <div className="flex items-center gap-2">
-          <GenerateButton
-            size="sm"
-            hue={210}
-            label={transcript ? 'Re-run clean edit' : 'Clean edit'}
-            generatingLabel="Cleaning"
-            generating={busy}
-            icon={<Scissors size={12} />}
-            disabled={busy || hasKey !== true}
-            onClick={() => void run()}
-          />
-          <span
-            className={cn(
-              'truncate text-[10.5px] text-text-3',
-              status.stage === 'error' && 'text-danger'
-            )}
-          >
-            {busy ? STAGE_LABEL[status.stage] : (status.message ?? '')}
-          </span>
-        </div>
+        {noAudio ? (
+          <p className="text-[11.5px] leading-[1.5] text-text-3">
+            This project has no video or audio with speech to transcribe. Ask Luca in the chat for
+            animated text instead.
+          </p>
+        ) : busy ? (
+          <div className="rise-in card p-3">
+            <div className="mb-2.5 flex items-baseline gap-2">
+              <span className="text-[12px] font-semibold text-text">
+                {task === 'transcribe' ? 'Transcribing' : 'Cleaning your video'}
+              </span>
+              <span className="ml-auto font-mono text-[11px] text-text-2 tabular-nums">
+                <AnimatedNumber
+                  value={overall(steps, status) * 100}
+                  format={(n) => `${Math.round(n)}%`}
+                />
+              </span>
+            </div>
+            <ProgressBar value={overall(steps, status)} className="mb-3" />
+            <StepList
+              steps={steps}
+              current={status.stage}
+              progress={status.progress}
+              estimated={status.estimated}
+              since={status.since}
+              detail={status.message}
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <GenerateButton
+                size="sm"
+                hue={210}
+                label={transcript ? 'Re-run clean edit' : 'Clean edit'}
+                generatingLabel="Cleaning"
+                icon={<Scissors size={12} />}
+                disabled={hasKey !== true}
+                onClick={() => void run('clean')}
+              />
+              {!transcript ? (
+                <Button disabled={hasKey !== true} onClick={() => void run('transcribe')}>
+                  <AudioLines size={13} /> Just transcribe
+                </Button>
+              ) : null}
+            </div>
+            <p className="text-[11px] leading-[1.5] text-text-3">
+              {transcript
+                ? 'Clean edit cuts fillers, long pauses and retakes into a clean master.'
+                : 'Just transcribe gets the words for captions. Clean edit also cuts fillers, pauses and retakes.'}
+            </p>
+            {status.stage === 'done' || status.stage === 'error' ? (
+              <div
+                className={cn(
+                  'rise-in flex items-start gap-1.5 text-[11px] leading-[1.4]',
+                  status.stage === 'error' ? 'text-danger' : 'text-text-2'
+                )}
+              >
+                {status.stage === 'error' ? (
+                  <CircleAlert size={12} className="mt-px shrink-0" />
+                ) : (
+                  <Check size={12} className="mt-px shrink-0 text-success" />
+                )}
+                <span className="select-text">{status.message}</span>
+              </div>
+            ) : null}
+          </div>
+        )}
         {error ? (
-          <div className="mt-2 flex items-start gap-1.5 rounded-[6px] border border-danger/25 bg-danger/8 px-2 py-1.5 text-[10.5px] leading-[1.4] text-danger">
+          <div className="flex items-start gap-1.5 rounded-[8px] border border-danger/25 bg-danger/[0.06] px-2.5 py-2 text-[11px] leading-[1.4] text-danger">
             <CircleAlert size={12} className="mt-px shrink-0" />
             <span className="select-text">{error}</span>
           </div>
+        ) : null}
+        {transcript && !busy ? (
+          <button
+            type="button"
+            onClick={() => setCaptions(true)}
+            className="card card-hover group flex items-center gap-3 p-2.5 text-left"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-[9px] bg-secondary text-secondary-fg">
+              <Captions size={17} strokeWidth={1.7} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12.5px] font-semibold text-text">
+                {captions?.applied ? 'Captions are on the timeline' : 'Add captions to the video'}
+              </span>
+              <span className="block truncate text-[11px] text-text-3">
+                {captions?.applied
+                  ? `${captionStyle(captions.applied.style).name} · ${captions.applied.font} · change the style`
+                  : 'Cleaned of fillers, with a style and font you choose'}
+              </span>
+            </span>
+            <ChevronRight
+              size={15}
+              className="shrink-0 text-text-3 transition-transform group-hover:translate-x-0.5"
+            />
+          </button>
         ) : null}
       </div>
       {!transcript ? (
@@ -203,7 +300,7 @@ export function TranscriptTab(): ReactElement {
       ) : (
         <>
           {sel ? (
-            <div className="flex items-center gap-1 border-b border-border bg-bg-subtle px-2.5 py-1.5">
+            <div className="flex items-center gap-1 border-b border-border bg-bg-subtle px-3 py-1.5">
               <Button size="sm" variant="outline" onClick={cutSelection} disabled={busy}>
                 <Scissors size={11} /> Cut
               </Button>

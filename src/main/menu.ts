@@ -55,7 +55,8 @@ export function buildAppMenu(): void {
         { label: 'Split at Playhead', click: () => send('split') },
         { label: 'Delete Clip', click: () => send('delete-clip') },
         { type: 'separator' },
-        { label: 'Clean Edit…', accelerator: 'Cmd+Shift+E', click: () => send('clean-edit') }
+        { label: 'Clean Edit…', accelerator: 'Cmd+Shift+E', click: () => send('clean-edit') },
+        { label: 'Captions…', click: () => send('captions') }
       ]
     },
     {

@@ -1,4 +1,13 @@
-import { Crosshair, MessageSquare, Moon, PanelLeft, Sun, Upload } from 'lucide-react'
+import {
+  Captions,
+  Crosshair,
+  MessageSquare,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Sun,
+  Upload
+} from 'lucide-react'
 import type { ReactElement } from 'react'
 import { AnimatedButton } from '../../components/ui/animated-button'
 import { Button } from '../../components/ui/button'
@@ -73,21 +82,32 @@ function Higgsfield(): ReactElement {
 
 export function Toolbar(): ReactElement {
   const project = useProject((s) => s.project)
-  const { sidebarOpen, chatOpen, toggleSidebar, toggleChat, setExport } = useUi()
+  const { sidebarOpen, chatOpen, setSidebar, setChat, setExport, setCaptions, fullscreen } = useUi()
   const grab = usePlayer((s) => s.grab)
   const toggleGrab = usePlayer((s) => s.toggleGrab)
 
   return (
-    <header className="drag-region relative flex h-[52px] shrink-0 items-center bg-bg pl-[84px] pr-3">
+    <header
+      className={cn(
+        'drag-region relative flex h-[52px] shrink-0 items-center bg-bg pr-3 transition-[padding] duration-200',
+        // room for the traffic lights, which macOS hides in fullscreen
+        fullscreen ? 'pl-3' : 'pl-[92px]'
+      )}
+    >
       <div className="flex items-center gap-1">
-        <Tip label="Toggle sidebar" shortcut="⇧⌘S">
+        <Tip label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'} shortcut="⇧⌘S">
           <Button
             variant="icon"
             active={sidebarOpen}
-            onClick={toggleSidebar}
-            aria-label="Toggle sidebar"
+            onClick={() => setSidebar(!sidebarOpen)}
+            aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+            aria-pressed={sidebarOpen}
           >
-            <PanelLeft size={16} strokeWidth={1.5} />
+            {sidebarOpen ? (
+              <PanelLeftClose size={16} strokeWidth={1.5} />
+            ) : (
+              <PanelLeftOpen size={16} strokeWidth={1.5} />
+            )}
           </Button>
         </Tip>
         <div className="mx-1.5 h-4 w-px bg-border" />
@@ -114,6 +134,17 @@ export function Toolbar(): ReactElement {
             Grab
           </Button>
         </Tip>
+        <Tip label="Captions: styles and fonts">
+          <Button
+            variant="ghost"
+            disabled={!project}
+            onClick={() => setCaptions(true)}
+            aria-label="Captions"
+          >
+            <Captions size={15} strokeWidth={1.75} />
+            Captions
+          </Button>
+        </Tip>
         <HistoryPopover />
         <AnimatedButton
           size="sm"
@@ -126,8 +157,14 @@ export function Toolbar(): ReactElement {
         </AnimatedButton>
         <div className="mx-1.5 h-4 w-px bg-border" />
         <ThemeToggle />
-        <Tip label="Toggle chat" shortcut="⇧⌘C">
-          <Button variant="icon" active={chatOpen} onClick={toggleChat} aria-label="Toggle chat">
+        <Tip label={chatOpen ? 'Hide chat' : 'Show chat'} shortcut="⇧⌘C">
+          <Button
+            variant="icon"
+            active={chatOpen}
+            onClick={() => setChat(!chatOpen)}
+            aria-label={chatOpen ? 'Hide chat' : 'Show chat'}
+            aria-pressed={chatOpen}
+          >
             <MessageSquare size={16} strokeWidth={1.5} />
           </Button>
         </Tip>

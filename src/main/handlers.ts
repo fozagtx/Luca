@@ -1,17 +1,36 @@
-import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, nativeImage, nativeTheme, shell } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type {
   Aspect,
+  CaptionConfig,
   Chip,
+  CreateProgress,
   Edl,
+  ElementTransform,
   ExportOptions,
   PermissionDecision,
   Settings,
+  StartArgs,
   TimelineEdit
 } from '../shared/types'
 import { activeAgent, agentFor, closeAgent, onTurnEnd } from './agent'
-import { applyEdl, cleanStatus, readEdl, readTranscript, runCleanEdit } from './clean'
+import {
+  addFonts,
+  applyCaptions,
+  captionState,
+  captionWords,
+  FONT_EXT,
+  removeCaptions
+} from './captions'
+import {
+  applyEdl,
+  cleanStatus,
+  readEdl,
+  readTranscript,
+  runCleanEdit,
+  runTranscribeOnly
+} from './clean'
 import { cancelExport, startExport } from './export'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
@@ -19,12 +38,23 @@ import { remocnCatalog, setupStudio, studioStatus } from './remocn'
 import { Channels, broadcast, handle, listen } from './ipc'
 import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
-import { createProject, listFiles, openProject, recentProjects, safeJoin } from './projects'
+import {
+  AUDIO_EXT,
+  forgetRecent,
+  IMAGE_EXT,
+  listFiles,
+  openProject,
+  recentProjects,
+  refreshCompositionPoster,
+  safeJoin,
+  startProject,
+  VIDEO_EXT
+} from './projects'
 import { hasSecret, setSecret } from './secrets'
 import type { LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, requireProject, setCurrentProject } from './state'
-import { applyEdit, editLabel, peaks, thumbnails } from './media'
+import { applyEdit, applyTransform, editLabel, peaks, thumbnails } from './media'
 import { checkpoint, ensureRepo, history, restore, undo } from './versions'
 import { cancelVoice, micAccess, pushVoiceAudio, startVoice, stopVoice } from './voice'
 import { stopWatching, watchProject } from './watcher'
@@ -83,19 +113,74 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   onTurnEnd((p, e) => {
     if (e.isError) return
     void checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72))
+    // projects without a source video take their thumbnail from the composition itself
+    if (!p.source) void refreshCompositionPoster(p).catch(() => undefined)
   })
+  const start = async (args: StartArgs): Promise<Awaited<ReturnType<typeof startProject>>> => {
+    const report = (p: CreateProgress): void => broadcast(Channels.projectCreateProgress, p)
+    try {
+      const res = await startProject(args, report)
+      report({ stage: 'starting', message: 'Opening the project' })
+      let opened = await activate(res.project.dir)
+      if (args.look) {
+        report({ stage: 'starting', message: 'Applying your Look' })
+        await applyLook(opened, args.look)
+        opened = await activate(res.project.dir)
+      }
+      report({ stage: 'done' })
+      return { ...res, project: opened }
+    } catch (err) {
+      report({ stage: 'error', message: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
+  }
+  handle(Channels.projectStart, start)
   handle(
     Channels.projectCreate,
-    async (args: { file: string; name?: string; aspect: Aspect; look?: string | null }) => {
-      const p = await createProject(args)
-      const opened = await activate(p.dir)
-      if (args.look) {
-        await applyLook(opened, args.look)
-        return activate(p.dir)
-      }
-      return opened
-    }
+    async (args: { file: string; name?: string; aspect: Aspect; look?: string | null }) =>
+      (await start({ name: args.name, aspect: args.aspect, look: args.look, files: [args.file] }))
+        .project
   )
+  handle(Channels.projectPickMedia, async () => {
+    const ext = (set: Set<string>): string[] => [...set].map((e) => e.slice(1))
+    const res = await openDialog(getWin(), {
+      title: 'Choose a video, audio or images',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'Video, audio or images',
+          extensions: [...ext(VIDEO_EXT), ...ext(AUDIO_EXT), ...ext(IMAGE_EXT)]
+        }
+      ]
+    })
+    return res.canceled ? [] : res.filePaths
+  })
+  handle(Channels.projectMediaPreview, async (path: string) => {
+    try {
+      // Quick Look thumbnails cover images and videos on macOS
+      const img = await nativeImage.createThumbnailFromPath(path, { width: 240, height: 240 })
+      if (!img.isEmpty()) return img.toDataURL()
+    } catch {
+      // not supported for this file; try decoding it directly
+    }
+    const img = nativeImage.createFromPath(path)
+    return img.isEmpty() ? null : img.resize({ width: 240 }).toDataURL()
+  })
+  handle(Channels.projectForget, (dir: string) => {
+    forgetRecent(dir)
+    broadcast(Channels.projectRecentChanged, null)
+  })
+  handle(Channels.projectTrash, async (dir: string) => {
+    if (currentProject()?.dir === dir) {
+      stopWatching()
+      await closeAgent()
+      setCurrentProject(null)
+      broadcast(Channels.projectOpened, null)
+    }
+    await shell.trashItem(dir)
+    forgetRecent(dir)
+    broadcast(Channels.projectRecentChanged, null)
+  })
   handle(Channels.projectOpen, (dir: string) => activate(dir))
   handle(Channels.projectClose, async () => {
     stopWatching()
@@ -138,6 +223,12 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     if (res.ok) void checkpoint(p.dir, editLabel(edit))
     return res
   })
+  handle(Channels.timelineTransform, async (t: ElementTransform) => {
+    const p = requireProject()
+    const res = await applyTransform(p.dir, t)
+    if (res.ok) void checkpoint(p.dir, `Edit: move/resize ${t.id}`)
+    return res
+  })
   handle(Channels.timelineThumbs, () => thumbnails(requireProject()))
   handle(Channels.timelinePeaks, () => peaks(requireProject()))
 
@@ -169,6 +260,23 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.cleanStatus, cleanStatus)
   handle(Channels.cleanTranscript, () => readTranscript(requireProject().dir))
   handle(Channels.cleanEdl, () => readEdl(requireProject().dir))
+  handle(Channels.cleanTranscribe, () => runTranscribeOnly(requireProject()))
+
+  // captions
+  handle(Channels.captionsState, () => captionState(requireProject()))
+  handle(Channels.captionsWords, () => captionWords(requireProject()))
+  handle(Channels.captionsApply, (cfg: CaptionConfig) => applyCaptions(requireProject(), cfg))
+  handle(Channels.captionsRemove, () => removeCaptions(requireProject()))
+  handle(Channels.fontsAdd, async () => {
+    const p = requireProject()
+    const res = await openDialog(getWin(), {
+      title: 'Add fonts',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Fonts', extensions: FONT_EXT }]
+    })
+    if (res.canceled || !res.filePaths.length) return captionState(p).fonts
+    return addFonts(p, res.filePaths)
+  })
 
   // looks
   handle(Channels.looksList, () => listLooks())

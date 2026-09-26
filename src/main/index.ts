@@ -61,6 +61,12 @@ function createWindow(): BrowserWindow {
     const base = is.dev ? process.env.ELECTRON_RENDERER_URL! : server.baseUrl
     if (!url.startsWith(base)) e.preventDefault()
   })
+  // the toolbar leaves room for the traffic lights, which macOS hides in fullscreen
+  const sendFullscreen = (): void =>
+    win.webContents.send(Channels.windowFullscreen, win.isFullScreen())
+  win.on('enter-full-screen', sendFullscreen)
+  win.on('leave-full-screen', sendFullscreen)
+  win.webContents.on('did-finish-load', sendFullscreen)
   win.on('focus', () => win.webContents.send(Channels.windowActive, true))
   win.on('blur', () => win.webContents.send(Channels.windowActive, false))
   const saveBounds = (): void => {

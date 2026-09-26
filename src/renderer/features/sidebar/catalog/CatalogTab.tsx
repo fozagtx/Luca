@@ -134,7 +134,7 @@ export function CatalogTab(): ReactElement {
         </Tip>
       </PaneHead>
 
-      <div className="flex flex-col gap-2 px-2.5 pt-2.5 pb-2">
+      <div className="flex flex-col gap-2 px-3 pt-3 pb-2">
         <SearchField value={query} onChange={setQuery} total={library?.length} />
         <Segmented
           items={[...sources]}
@@ -170,7 +170,7 @@ export function CatalogTab(): ReactElement {
           hint="Try a simpler word, like “title”, “captions” or “transition”."
         />
       ) : (
-        <div ref={listRef} className="scroll min-h-0 flex-1 px-2.5 pb-3">
+        <div ref={listRef} className="scroll min-h-0 flex-1 px-3 pb-3">
           {browsing ? (
             <Sections items={results} onSeeAll={setCategory} onRemocnUse={onRemocnUse} />
           ) : (
@@ -467,7 +467,7 @@ function Card({ item, onRemocnUse }: { item: LibraryItem; onRemocnUse: () => voi
 
 function SkeletonGrid(): ReactElement {
   return (
-    <div className="flex-1 overflow-hidden px-2.5 pt-1">
+    <div className="flex-1 overflow-hidden px-3 pt-1">
       <div className="skeleton mb-2.5 h-3 w-24 rounded-[3px]" />
       <div className="grid grid-cols-2 gap-2.5">
         {Array.from({ length: 8 }, (_, i) => (
@@ -510,7 +510,7 @@ function RemocnSetup({
   }
 
   return (
-    <div className="card mx-2.5 mb-2 p-2.5 text-[11.5px] text-text-2">
+    <div className="card mx-3 mb-2 p-3 text-[11.5px] text-text-2">
       <div className="font-medium text-text">Remocn needs a one-time setup</div>
       <p className="mt-0.5 leading-[1.45]">
         Luca prepares a small animation workspace so Remocn components can play in your video. It

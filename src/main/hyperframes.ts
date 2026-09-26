@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { CatalogItem, Clip, ClipKind, Timeline, Track } from '../shared/types'
 import bundled from './catalog/hyperframes.json'
 import { parseJsonOutput, runHyperframes } from './env'
+import { findTags } from './html'
 import { appDataDir } from './settings'
 
 type HfRow = {
@@ -53,6 +54,11 @@ export async function readTimeline(dir: string): Promise<Timeline> {
   const width = data.timeline.width ?? Number(/data-width="(\d+)"/.exec(html)?.[1] ?? 1920)
   const height = data.timeline.height ?? Number(/data-height="(\d+)"/.exec(html)?.[1] ?? 1080)
 
+  // clip volumes aren't in the CLI's JSON; read them from the tags
+  const volumes = new Map<string, number>()
+  for (const t of findTags(html))
+    if (t.attrs.id && (t.name === 'video' || t.name === 'audio'))
+      volumes.set(t.attrs.id, Number(t.attrs['data-volume'] ?? 1))
   const byIndex = new Map<number, Track>()
   const seen = new Set<string>()
   const visit = (row: HfRow): void => {
@@ -87,7 +93,12 @@ export async function readTimeline(dir: string): Promise<Timeline> {
       label: row.label ?? id,
       src: row.src,
       ref: row.ref,
-      remocn: typeof row.src === 'string' && row.src.startsWith('media/remocn/')
+      remocn: typeof row.src === 'string' && row.src.startsWith('media/remocn/'),
+      ...(row.elementId && volumes.has(row.elementId)
+        ? { volume: volumes.get(row.elementId) }
+        : volumes.has(id)
+          ? { volume: volumes.get(id) }
+          : {})
     }
     track.clips.push(clip)
     if (track.kind !== kind && kind === 'video') track.kind = 'video'

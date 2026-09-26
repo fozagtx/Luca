@@ -1,6 +1,8 @@
 import type { AgentEvent, AgentState, ChatMessage, Chip, PermissionDecision } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
+import { useProject } from './project'
+import { useStart } from './start'
 
 type ChatStore = {
   messages: ChatMessage[]
@@ -55,6 +57,14 @@ export const useChat = create<ChatStore>((set, get) => ({
   },
 
   send: async (text, context, opts) => {
+    // with nothing open, a message is an idea for a new video: start one from it
+    if (!useProject.getState().project) {
+      if (!opts?.keepDraft) set({ draft: '', error: null })
+      const ok = await useStart.getState().create(text)
+      if (!ok)
+        set({ error: useStart.getState().error, ...(opts?.keepDraft ? {} : { draft: text }) })
+      return
+    }
     const chips = get().chips
     set(opts?.keepDraft ? { chips: [], error: null } : { chips: [], draft: '', error: null })
     try {
