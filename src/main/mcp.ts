@@ -2,6 +2,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
 import { library } from './library'
+import { HYPERFRAMES } from './env'
 import { installComponent, placeComponent, studioStatus } from './remocn'
 
 const text = (data: unknown): { content: { type: 'text'; text: string }[] } => ({
@@ -26,7 +27,7 @@ function describe(i: LibraryItem): Record<string, unknown> {
     return {
       ...base,
       ...(i.duration ? { durationSeconds: Math.round(i.duration * 10) / 10 } : {}),
-      add: `npx hyperframes add ${i.name} --json`
+      add: `npx ${HYPERFRAMES} add ${i.name} --json`
     }
   return {
     ...base,
