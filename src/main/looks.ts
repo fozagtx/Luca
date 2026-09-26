@@ -11,7 +11,7 @@ import {
 } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import type { Look, Project } from '../shared/types'
-import { activeAgent, agentFor, onTurnEnd } from './agent'
+import { activeAgent, agentFor } from './agent'
 import { addCatalogItem, snapshot } from './hyperframes'
 import { readProject, slugify, writeProject } from './projects'
 import { appDataDir } from './settings'
@@ -86,21 +86,11 @@ function customCompositions(dir: string): string[] {
   return out
 }
 
-function waitForTurn(dir: string): Promise<{ isError: boolean; error?: string }> {
-  return new Promise((resolve) => {
-    const off = onTurnEnd((p, e) => {
-      if (p.dir !== dir) return
-      off()
-      resolve(e)
-    })
-  })
-}
-
 /** Ask Claude to write LOOK.md into the look folder (rules and files, not timecodes). */
 async function writeLookMd(p: Project, dest: string): Promise<void> {
   const agent = activeAgent() ?? agentFor(p)
   const target = join(dest, 'LOOK.md')
-  await agent.send({
+  const end = await agent.run({
     text:
       `Write a Look style guide to \`${target}\` (Write tool, absolute path) so this project's editing style can be reproduced on a different video. ` +
       'Cover: fonts, sizes and weights; colors as hex; caption style (words per group, position, entrance, emphasis); ' +
@@ -109,7 +99,6 @@ async function writeLookMd(p: Project, dest: string): Promise<void> {
     chips: [],
     context: { look: true }
   })
-  const end = await waitForTurn(p.dir)
   if (end.isError) throw new Error(end.error ?? 'Claude turn failed')
   if (!existsSync(target)) throw new Error('Claude did not write LOOK.md')
 }

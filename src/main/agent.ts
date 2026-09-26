@@ -59,7 +59,15 @@ type Pending = {
   suggestions?: PermissionUpdate[]
 }
 
-type Turn = { text: string; chips: Chip[]; context: unknown }
+type TurnOutcome = { isError: boolean; error?: string }
+
+type Turn = {
+  text: string
+  chips: Chip[]
+  context: unknown
+  /** Called once when this turn ends, is dropped from the queue, or the agent stops. */
+  done?: (outcome: TurnOutcome) => void
+}
 
 type ToolPart = Extract<ChatContentPart, { type: 'tool' }>
 
@@ -125,6 +133,8 @@ export class ProjectAgent {
   private streamedText = ''
   private working = false
   private queued: Turn[] = []
+  /** The turn being answered now. */
+  private active: Turn | null = null
   private abort = new AbortController()
 
   constructor(readonly project: Project) {
@@ -246,6 +256,7 @@ export class ProjectAgent {
 
   async stop(): Promise<void> {
     this.closed = true
+    this.abandonTurns('The project was closed')
     this.abort.abort()
     for (const w of this.waiters.splice(0)) w(null)
     for (const p of this.pending.values())
@@ -255,12 +266,27 @@ export class ProjectAgent {
   }
 
   async restart(): Promise<void> {
+    this.abandonTurns('Claude Code restarted')
     this.abort.abort()
     for (const w of this.waiters.splice(0)) w(null)
     this.q = null
     this.closed = false
-    this.working = false
     await this.start()
+  }
+
+  /** Settle every turn still waiting (running or queued) when the session goes away under it. */
+  private abandonTurns(error: string): void {
+    const turns = [...(this.active ? [this.active] : []), ...this.queued]
+    this.active = null
+    this.queued = []
+    this.working = false
+    if (this.current) {
+      this.current.pending = false
+      this.current.isError = true
+      this.current = null
+      this.rewriteHistory()
+    }
+    for (const t of turns) t.done?.({ isError: true, error })
   }
 
   private async *stream(): AsyncGenerator<SDKUserMessage> {
@@ -299,7 +325,18 @@ export class ProjectAgent {
     this.dispatch(turn)
   }
 
+  /**
+   * Send a turn and wait for that turn to end: when Luca is busy it is queued, and the turn
+   * running now ends first.
+   */
+  run(turn: Omit<Turn, 'done'>): Promise<TurnOutcome> {
+    return new Promise((resolve, reject) => {
+      this.send({ ...turn, done: resolve }).catch(reject)
+    })
+  }
+
   private dispatch(turn: Turn): void {
+    this.active = turn
     this.working = true
     this.turnStartedAt = Date.now()
     this.streamedText = ''
@@ -372,7 +409,7 @@ export class ProjectAgent {
   }
 
   async interrupt(): Promise<void> {
-    this.queued = []
+    for (const t of this.queued.splice(0)) t.done?.({ isError: true, error: 'Stopped' })
     try {
       await this.q?.interrupt()
     } catch {
@@ -590,6 +627,9 @@ export class ProjectAgent {
     }
     this.emit(end)
     for (const cb of turnEndListeners) cb(this.project, end)
+    const turn = this.active
+    this.active = null
+    turn?.done?.({ isError, error })
     if (this.state === 'working') this.setState('ready')
     const next = this.queued.shift()
     if (next && this.q) this.dispatch(next)
