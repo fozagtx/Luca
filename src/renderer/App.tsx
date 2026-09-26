@@ -47,6 +47,8 @@ export default function App(): ReactElement {
   const panes = settings?.panes ?? {}
   const outer = panes.outer ?? []
   const center = panes.center ?? []
+  // saved layouts are percentages; a bare number would be read as pixels (15.5% → 15px)
+  const saved = (pct: number | undefined, px: number): number | string => (pct ? String(pct) : px)
 
   return (
     <TooltipProvider>
@@ -65,7 +67,7 @@ export default function App(): ReactElement {
             <>
               <Panel
                 id="sidebar"
-                defaultSize={outer[0] || 272}
+                defaultSize={saved(outer[0], 272)}
                 minSize={220}
                 maxSize={400}
                 className="panel"
@@ -94,7 +96,7 @@ export default function App(): ReactElement {
               <Separator className={sepH} />
               <Panel
                 id="timeline"
-                defaultSize={center[1] || 260}
+                defaultSize={saved(center[1], 260)}
                 minSize={180}
                 maxSize={520}
                 className="panel"
@@ -108,7 +110,7 @@ export default function App(): ReactElement {
               <Separator className={sepV} />
               <Panel
                 id="chat"
-                defaultSize={outer[2] || 360}
+                defaultSize={saved(outer[2], 360)}
                 minSize={300}
                 maxSize={520}
                 className="panel"
