@@ -112,7 +112,7 @@ export async function startProject(
   const name = (args.name?.trim() || fallback).slice(0, 80)
   const { dir, id } = uniqueDir(settings.projectsDir, slugify(name))
 
-  report({ stage: 'preparing', message: 'Getting HyperFrames ready' })
+  report({ stage: 'preparing', message: 'Getting ready' })
   const initArgs = ['init', id, '--non-interactive', '--resolution', RESOLUTION[args.aspect]]
   if (kind === 'video') initArgs.push('--video', main!, '--skip-transcribe')
   else if (kind === 'audio') initArgs.push('--audio', main!, '--skip-transcribe')
@@ -130,17 +130,17 @@ export async function startProject(
     cwd: settings.projectsDir,
     timeoutMs: 240_000,
     onStdout: (text) => {
-      // "Video: 1920x1080, 12.3s", "Created clip/" — real steps, shown as they happen
+      // "Video: 1920x1080, 12.3s" — real steps, shown as they happen
       const line = text
         .split('\n')
         .map((l) => l.trim())
-        .find((l) => /^(Video|Audio|Created|Transcrib)/.test(l))
+        .find((l) => /^(Video|Audio):/.test(l))
       if (line) report({ stage: 'scaffolding', message: line })
     }
   })
   if (res.code !== 0 || !existsSync(join(dir, 'index.html'))) {
     throw new Error(
-      `hyperframes init failed (${res.code}): ${(res.stderr || res.stdout).trim().slice(-800)}`
+      `Couldn't set up the project (${res.code}): ${(res.stderr || res.stdout).trim().slice(-800)}`
     )
   }
 
@@ -383,7 +383,7 @@ export function openProject(dir: string): Project {
   let p = readProject(dir)
   if (!p) {
     if (!existsSync(join(dir, 'index.html')) || !existsSync(join(dir, 'hyperframes.json'))) {
-      throw new Error('Not a Luca / HyperFrames project folder')
+      throw new Error('This folder is not a Luca project')
     }
     const now = new Date().toISOString()
     const src = readdirSync(dir).find((f) => VIDEO_EXT.has(extname(f).toLowerCase())) ?? ''

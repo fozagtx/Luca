@@ -73,7 +73,7 @@ function bash(command: string, titleOf?: TitleOf): Activity {
       case 'render':
         return act('render', 'Rendering a preview', 'Rendered a preview')
       default:
-        return act('other', 'Working on the composition', 'Worked on the composition')
+        return act('other', 'Working on your video', 'Worked on your video')
     }
   }
   const first = cmd.split(/\s+/)[0]?.replace(/^.*\//, '') ?? ''

@@ -107,7 +107,7 @@ app.whenReady().then(async () => {
   app.setAboutPanelOptions({
     applicationName: 'Luca',
     applicationVersion: app.getVersion(),
-    copyright: 'HyperFrames-native video editor',
+    copyright: 'A video editor where Claude does the editing',
     iconPath
   })
   await loginShellPath()
