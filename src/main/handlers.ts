@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Aspect, Settings } from '../shared/types'
+import type { Aspect, Chip, PermissionDecision, Settings } from '../shared/types'
+import { activeAgent, agentFor, closeAgent, onTurnEnd } from './agent'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
 import { Channels, broadcast, handle } from './ipc'
@@ -11,7 +12,7 @@ import { hasSecret, setSecret } from './secrets'
 import type { LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, requireProject, setCurrentProject } from './state'
-import { ensureRepo, history, restore, undo } from './versions'
+import { checkpoint, ensureRepo, history, restore, undo } from './versions'
 import { stopWatching, watchProject } from './watcher'
 
 type WinGetter = () => BrowserWindow | null
@@ -59,8 +60,13 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     watchProject(p.dir)
     broadcast(Channels.projectOpened, p)
     app.addRecentDocument(p.dir)
+    void agentFor(p).start()
     return p
   }
+  onTurnEnd((p, e) => {
+    if (e.isError) return
+    void checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72))
+  })
   handle(
     Channels.projectCreate,
     async (args: { file: string; name?: string; aspect: Aspect; look?: string | null }) => {
@@ -69,8 +75,9 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     }
   )
   handle(Channels.projectOpen, (dir: string) => activate(dir))
-  handle(Channels.projectClose, () => {
+  handle(Channels.projectClose, async () => {
     stopWatching()
+    await closeAgent()
     setCurrentProject(null)
     broadcast(Channels.projectOpened, null)
   })
@@ -108,12 +115,16 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.timelinePeaks, notReady('Waveform'))
 
   // agent
-  handle(Channels.agentSend, notReady('Chat'))
-  handle(Channels.agentInterrupt, () => undefined)
-  handle(Channels.agentPermission, () => undefined)
-  handle(Channels.agentHistory, () => [])
-  handle(Channels.agentState, () => ({ state: 'idle' }))
-  handle(Channels.agentRestart, () => undefined)
+  handle(Channels.agentSend, (args: { text: string; chips: Chip[]; context: unknown }) =>
+    agentFor(requireProject()).send(args)
+  )
+  handle(Channels.agentInterrupt, () => activeAgent()?.interrupt())
+  handle(Channels.agentPermission, (args: { id: string; decision: PermissionDecision }) =>
+    activeAgent()?.decide(args.id, args.decision)
+  )
+  handle(Channels.agentHistory, () => activeAgent()?.history() ?? [])
+  handle(Channels.agentState, () => activeAgent()?.status() ?? { state: 'idle' })
+  handle(Channels.agentRestart, () => agentFor(requireProject()).restart())
 
   // catalog
   handle(Channels.catalogList, (args?: { refresh?: boolean }) =>
