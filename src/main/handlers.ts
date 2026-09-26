@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Aspect, Chip, PermissionDecision, Settings, TimelineEdit } from '../shared/types'
+import type { Aspect, Chip, Edl, PermissionDecision, Settings, TimelineEdit } from '../shared/types'
 import { activeAgent, agentFor, closeAgent, onTurnEnd } from './agent'
+import { applyEdl, cleanStatus, readEdl, readTranscript, runCleanEdit } from './clean'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
 import { remocnCatalog, setupStudio, studioStatus } from './remocn'
@@ -144,11 +145,11 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.catalogRemocnSetup, () => setupStudio())
 
   // clean
-  handle(Channels.cleanRun, notReady('Clean edit'))
-  handle(Channels.cleanApplyEdl, notReady('Clean edit'))
-  handle(Channels.cleanStatus, () => ({ stage: 'idle' }))
-  handle(Channels.cleanTranscript, () => null)
-  handle(Channels.cleanEdl, () => null)
+  handle(Channels.cleanRun, () => runCleanEdit(requireProject()))
+  handle(Channels.cleanApplyEdl, (edl: Edl) => applyEdl(requireProject(), edl))
+  handle(Channels.cleanStatus, cleanStatus)
+  handle(Channels.cleanTranscript, () => readTranscript(requireProject().dir))
+  handle(Channels.cleanEdl, () => readEdl(requireProject().dir))
 
   // looks
   handle(Channels.looksList, () => [])
