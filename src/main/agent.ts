@@ -22,7 +22,7 @@ import type {
 } from '../shared/types'
 import { alwaysAllowRule, describeActivity } from '../shared/activity'
 import { childEnv, HYPERFRAMES, run, which } from './env'
-import { Channels, broadcast } from './ipc'
+import { Channels, broadcast, notifyInBackground } from './ipc'
 import { catalogTitle } from './library'
 import { lucaMcpServer } from './mcp'
 import { lucaDir } from './projects'
@@ -110,6 +110,17 @@ function summarize(name: string, input: Record<string, unknown>): string {
   }
 }
 
+/** The opening of a reply, short enough for a notification. */
+function firstSentence(text: string): string {
+  const flat = text
+    .replace(/[*_`#>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const end = flat.search(/[.!?](\s|$)/)
+  const s = end > 0 ? flat.slice(0, end + 1) : flat
+  return s.length > 140 ? `${s.slice(0, 139)}…` : s
+}
+
 function describeInput(name: string, input: Record<string, unknown>): string {
   if (name === 'Bash') return String(input.command ?? '')
   if (name === 'Edit')
@@ -117,6 +128,8 @@ function describeInput(name: string, input: Record<string, unknown>): string {
   if (name === 'Write') return String(input.content ?? '')
   return JSON.stringify(input, null, 2)
 }
+
+let signedIn = false
 
 /** true = logged in, false = not, null = unknown (old CLI without `auth status`). */
 async function authStatus(claude: string, env: NodeJS.ProcessEnv): Promise<boolean | null> {
@@ -225,6 +238,7 @@ export class ProjectAgent {
     broadcast(Channels.agentEvent, e)
   }
   private setState(state: AgentState, detail?: string): void {
+    if (state === 'needs-login') signedIn = false
     this.state = state
     this.stateDetail = detail
     this.emit({ type: 'status', state, detail })
@@ -252,7 +266,9 @@ export class ProjectAgent {
     }
     this.setState('starting')
     const env = await childEnv()
-    const auth = await authStatus(claude, env)
+    // signed in once this session is enough: opening another project skips the 1–2 s check
+    const auth = signedIn ? true : await authStatus(claude, env)
+    signedIn = auth === true
     if (this.closed) return
     if (auth === false) {
       this.setState('needs-login', 'Not logged in · run /login in Claude Code')
@@ -489,6 +505,10 @@ export class ProjectAgent {
     this.current?.parts?.push(part)
     this.pushMessage(this.current)
     this.emit({ type: 'permission', id, tool: toolName, input, ...(rule ? { rule } : {}) })
+    notifyInBackground(
+      'Luca needs your OK',
+      `${describeActivity(toolName, input, catalogTitle).active}. Open Luca to allow it.`
+    )
     return new Promise<PermissionResult>((resolvePerm) => {
       this.pending.set(id, { resolve: resolvePerm, rule })
     })
@@ -715,6 +735,13 @@ export class ProjectAgent {
         )
       }
       this.pushMessage(this.current)
+      // you stopped it, or the project closed or restarted: nothing is waiting on you
+      if (!stopped && error !== 'closed' && error !== 'restarted')
+        notifyInBackground(
+          isError ? 'Luca couldn’t finish' : `Luca finished in ${this.project.name}`,
+          firstSentence(this.current.text) ||
+            (isError ? 'Open Luca to try again.' : 'Your video is updated.')
+        )
       this.current = null
     }
     this.rewriteHistory()

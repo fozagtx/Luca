@@ -5,7 +5,13 @@
 import type { RenderJob } from '@hyperframes/producer'
 
 export type WorkerIn =
-  | { type: 'start'; projectDir: string; outputPath: string; quality: 'draft' | 'high' }
+  | {
+      type: 'start'
+      projectDir: string
+      outputPath: string
+      quality: 'draft' | 'high'
+      workers: number
+    }
   | { type: 'cancel' }
 export type WorkerOut =
   | { type: 'progress'; progress: number; stage: string }
@@ -29,7 +35,7 @@ async function start(msg: Extract<WorkerIn, { type: 'start' }>): Promise<void> {
     const job = producer.createRenderJob({
       fps: 30,
       quality: msg.quality,
-      workers: 2,
+      workers: msg.workers,
       useGpu: true,
       strictness: 'best-effort'
     })

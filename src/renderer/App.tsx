@@ -14,6 +14,7 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { Chat } from './features/chat/Chat'
 import { CommandPalette } from './features/command/CommandPalette'
 import { GotoSheet } from './features/command/GotoSheet'
+import { ShortcutsSheet } from './features/command/ShortcutsSheet'
 import { useShortcuts } from './features/command/useShortcuts'
 import { CaptionStudio } from './features/captions/CaptionStudio'
 import { ExportBar, ExportSheet } from './features/export/ExportSheet'
@@ -212,6 +213,7 @@ export default function App(): ReactElement {
       <NewProjectSheet />
       <ExportSheet />
       <GotoSheet />
+      <ShortcutsSheet />
       <CaptionStudio />
       <Toaster
         position="top-center"

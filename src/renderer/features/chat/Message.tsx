@@ -21,6 +21,7 @@ import { Button } from '../../components/ui/button'
 import { cn } from '../../lib/cn'
 import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
+import { stopLuca } from '../../stores/queue'
 import type { ToolPart } from './activity'
 import { Steps } from './Steps'
 
@@ -189,7 +190,6 @@ export function AssistantMessage({
   /** The user message this reply answers, for Try again. */
   request?: ChatMessage
 }): ReactElement {
-  const stop = useChat((s) => s.stop)
   const resend = useChat((s) => s.resend)
   const [copied, setCopied] = useState(false)
   const parts: ChatContentPart[] =
@@ -238,7 +238,7 @@ export function AssistantMessage({
           />
         )
       })}
-      {thinking ? <Thinking since={m.createdAt} onStop={() => void stop()} /> : null}
+      {thinking ? <Thinking since={m.createdAt} onStop={() => void stopLuca()} /> : null}
       {m.isError && !m.pending ? (
         <div
           className={cn(
@@ -308,6 +308,20 @@ function PermissionCard({
   const bash = part.tool === 'Bash'
   const exact = bash ? String(input.command ?? '') : JSON.stringify(input, null, 2)
   const scope = part.rule ? allowScope(part.rule) : null
+
+  // ⌘↩ allows once, ⇧⌘↩ always (when offered): Luca is blocked until you answer, so this comes
+  // before the queue
+  useEffect(() => {
+    if (part.resolved) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      void decide(part.id, e.shiftKey && scope ? 'allow-always' : 'allow')
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [part.id, part.resolved, scope, decide])
 
   if (part.resolved) {
     const denied = part.resolved === 'deny'
@@ -381,7 +395,7 @@ function PermissionCard({
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5 pl-[38px]">
         <Button size="sm" variant="primary" onClick={() => void decide(part.id, 'allow')}>
-          Allow once
+          Allow once <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↩</kbd>
         </Button>
         {scope ? (
           <Button
@@ -389,7 +403,7 @@ function PermissionCard({
             onClick={() => void decide(part.id, 'allow-always')}
             title={`Lets ${scope} run in this project without asking again`}
           >
-            Always allow
+            Always allow <kbd className="ml-0.5 font-mono text-[10px] opacity-60">⇧⌘↩</kbd>
           </Button>
         ) : null}
         <Button size="sm" variant="ghost" onClick={() => void decide(part.id, 'deny')}>

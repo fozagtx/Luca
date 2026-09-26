@@ -143,7 +143,7 @@ export class LucaServer {
     if (url.pathname === RUNTIME_PATH) {
       const file = hyperframesRuntime()
       if (!file) {
-        res.writeHead(404).end('HyperFrames runtime not found')
+        res.writeHead(404).end('Preview engine not found')
         return
       }
       this.sendFile(req, res, resolve(file, '..'), 'hyperframe.runtime.iife.js', {})

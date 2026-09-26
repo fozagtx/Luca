@@ -13,6 +13,7 @@ import { cn } from '../../lib/cn'
 import { catalogChip, hasCatalogDrag, readCatalogDrag } from '../../lib/drag'
 import { useChat } from '../../stores/chat'
 import { luca } from '../../lib/luca'
+import { stopLuca, useQueue } from '../../stores/queue'
 import { usePlayer } from '../../stores/player'
 import { useStart } from '../../stores/start'
 import { useVoice } from '../../stores/voice'
@@ -37,7 +38,6 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const addChip = useChat((s) => s.addChip)
   const removeChip = useChat((s) => s.removeChip)
   const send = useChat((s) => s.send)
-  const stop = useChat((s) => s.stop)
   const state = useChat((s) => s.state)
   const error = useChat((s) => s.error)
   const voiceMode = useVoice((s) => s.mode)
@@ -56,6 +56,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const starting = useStart((s) => s.busy)
   const disabled = starting
   const canSend = hasText || (noProject && startFiles.length > 0)
+  const sendLabel = noProject ? 'Start the video' : working ? 'Add to the queue' : 'Send'
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -67,6 +68,12 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const submit = (): void => {
     const text = draft.trim()
     if (!canSend || disabled) return
+    // Luca is busy: line it up in the queue instead of dropping it into the conversation
+    if (!noProject && (working || useQueue.getState().items.some((i) => i.status !== 'review'))) {
+      useQueue.getState().enqueue(text, chips, 'typed')
+      useChat.setState({ draft: '', chips: [] })
+      return
+    }
     // read at send time: subscribing would re-render the composer on every frame of playback
     void send(text, { time: usePlayer.getState().currentTime })
   }
@@ -124,8 +131,8 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
             if (ok) void startVoice(needsKey)
           }}
         >
-          Voice input streams your microphone to AssemblyAI’s real-time speech-to-text while you
-          talk. The key is stored in the macOS Keychain (safeStorage).
+          Voice input turns your speech into text live with AssemblyAI while you talk. Nothing is
+          sent to Luca until you approve it. Your key stays in the macOS Keychain.
         </AssemblyAiKeyCard>
       ) : null}
       {noProject && !voiceMode ? (
@@ -231,7 +238,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                 {starting
                   ? 'Starting your video…'
                   : working && hasText
-                    ? 'Luca will read this next'
+                    ? '↩ to add to the queue'
                     : canSend
                       ? noProject
                         ? '↩ to start'
@@ -273,7 +280,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                     aria-label="Stop"
                     onClick={(e) => {
                       e.stopPropagation()
-                      void stop()
+                      void stopLuca()
                     }}
                     className="relative flex size-8 items-center justify-center rounded-full bg-text text-bg transition-transform duration-150 active:scale-90"
                   >
@@ -282,10 +289,10 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                   </button>
                 </Tip>
               ) : (
-                <Tip label={noProject ? 'Start the video' : 'Send'} shortcut="↩" side="top">
+                <Tip label={sendLabel} shortcut="↩" side="top">
                   <button
                     type="button"
-                    aria-label={noProject ? 'Start the video' : 'Send'}
+                    aria-label={sendLabel}
                     disabled={disabled || !canSend}
                     onClick={(e) => {
                       e.stopPropagation()

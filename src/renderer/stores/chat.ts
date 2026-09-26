@@ -19,8 +19,16 @@ type ChatStore = {
   setProject: (dir: string | null) => void
   /** Load history. Leaves the draft and chips alone: the panel remounts whenever it is shown. */
   load: () => Promise<void>
-  /** `keepDraft` leaves the composer text alone (voice turns); chips are always consumed. */
-  send: (text: string, context: unknown, opts?: { keepDraft?: boolean }) => Promise<void>
+  /**
+   * `keepDraft` leaves the composer text alone (queued and spoken requests). Without `chips` the
+   * composer's chips go with the message; with them, the composer's chips stay put. Resolves
+   * false when Luca couldn't take the message.
+   */
+  send: (
+    text: string,
+    context: unknown,
+    opts?: { keepDraft?: boolean; chips?: Chip[] }
+  ) => Promise<boolean>
   /** Send a past request again, with its chips and context, leaving the draft alone (Try again). */
   resend: (request: ChatMessage) => Promise<void>
   stop: () => Promise<void>
@@ -106,23 +114,26 @@ export const useChat = create<ChatStore>((set, get) => ({
       const ok = await useStart.getState().create(text)
       if (!ok)
         set({ error: useStart.getState().error, ...(opts?.keepDraft ? {} : { draft: text }) })
-      return
+      return ok
     }
-    const chips = get().chips
-    set(
-      opts?.keepDraft
-        ? { chips: [], error: null }
-        : { chips: [], draft: '', auto: null, error: null }
-    )
+    const own = opts?.chips
+    const chips = own ?? get().chips
+    set({
+      error: null,
+      ...(own ? {} : { chips: [] }),
+      ...(opts?.keepDraft ? {} : { draft: '', auto: null })
+    })
     try {
       await luca.agent.send({ text, chips, context })
+      return true
     } catch (err) {
       const restore = !opts?.keepDraft || !get().draft.trim()
       set({
         error: String(err instanceof Error ? err.message : err),
-        chips,
-        ...(restore ? { draft: text } : {})
+        ...(own ? {} : { chips }),
+        ...(restore && !own ? { draft: text } : {})
       })
+      return false
     }
   },
   resend: async (request) => {
