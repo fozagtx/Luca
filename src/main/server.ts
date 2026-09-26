@@ -1,0 +1,220 @@
+import { randomBytes } from 'node:crypto'
+import { createReadStream, statSync } from 'node:fs'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { AddressInfo } from 'node:net'
+import { extname, join, normalize, resolve, sep } from 'node:path'
+
+export const DEV_PORT = Number(process.env.LUCA_DEV_PORT ?? 41733)
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.wav': 'audio/wav',
+  '.flac': 'audio/flac',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.wasm': 'application/wasm',
+  '.bin': 'application/octet-stream'
+}
+
+export type ProjectResolver = (id: string) => string | null
+
+export class LucaServer {
+  readonly token = randomBytes(24).toString('hex')
+  private server: Server | null = null
+  private port = 0
+  constructor(
+    private uiDir: string | null,
+    private resolveProject: ProjectResolver
+  ) {}
+
+  get baseUrl(): string {
+    return `http://127.0.0.1:${this.port}`
+  }
+
+  async start(preferredPort = 0): Promise<string> {
+    this.server = createServer((req, res) => {
+      this.handle(req, res).catch((err) => {
+        if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' })
+        res.end(`Server error: ${String(err)}`)
+      })
+    })
+    await new Promise<void>((ok, fail) => {
+      this.server!.once('error', fail)
+      this.server!.listen(preferredPort, '127.0.0.1', () => ok())
+    })
+    this.port = (this.server.address() as AddressInfo).port
+    return this.baseUrl
+  }
+
+  stop(): void {
+    this.server?.close()
+    this.server = null
+  }
+
+  private hasToken(req: IncomingMessage, url: URL): boolean {
+    if (url.searchParams.get('token') === this.token) return true
+    const cookie = req.headers.cookie ?? ''
+    return cookie.split(';').some((c) => c.trim() === `luca=${this.token}`)
+  }
+
+  private setCookie(res: ServerResponse): void {
+    res.setHeader('Set-Cookie', `luca=${this.token}; Path=/; HttpOnly; SameSite=Lax`)
+  }
+
+  private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const url = new URL(req.url ?? '/', this.baseUrl)
+    const host = req.headers.host ?? ''
+    // Only the renderer (same origin, or the Vite dev proxy) may talk to us.
+    if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host)) {
+      res.writeHead(403).end('Forbidden')
+      return
+    }
+
+    if (url.pathname === '/api/session') {
+      if (!this.hasToken(req, url)) {
+        res.writeHead(401).end('Unauthorized')
+        return
+      }
+      this.setCookie(res)
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }))
+      return
+    }
+
+    if (url.pathname === '/api/health') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }))
+      return
+    }
+
+    if (!this.hasToken(req, url)) {
+      res.writeHead(401, { 'content-type': 'text/plain' }).end('Unauthorized')
+      return
+    }
+
+    if (url.pathname.startsWith('/p/')) {
+      const [, , id, ...rest] = url.pathname.split('/')
+      const dir = id ? this.resolveProject(decodeURIComponent(id)) : null
+      if (!dir) {
+        res.writeHead(404).end('Unknown project')
+        return
+      }
+      const rel = rest.map(decodeURIComponent).join('/') || 'index.html'
+      this.sendFile(req, res, dir, rel, { noStore: true })
+      return
+    }
+
+    if (this.uiDir) {
+      const rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1)
+      if (url.pathname === '/' || url.searchParams.has('token')) this.setCookie(res)
+      this.sendFile(req, res, this.uiDir, rel, { fallbackIndex: true })
+      return
+    }
+
+    res.writeHead(404).end('Not found')
+  }
+
+  private sendFile(
+    req: IncomingMessage,
+    res: ServerResponse,
+    root: string,
+    rel: string,
+    opts: { noStore?: boolean; fallbackIndex?: boolean }
+  ): void {
+    const rootAbs = resolve(root)
+    let abs = normalize(join(rootAbs, rel))
+    if (!abs.startsWith(rootAbs + sep) && abs !== rootAbs) {
+      res.writeHead(403).end('Forbidden')
+      return
+    }
+    let st: ReturnType<typeof statSync>
+    try {
+      st = statSync(abs)
+      if (st.isDirectory()) {
+        abs = join(abs, 'index.html')
+        st = statSync(abs)
+      }
+    } catch {
+      if (opts.fallbackIndex) {
+        abs = join(rootAbs, 'index.html')
+        try {
+          st = statSync(abs)
+        } catch {
+          res.writeHead(404).end('Not found')
+          return
+        }
+      } else {
+        res.writeHead(404).end('Not found')
+        return
+      }
+    }
+
+    const type = MIME[extname(abs).toLowerCase()] ?? 'application/octet-stream'
+    const size = st.size
+    const headers: Record<string, string> = {
+      'content-type': type,
+      'accept-ranges': 'bytes',
+      'cache-control': opts.noStore ? 'no-store' : 'no-cache',
+      'last-modified': st.mtime.toUTCString()
+    }
+
+    const range = req.headers.range
+    if (range) {
+      const m = /^bytes=(\d*)-(\d*)$/.exec(range)
+      if (!m) {
+        res.writeHead(416, { 'content-range': `bytes */${size}` }).end()
+        return
+      }
+      let start = m[1] ? Number(m[1]) : NaN
+      let end = m[2] ? Number(m[2]) : NaN
+      if (Number.isNaN(start)) {
+        // suffix range: last N bytes
+        start = Math.max(0, size - end)
+        end = size - 1
+      } else if (Number.isNaN(end)) {
+        end = size - 1
+      }
+      end = Math.min(end, size - 1)
+      if (start > end || start >= size) {
+        res.writeHead(416, { 'content-range': `bytes */${size}` }).end()
+        return
+      }
+      headers['content-range'] = `bytes ${start}-${end}/${size}`
+      headers['content-length'] = String(end - start + 1)
+      res.writeHead(206, headers)
+      if (req.method === 'HEAD') {
+        res.end()
+        return
+      }
+      createReadStream(abs, { start, end }).pipe(res)
+      return
+    }
+
+    headers['content-length'] = String(size)
+    res.writeHead(200, headers)
+    if (req.method === 'HEAD') {
+      res.end()
+      return
+    }
+    createReadStream(abs).pipe(res)
+  }
+}

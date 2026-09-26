@@ -1,0 +1,35 @@
+import tailwindcss from '@tailwindcss/vite'
+import react from '@vitejs/plugin-react'
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { resolve } from 'path'
+
+const lucaDevPort = Number(process.env.LUCA_DEV_PORT ?? 41733)
+
+export default defineConfig({
+  main: {
+    plugins: [externalizeDepsPlugin()],
+    resolve: { alias: { '@shared': resolve('src/shared') } }
+  },
+  preload: {
+    plugins: [externalizeDepsPlugin()],
+    resolve: { alias: { '@shared': resolve('src/shared') } }
+  },
+  renderer: {
+    root: 'src/renderer',
+    build: { rollupOptions: { input: resolve('src/renderer/index.html') } },
+    resolve: {
+      alias: {
+        '@renderer': resolve('src/renderer'),
+        '@shared': resolve('src/shared')
+      }
+    },
+    plugins: [react(), tailwindcss()],
+    server: {
+      // Dev only: the UI is served by Vite, project files and the token cookie come from the Luca server.
+      proxy: {
+        '/p': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false },
+        '/api': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false }
+      }
+    }
+  }
+})
