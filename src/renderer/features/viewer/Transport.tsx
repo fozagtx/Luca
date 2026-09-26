@@ -18,22 +18,20 @@ import { timecode } from '../../lib/timecode'
 import { usePlayer } from '../../stores/player'
 import { useTimeline } from '../../stores/timeline'
 import { useUi } from '../../stores/ui'
+import { PlayheadTimecode } from './PlayheadTimecode'
 
 export function Transport(): ReactElement {
-  const {
-    playing,
-    currentTime,
-    duration,
-    fps,
-    muted,
-    volume,
-    togglePlay,
-    step,
-    seek,
-    toggleMute,
-    setVolume,
-    ready
-  } = usePlayer()
+  const playing = usePlayer((s) => s.playing)
+  const duration = usePlayer((s) => s.duration)
+  const fps = usePlayer((s) => s.fps)
+  const muted = usePlayer((s) => s.muted)
+  const volume = usePlayer((s) => s.volume)
+  const ready = usePlayer((s) => s.ready)
+  const togglePlay = usePlayer((s) => s.togglePlay)
+  const step = usePlayer((s) => s.step)
+  const seek = usePlayer((s) => s.seek)
+  const toggleMute = usePlayer((s) => s.toggleMute)
+  const setVolume = usePlayer((s) => s.setVolume)
   const setGoto = useUi((s) => s.setGoto)
   const zoom = useTimeline((s) => s.zoom)
   const zoomBy = useTimeline((s) => s.zoomBy)
@@ -130,7 +128,7 @@ export function Transport(): ReactElement {
               className="timecode rounded-[4px] px-1.5 py-0.5 text-text hover:bg-hover"
               onClick={() => setGoto(true)}
             >
-              {timecode(currentTime, fps)}
+              <PlayheadTimecode />
             </button>
           </Tip>
           <span className="timecode text-text-3">/ {timecode(duration, fps)}</span>

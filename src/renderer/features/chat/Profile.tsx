@@ -1,4 +1,16 @@
-import { Captions, Scissors, Sparkles, Type, Undo2, Wand2, type LucideIcon } from 'lucide-react'
+import {
+  BarChart3,
+  Captions,
+  Images,
+  Quote,
+  Rocket,
+  Scissors,
+  Sparkles,
+  Type,
+  Undo2,
+  Wand2,
+  type LucideIcon
+} from 'lucide-react'
 import type { ReactElement } from 'react'
 import avatar from '../../assets/luca-avatar.png'
 import { cn } from '../../lib/cn'
@@ -70,17 +82,29 @@ const suggestions: { icon: LucideIcon; text: string }[] = [
   { icon: Wand2, text: 'Add a lower third with my name' }
 ]
 
-/** Starter prompts (prompt-kit PromptSuggestion). They fill the box so people can adjust first. */
-export function Suggestions({ disabled }: { disabled: boolean }): ReactElement {
+const starts: { icon: LucideIcon; text: string }[] = [
+  { icon: Rocket, text: 'A 15-second launch teaser with bold kinetic titles' },
+  { icon: Quote, text: 'An animated quote card for Instagram' },
+  { icon: BarChart3, text: 'A short explainer with an animated chart' },
+  { icon: Images, text: 'A photo slideshow with smooth camera moves' }
+]
+
+/**
+ * Starter prompts (prompt-kit PromptSuggestion). They fill the box so people can adjust first.
+ * With no project open they are ideas for a new video instead of edits.
+ */
+export function Suggestions({ start }: { start: boolean }): ReactElement {
   const fillDraft = useChat((s) => s.fillDraft)
+  const list = start ? starts : suggestions
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="px-1 pb-0.5 text-[11px] font-medium text-text-3">Try asking</div>
-      {suggestions.map((s, i) => (
+      <div className="px-1 pb-0.5 text-[11px] font-medium text-text-3">
+        {start ? 'Start a new video' : 'Try asking'}
+      </div>
+      {list.map((s, i) => (
         <button
           key={s.text}
           type="button"
-          disabled={disabled}
           onClick={() => {
             fillDraft(s.text)
             requestAnimationFrame(() => document.getElementById('chat-composer')?.focus())

@@ -13,6 +13,7 @@ import type { RemocnItem } from '../shared/types'
 import bundled from './catalog/remocn.json'
 import { childEnv, run, which } from './env'
 import { readTimeline } from './hyperframes'
+import { insertIntoRoot } from './html'
 import { appDataDir } from './settings'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -34,10 +35,10 @@ export function studioStatus(): StudioStatus {
   const dir = studioDir()
   if (!existsSync(join(dir, 'package.json'))) return { ready: false, step: 'not set up' }
   if (!existsSync(join(dir, 'node_modules', 'remotion')))
-    return { ready: false, step: 'dependencies missing' }
+    return { ready: false, step: 'not finished' }
   const components = join(dir, 'components.json')
   if (!existsSync(components) || !readFileSync(components, 'utf8').includes('remocn.dev'))
-    return { ready: false, step: 'shadcn registry missing' }
+    return { ready: false, step: 'not finished' }
   return { ready: true }
 }
 
@@ -65,7 +66,7 @@ export function setupStudio(): Promise<{ ok: boolean; error?: string }> {
     const parent = dirname(dir)
     mkdirSync(parent, { recursive: true })
     if (!existsSync(join(dir, 'package.json'))) {
-      setupStep = 'Creating Remotion workspace'
+      setupStep = 'Creating the animation workspace'
       const r = await npx(['create-video@latest', '--yes', '--blank', basename(dir)], {
         cwd: parent,
         timeoutMs: 900_000
@@ -73,7 +74,7 @@ export function setupStudio(): Promise<{ ok: boolean; error?: string }> {
       if (r.code !== 0 || !existsSync(join(dir, 'package.json'))) return fail('create-video', r)
     }
     if (!existsSync(join(dir, 'node_modules', 'remotion'))) {
-      setupStep = 'Installing dependencies'
+      setupStep = 'Installing what it needs'
       const npm = (await which('npm')) ?? 'npm'
       const env = await childEnv({ CI: '1' })
       const r = await run(npm, ['install', '--no-audit', '--no-fund'], {
@@ -85,7 +86,7 @@ export function setupStudio(): Promise<{ ok: boolean; error?: string }> {
     }
     const components = join(dir, 'components.json')
     if (!existsSync(components)) {
-      setupStep = 'Initialising shadcn'
+      setupStep = 'Getting the animations ready'
       const r = await npx(
         ['shadcn@latest', 'init', '--yes', '--defaults', '--base-color', 'neutral'],
         {
@@ -101,10 +102,10 @@ export function setupStudio(): Promise<{ ok: boolean; error?: string }> {
       cfg.registries = { ...(cfg.registries ?? {}), '@remocn': 'https://remocn.dev/r/{name}.json' }
       writeFileSync(components, JSON.stringify(cfg, null, 2) + '\n')
     }
-    setupStep = 'Downloading Remotion browser'
+    setupStep = 'Downloading the animation player'
     const b = await npx(['remotion', 'browser', 'ensure'], { cwd: dir })
     if (b.code !== 0) return fail('remotion browser ensure', b)
-    setupStep = 'Installing remocn skill'
+    setupStep = 'Teaching Luca the extra animations'
     const s = await npx(['skills', 'add', 'Remocn/remocn', '--yes'], {
       cwd: dir,
       timeoutMs: 300_000
@@ -205,7 +206,7 @@ export async function installComponent(
   name: string
 ): Promise<{ ok: boolean; importPath?: string; docs?: string; error?: string }> {
   const st = studioStatus()
-  if (!st.ready) return { ok: false, error: `Remocn studio is not ready (${st.step}).` }
+  if (!st.ready) return { ok: false, error: `Extras are not set up yet (${st.step}).` }
   const dir = studioDir()
   const target = join(dir, 'components', 'remocn', `${name}.tsx`)
   if (!existsSync(target)) {
@@ -289,7 +290,7 @@ export async function placeComponent(
   args: { clipId: string; start: number; track?: number }
 ): Promise<{ ok: boolean; file?: string; reused?: boolean; error?: string }> {
   const st = studioStatus()
-  if (!st.ready) return { ok: false, error: `Remocn studio is not ready (${st.step}).` }
+  if (!st.ready) return { ok: false, error: `Extras are not set up yet (${st.step}).` }
   if (!/^[a-z0-9][a-z0-9-_]*$/i.test(args.clipId))
     return { ok: false, error: 'clipId must be alphanumeric with dashes' }
   const wrapper = join(projectDir, 'remocn', `${args.clipId}.tsx`)
@@ -377,21 +378,4 @@ function overlayTrack(tl: { tracks: { index: number; kind: string }[] }): number
   let i = base
   while (used.has(i) && tl.tracks.find((t) => t.index === i)?.kind === 'audio') i++
   return i
-}
-
-/** Append `fragment` as the last child of the root composition element. */
-function insertIntoRoot(html: string, fragment: string): string | null {
-  const open = /<(div|section|main)\b[^>]*data-composition-id="[^"]+"[^>]*>/i.exec(html)
-  if (!open) return null
-  const tagName = open[1].toLowerCase()
-  const re = new RegExp(`<${tagName}\\b[^>]*>|</${tagName}>`, 'gi')
-  re.lastIndex = open.index + open[0].length
-  let depth = 1
-  let m: RegExpExecArray | null
-  while ((m = re.exec(html))) {
-    if (m[0].startsWith('</')) depth--
-    else if (!m[0].endsWith('/>')) depth++
-    if (depth === 0) return html.slice(0, m.index) + fragment + html.slice(m.index)
-  }
-  return null
 }

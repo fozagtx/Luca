@@ -33,8 +33,8 @@ import { askLuca, dragOf } from './library-actions'
 
 const sources = [
   { id: 'all', label: 'All' },
-  { id: 'hyperframes', label: 'HyperFrames' },
-  { id: 'remocn', label: 'Remocn' }
+  { id: 'hyperframes', label: 'Built-in' },
+  { id: 'remocn', label: 'Extras' }
 ] as const satisfies readonly { id: CatalogSource; label: string }[]
 
 export function CatalogTab(): ReactElement {
@@ -98,7 +98,7 @@ export function CatalogTab(): ReactElement {
         </Tip>
       </PaneHead>
 
-      <div className="flex flex-col gap-2 px-2.5 pt-2.5 pb-2">
+      <div className="flex flex-col gap-2 px-3 pt-3 pb-2">
         <SearchField value={query} onChange={setQuery} total={library?.length} />
         <Segmented
           items={[...sources]}
@@ -134,7 +134,7 @@ export function CatalogTab(): ReactElement {
           hint="Try a simpler word, like “title”, “captions” or “transition”."
         />
       ) : (
-        <div ref={listRef} className="scroll min-h-0 flex-1 px-2.5 pb-3">
+        <div ref={listRef} className="scroll min-h-0 flex-1 px-3 pb-3">
           {browsing ? (
             <Sections items={results} onSeeAll={setCategory} disabled={!hasProject} />
           ) : (
@@ -432,7 +432,7 @@ function Card({ item, disabled }: { item: LibraryItem; disabled: boolean }): Rea
     >
       <ItemPreview item={item} hover={hover} className="rounded-[6px]">
         <span className="absolute top-1 left-1 rounded-[4px] bg-black/45 px-1 py-px text-[9px] font-medium tracking-[0.02em] text-white backdrop-blur-sm">
-          {item.source === 'remocn' ? 'Remocn' : item.type === 'block' ? 'Block' : 'Component'}
+          {item.source === 'remocn' ? 'Extra' : item.type === 'block' ? 'Block' : 'Component'}
         </span>
         {disabled ? null : (
           <span className="absolute top-1 right-1 flex size-6 scale-90 items-center justify-center rounded-full bg-white/90 text-[#111] opacity-0 shadow-sm transition-[opacity,transform] duration-150 group-hover:scale-100 group-hover:opacity-100">
@@ -449,7 +449,7 @@ function Card({ item, disabled }: { item: LibraryItem; disabled: boolean }): Rea
 
 function SkeletonGrid(): ReactElement {
   return (
-    <div className="flex-1 overflow-hidden px-2.5 pt-1">
+    <div className="flex-1 overflow-hidden px-3 pt-1">
       <div className="skeleton mb-2.5 h-3 w-24 rounded-[3px]" />
       <div className="grid grid-cols-2 gap-2.5">
         {Array.from({ length: 8 }, (_, i) => (
@@ -467,10 +467,10 @@ function RemocnSetup({ studio }: { studio: StudioStatus }): ReactElement {
   const settingUp = useCatalog((s) => s.settingUp)
   const err = useCatalog((s) => s.setupError) ?? studio.error ?? null
   return (
-    <div className="card mx-2.5 mb-2 p-2.5 text-[11.5px] text-text-2">
-      <div className="font-medium text-text">Remocn needs a one-time setup</div>
+    <div className="card mx-3 mb-2 p-3 text-[11.5px] text-text-2">
+      <div className="font-medium text-text">Extras need a one-time setup</div>
       <p className="mt-0.5 leading-[1.45]">
-        Luca prepares a small animation workspace so Remocn components can play in your video. It
+        Luca prepares a small animation workspace so the extra animations can play in your video. It
         takes about two minutes.
       </p>
       {err ? (
@@ -483,7 +483,7 @@ function RemocnSetup({ studio }: { studio: StudioStatus }): ReactElement {
           disabled={settingUp}
           onClick={() => void useCatalog.getState().setupRemocn()}
         >
-          {settingUp ? 'Setting up…' : 'Set up Remocn'}
+          {settingUp ? 'Setting up…' : 'Set up extras'}
         </Button>
         {settingUp && studio.step ? (
           <span className="shimmer-text text-[11px]">{studio.step}</span>

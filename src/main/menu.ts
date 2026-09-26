@@ -34,7 +34,11 @@ export function buildAppMenu(): void {
         { label: 'Open Project…', accelerator: 'Cmd+O', click: () => send('open-project') },
         { label: 'Open Recent', submenu: [{ label: 'Clear Menu', enabled: false }] },
         { type: 'separator' },
-        { label: 'Close Project', accelerator: 'Cmd+Shift+W', click: () => send('close-project') },
+        {
+          label: 'Close Project and Go Home',
+          accelerator: 'Cmd+Shift+W',
+          click: () => send('close-project')
+        },
         { type: 'separator' },
         { label: 'Export…', accelerator: 'Cmd+E', click: () => send('export') },
         { label: 'Reveal in Finder', accelerator: 'Cmd+Shift+R', click: () => send('reveal') },
@@ -55,7 +59,8 @@ export function buildAppMenu(): void {
         { label: 'Split at Playhead', click: () => send('split') },
         { label: 'Delete Clip', click: () => send('delete-clip') },
         { type: 'separator' },
-        { label: 'Clean Edit…', accelerator: 'Cmd+Shift+E', click: () => send('clean-edit') }
+        { label: 'Clean Edit…', accelerator: 'Cmd+Shift+E', click: () => send('clean-edit') },
+        { label: 'Captions…', click: () => send('captions') }
       ]
     },
     {

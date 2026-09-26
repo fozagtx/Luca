@@ -1,9 +1,12 @@
 import { Command } from 'cmdk'
 import {
+  AudioLines,
   Clock,
   Crosshair,
   FolderOpen,
   History,
+  House,
+  Mic,
   Moon,
   Palette,
   Plus,
@@ -16,6 +19,8 @@ import { luca } from '../../lib/luca'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
+import { useVoice } from '../../stores/voice'
+import { goHome } from './go-home'
 
 type Item = {
   id: string
@@ -56,6 +61,14 @@ export function CommandPalette(): ReactElement {
       }
     },
     {
+      id: 'home',
+      label: 'Go Home (close project)',
+      shortcut: '⇧⌘W',
+      icon: <House size={14} strokeWidth={1.5} />,
+      run: () => void goHome(),
+      needsProject: true
+    },
+    {
       id: 'export',
       label: 'Export…',
       shortcut: '⌘E',
@@ -76,6 +89,20 @@ export function CommandPalette(): ReactElement {
       shortcut: '⇧⌘E',
       icon: <Scissors size={14} strokeWidth={1.5} />,
       run: () => ui.setTab('transcript'),
+      needsProject: true
+    },
+    {
+      id: 'dictate',
+      label: 'Dictate a message',
+      icon: <Mic size={14} strokeWidth={1.5} />,
+      run: () => void useVoice.getState().start('dictate'),
+      needsProject: true
+    },
+    {
+      id: 'voice',
+      label: 'Voice mode: talk with Luca',
+      icon: <AudioLines size={14} strokeWidth={1.5} />,
+      run: () => void useVoice.getState().start('converse'),
       needsProject: true
     },
     {

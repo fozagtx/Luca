@@ -1,6 +1,6 @@
 import type { ChatMessage } from '@shared/types'
 import { ArrowDown, Check, ChevronRight, Copy, LogIn, RotateCcw } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactElement } from 'react'
+import { memo, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useStickToBottom } from '../../components/ai/use-stick-to-bottom'
 import { Button } from '../../components/ui/button'
 import { cn } from '../../lib/cn'
@@ -10,9 +10,17 @@ import { Composer } from './Composer'
 import { AssistantMessage, UserMessage } from './Message'
 import { LucaAvatar, LucaProfile, Suggestions } from './Profile'
 
+// a streamed reply or a new step re-renders its own message, not the whole conversation
+const UserItem = memo(UserMessage)
+const AssistantItem = memo(AssistantMessage)
+
 export function Chat(): ReactElement {
   const projectDir = useProject((s) => s.project?.dir ?? null)
-  const { messages, state, detail, bind, load } = useChat()
+  const messages = useChat((s) => s.messages)
+  const state = useChat((s) => s.state)
+  const detail = useChat((s) => s.detail)
+  const bind = useChat((s) => s.bind)
+  const load = useChat((s) => s.load)
 
   useEffect(() => {
     bind()
@@ -36,7 +44,7 @@ export function Chat(): ReactElement {
         </div>
       ) : null}
       <Messages messages={messages} disabled={!projectDir} />
-      <Composer disabled={!projectDir} />
+      <Composer noProject={!projectDir} />
     </section>
   )
 }
@@ -95,12 +103,12 @@ function Messages({
       <div ref={scrollRef} className="scroll h-full">
         <div
           ref={contentRef}
-          className={cn('flex min-h-full flex-col px-3.5 pb-4', empty && 'justify-center')}
+          className={cn('flex min-h-full flex-col px-3 pb-4', empty && 'justify-center')}
         >
           <LucaProfile compact={!empty} live={working} />
           {empty ? (
             <div className="mx-auto w-full max-w-[340px] pt-1">
-              <Suggestions disabled={disabled} />
+              <Suggestions start={disabled} />
             </div>
           ) : (
             <div className="flex flex-col gap-4">
@@ -112,9 +120,9 @@ function Messages({
               {messages.map((m) => {
                 const animate = new Date(m.createdAt).getTime() > mountedAt - 500
                 return m.role === 'user' ? (
-                  <UserMessage key={m.id} m={m} animate={animate} />
+                  <UserItem key={m.id} m={m} animate={animate} />
                 ) : (
-                  <AssistantMessage
+                  <AssistantItem
                     key={m.id}
                     m={m}
                     animate={animate}
@@ -145,7 +153,8 @@ function Messages({
 }
 
 function Onboarding({ state, detail }: { state: string; detail?: string }): ReactElement {
-  const { signIn, retry } = useChat()
+  const signIn = useChat((s) => s.signIn)
+  const retry = useChat((s) => s.retry)
   const [cmd, setCmd] = useState('npm install -g @anthropic-ai/claude-code')
   const [copied, setCopied] = useState(false)
   const [showDetail, setShowDetail] = useState(false)

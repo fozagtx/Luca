@@ -2,6 +2,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
 import { library } from './library'
+import { HYPERFRAMES } from './env'
 import { installComponent, placeComponent, studioStatus } from './remocn'
 
 const text = (data: unknown): { content: { type: 'text'; text: string }[] } => ({
@@ -26,7 +27,7 @@ function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown>
     return {
       ...base,
       ...(i.duration ? { durationSeconds: Math.round(i.duration * 10) / 10 } : {}),
-      add: `npx hyperframes add ${i.name} --json`
+      add: `npx ${HYPERFRAMES} add ${i.name} --json`
     }
   return {
     ...base,
@@ -98,7 +99,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
           if (!st.ready)
             return text({
               ok: false,
-              error: `Remocn studio not ready (${st.step ?? 'unknown'}). Pick a HyperFrames item from catalog_search instead; only if the user wants this exact component, ask them to set up Remocn from Catalog › Remocn (about two minutes).`
+              error: `Remocn studio not ready (${st.step ?? 'unknown'}). Pick a HyperFrames item from catalog_search instead; only if the user wants this exact component, ask them to open Catalog › Extras and press “Set up extras” (about two minutes).`
             })
           return text(await installComponent(name))
         }

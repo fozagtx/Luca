@@ -40,8 +40,13 @@ const api: LucaApi = {
     close: () => invoke(C.projectClose),
     current: () => invoke(C.projectCurrent),
     recent: () => invoke(C.projectRecent),
+    start: (args) => invoke(C.projectStart, args),
     pickVideo: () => invoke(C.projectPickVideo),
+    pickMedia: () => invoke(C.projectPickMedia),
+    mediaPreview: (path) => invoke(C.projectMediaPreview, path),
     pickProjectDir: () => invoke(C.projectPickDir),
+    forget: (dir) => invoke(C.projectForget, dir),
+    trash: (dir) => invoke(C.projectTrash, dir),
     files: () => invoke(C.projectFiles),
     readFile: (rel) => invoke(C.projectReadFile, rel),
     revealInFinder: (rel) => invoke(C.projectReveal, rel),
@@ -49,13 +54,15 @@ const api: LucaApi = {
     onOpened: (cb) => on(C.projectOpened, cb),
     onRecentChanged: (cb) => on(C.projectRecentChanged, cb),
     onDropFile: (cb) => on(C.projectDropFile, cb),
+    onCreateProgress: (cb) => on(C.projectCreateProgress, cb),
     pathForFile: (file) => webUtils.getPathForFile(file)
   },
   timeline: {
     get: () => invoke(C.timelineGet),
     edit: (edit) => invoke(C.timelineEdit, edit),
     thumbs: () => invoke(C.timelineThumbs),
-    peaks: () => invoke(C.timelinePeaks)
+    peaks: () => invoke(C.timelinePeaks),
+    transform: (t) => invoke(C.timelineTransform, t)
   },
   agent: {
     send: (args) => invoke(C.agentSend, args),
@@ -65,7 +72,7 @@ const api: LucaApi = {
     state: () => invoke(C.agentState),
     restart: () => invoke(C.agentRestart),
     onEvent: (cb) => on(C.agentEvent, cb),
-    onHistory: (cb) => on(C.agentHistoryPush, cb)
+    onMessage: (cb) => on(C.agentMessage, cb)
   },
   catalog: {
     list: (args) => invoke(C.catalogList, args),
@@ -81,7 +88,15 @@ const api: LucaApi = {
     status: () => invoke(C.cleanStatus),
     transcript: () => invoke(C.cleanTranscript),
     edl: () => invoke(C.cleanEdl),
+    transcribe: () => invoke(C.cleanTranscribe),
     onStatus: (cb) => on(C.cleanStatusPush, cb)
+  },
+  captions: {
+    state: () => invoke(C.captionsState),
+    words: () => invoke(C.captionsWords),
+    apply: (config) => invoke(C.captionsApply, config),
+    remove: () => invoke(C.captionsRemove),
+    addFonts: () => invoke(C.fontsAdd)
   },
   looks: {
     list: () => invoke(C.looksList),
@@ -105,12 +120,23 @@ const api: LucaApi = {
     freeMemoryMB: () => invoke(C.exportFreeMemory)
   },
   capture: { frame: (rect) => invoke(C.captureFrame, rect) },
+  voice: {
+    micAccess: () => invoke(C.voiceMicAccess),
+    start: (args) => invoke(C.voiceStart, args),
+    audio: (sid, pcm) => ipcRenderer.send(C.voiceAudio, sid, pcm),
+    stop: (sid) => invoke(C.voiceStop, sid),
+    cancel: (sid) => invoke(C.voiceCancel, sid),
+    onEvent: (cb) => on(C.voiceEvent, cb)
+  },
   menu: {
     onCommand: (cb) => on<{ cmd: string; arg?: unknown }>(C.menuCommand, (p) => cb(p.cmd, p.arg)),
     popupClip: (args) => invoke(C.menuPopupClip, args),
     popupLook: (slug) => invoke(C.menuPopupLook, slug)
   },
-  window: { onActive: (cb) => on(C.windowActive, cb) }
+  window: {
+    onActive: (cb) => on(C.windowActive, cb),
+    onFullscreen: (cb) => on(C.windowFullscreen, cb)
+  }
 }
 
 contextBridge.exposeInMainWorld('luca', api)

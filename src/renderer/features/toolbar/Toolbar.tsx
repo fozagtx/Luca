@@ -1,4 +1,14 @@
-import { Crosshair, MessageSquare, Moon, PanelLeft, Sun, Upload } from 'lucide-react'
+import {
+  Captions,
+  Crosshair,
+  House,
+  MessageSquare,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Sun,
+  Upload
+} from 'lucide-react'
 import type { ReactElement } from 'react'
 import { AnimatedButton } from '../../components/ui/animated-button'
 import { Button } from '../../components/ui/button'
@@ -8,6 +18,7 @@ import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
 import higgsfield from '../../assets/higgsfield.png'
+import { goHome } from '../command/go-home'
 import { HistoryPopover } from '../history/HistoryPopover'
 
 const swap =
@@ -73,21 +84,48 @@ function Higgsfield(): ReactElement {
 
 export function Toolbar(): ReactElement {
   const project = useProject((s) => s.project)
-  const { sidebarOpen, chatOpen, toggleSidebar, toggleChat, setExport } = useUi()
+  const sidebarOpen = useUi((s) => s.sidebarOpen)
+  const chatOpen = useUi((s) => s.chatOpen)
+  const setSidebar = useUi((s) => s.setSidebar)
+  const setChat = useUi((s) => s.setChat)
+  const setExport = useUi((s) => s.setExport)
+  const setCaptions = useUi((s) => s.setCaptions)
+  const fullscreen = useUi((s) => s.fullscreen)
   const grab = usePlayer((s) => s.grab)
   const toggleGrab = usePlayer((s) => s.toggleGrab)
 
   return (
-    <header className="drag-region relative flex h-[52px] shrink-0 items-center bg-bg pl-[84px] pr-3">
+    <header
+      className={cn(
+        'drag-region relative flex h-[52px] shrink-0 items-center bg-bg pr-3 transition-[padding] duration-200',
+        // room for the traffic lights, which macOS hides in fullscreen
+        fullscreen ? 'pl-3' : 'pl-[92px]'
+      )}
+    >
       <div className="flex items-center gap-1">
-        <Tip label="Toggle sidebar" shortcut="⇧⌘S">
+        <Tip label="Home: close this project" shortcut="⇧⌘W">
+          <Button
+            variant="icon"
+            disabled={!project}
+            onClick={() => void goHome()}
+            aria-label="Home"
+          >
+            <House size={16} strokeWidth={1.5} />
+          </Button>
+        </Tip>
+        <Tip label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'} shortcut="⇧⌘S">
           <Button
             variant="icon"
             active={sidebarOpen}
-            onClick={toggleSidebar}
-            aria-label="Toggle sidebar"
+            onClick={() => setSidebar(!sidebarOpen)}
+            aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+            aria-pressed={sidebarOpen}
           >
-            <PanelLeft size={16} strokeWidth={1.5} />
+            {sidebarOpen ? (
+              <PanelLeftClose size={16} strokeWidth={1.5} />
+            ) : (
+              <PanelLeftOpen size={16} strokeWidth={1.5} />
+            )}
           </Button>
         </Tip>
         <div className="mx-1.5 h-4 w-px bg-border" />
@@ -114,6 +152,17 @@ export function Toolbar(): ReactElement {
             Grab
           </Button>
         </Tip>
+        <Tip label="Captions: styles and fonts">
+          <Button
+            variant="ghost"
+            disabled={!project}
+            onClick={() => setCaptions(true)}
+            aria-label="Captions"
+          >
+            <Captions size={15} strokeWidth={1.75} />
+            Captions
+          </Button>
+        </Tip>
         <HistoryPopover />
         <AnimatedButton
           size="sm"
@@ -126,8 +175,14 @@ export function Toolbar(): ReactElement {
         </AnimatedButton>
         <div className="mx-1.5 h-4 w-px bg-border" />
         <ThemeToggle />
-        <Tip label="Toggle chat" shortcut="⇧⌘C">
-          <Button variant="icon" active={chatOpen} onClick={toggleChat} aria-label="Toggle chat">
+        <Tip label={chatOpen ? 'Hide chat' : 'Show chat'} shortcut="⇧⌘C">
+          <Button
+            variant="icon"
+            active={chatOpen}
+            onClick={() => setChat(!chatOpen)}
+            aria-label={chatOpen ? 'Hide chat' : 'Show chat'}
+            aria-pressed={chatOpen}
+          >
             <MessageSquare size={16} strokeWidth={1.5} />
           </Button>
         </Tip>

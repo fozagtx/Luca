@@ -1,6 +1,8 @@
 import type { AgentEvent, AgentState, ChatMessage, Chip, PermissionDecision } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
+import { useProject } from './project'
+import { useStart } from './start'
 
 type ChatStore = {
   messages: ChatMessage[]
@@ -17,7 +19,8 @@ type ChatStore = {
   setProject: (dir: string | null) => void
   /** Load history. Leaves the draft and chips alone: the panel remounts whenever it is shown. */
   load: () => Promise<void>
-  send: (text: string, context: unknown) => Promise<void>
+  /** `keepDraft` leaves the composer text alone (voice turns); chips are always consumed. */
+  send: (text: string, context: unknown, opts?: { keepDraft?: boolean }) => Promise<void>
   /** Send a past request again, with its chips and context, leaving the draft alone (Try again). */
   resend: (request: ChatMessage) => Promise<void>
   stop: () => Promise<void>
@@ -39,6 +42,25 @@ type ChatStore = {
   retry: () => Promise<void>
 }
 
+/** Replace the message with the same id (usually the last one) or add it; others keep identity. */
+function upsert(messages: ChatMessage[], m: ChatMessage): ChatMessage[] {
+  const i = messages.findLastIndex((x) => x.id === m.id)
+  return i < 0 ? [...messages, m] : messages.map((x, j) => (j === i ? m : x))
+}
+
+/** Streamed reply text, appended the way main builds the message it sends at the end. */
+function appendText(messages: ChatMessage[], id: string, text: string): ChatMessage[] {
+  const i = messages.findLastIndex((m) => m.id === id)
+  if (i < 0) return messages
+  const m = messages[i]
+  const parts = [...(m.parts ?? [])]
+  const last = parts[parts.length - 1]
+  if (last?.type === 'text') parts[parts.length - 1] = { ...last, text: last.text + text }
+  else parts.push({ type: 'text', text })
+  const next = { ...m, text: m.text + text, parts }
+  return messages.map((x, j) => (j === i ? next : x))
+}
+
 export const useChat = create<ChatStore>((set, get) => ({
   messages: [],
   state: 'idle',
@@ -52,9 +74,11 @@ export const useChat = create<ChatStore>((set, get) => ({
   bind: () => {
     if (get().bound) return
     set({ bound: true })
-    luca.agent.onHistory((messages) => set({ messages }))
+    luca.agent.onMessage((m) => set((s) => ({ messages: upsert(s.messages, m) })))
     luca.agent.onEvent((e: AgentEvent) => {
       if (e.type === 'status') set({ state: e.state, detail: e.detail })
+      else if (e.type === 'text-delta')
+        set((s) => ({ messages: appendText(s.messages, e.id, e.text) }))
     })
   },
 
@@ -68,23 +92,39 @@ export const useChat = create<ChatStore>((set, get) => ({
     set({ messages, state: status.state as AgentState, detail: status.detail })
   },
 
-  send: async (text, context) => {
+  send: async (text, context, opts) => {
+    // with nothing open, a message is an idea for a new video: start one from it
+    if (!useProject.getState().project) {
+      if (!opts?.keepDraft) set({ draft: '', auto: null, error: null })
+      const ok = await useStart.getState().create(text)
+      if (!ok)
+        set({ error: useStart.getState().error, ...(opts?.keepDraft ? {} : { draft: text }) })
+      return
+    }
     const chips = get().chips
-    set({ chips: [], draft: '', auto: null, error: null })
+    set(
+      opts?.keepDraft
+        ? { chips: [], error: null }
+        : { chips: [], draft: '', auto: null, error: null }
+    )
     try {
       await luca.agent.send({ text, chips, context })
     } catch (err) {
-      set({ error: String(err instanceof Error ? err.message : err), draft: text, chips })
+      const restore = !opts?.keepDraft || !get().draft.trim()
+      set({
+        error: String(err instanceof Error ? err.message : err),
+        chips,
+        ...(restore ? { draft: text } : {})
+      })
     }
   },
   resend: async (request) => {
     set({ error: null })
+    // a spoken request retried from the chat is answered in writing, not as speech
+    const context = { ...(request.context as Record<string, unknown> | undefined) }
+    delete context.voice
     try {
-      await luca.agent.send({
-        text: request.text,
-        chips: request.chips ?? [],
-        context: request.context ?? {}
-      })
+      await luca.agent.send({ text: request.text, chips: request.chips ?? [], context })
     } catch (err) {
       set({ error: String(err instanceof Error ? err.message : err) })
     }

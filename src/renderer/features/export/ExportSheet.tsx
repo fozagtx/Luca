@@ -4,6 +4,7 @@ import { AnimatedButton } from '../../components/ui/animated-button'
 import { AnimatedNumber } from '../../components/ui/animated-number'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
+import { CheckDraw, ProgressBar } from '../../components/ui/progress'
 import { Sheet } from '../../components/ui/sheet'
 import { cn } from '../../lib/cn'
 import { luca } from '../../lib/luca'
@@ -12,7 +13,7 @@ import { useUi } from '../../stores/ui'
 
 const qualities: { id: ExportOptions['quality']; label: string; hint: string }[] = [
   { id: 'draft', label: 'Draft', hint: 'Fast, for review' },
-  { id: 'looks', label: 'Final', hint: 'HyperFrames default, CRF 16' }
+  { id: 'looks', label: 'Final', hint: 'Best quality, for sharing' }
 ]
 
 export function ExportSheet(): ReactElement {
@@ -23,6 +24,7 @@ export function ExportSheet(): ReactElement {
   const [quality, setQuality] = useState<ExportOptions['quality']>('looks')
   const [freeMB, setFreeMB] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [starting, setStarting] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -38,12 +40,15 @@ export function ExportSheet(): ReactElement {
   }, [open, project])
 
   const start = async (): Promise<void> => {
-    if (!project) return
+    if (!project || starting) return
+    setStarting(true)
     try {
       await luca.export.start({ name: name.trim() || project.name, quality, format: 'mp4' })
       setExport(false)
     } catch (e) {
       setError(errorMessage(e))
+    } finally {
+      setStarting(false)
     }
   }
 
@@ -57,8 +62,9 @@ export function ExportSheet(): ReactElement {
       footer={
         <>
           <Button onClick={() => setExport(false)}>Cancel</Button>
-          <AnimatedButton disabled={!project} onClick={() => void start()}>
-            Export MP4
+          <AnimatedButton disabled={!project || starting} onClick={() => void start()}>
+            {starting ? <span className="btn-spinner" /> : null}
+            {starting ? 'Starting…' : 'Export MP4'}
           </AnimatedButton>
         </>
       }
@@ -127,15 +133,17 @@ export function ExportBar(): ReactElement | null {
   if (!p || dismissed) return null
   if (p.status === 'running') {
     return (
-      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-bg-muted px-3 text-[11px] text-text-2">
-        <div className="h-1 flex-1 overflow-hidden rounded-full bg-border">
-          <div
-            className="h-full bg-accent transition-[width] duration-300"
-            style={{ width: `${Math.max(2, Math.round(p.progress * 100))}%` }}
+      <div className="rise-in flex h-8 shrink-0 items-center gap-3 border-b border-border bg-bg-subtle px-3 text-[11px] text-text-2">
+        <span className="step-spinner shrink-0" />
+        <span className="shrink-0 font-medium text-text">Exporting</span>
+        <ProgressBar value={p.progress} className="flex-1" />
+        <span className="flex w-[220px] items-center gap-1.5 truncate">
+          <AnimatedNumber
+            value={p.progress * 100}
+            format={(n) => `${Math.round(n)}%`}
+            className="font-mono text-text"
           />
-        </div>
-        <span className="flex w-[200px] items-center gap-1 truncate">
-          <AnimatedNumber value={p.progress * 100} format={(n) => `${Math.round(n)}%`} />· {p.stage}
+          <span className="truncate text-text-3">{p.stage}</span>
         </span>
         <Button size="sm" variant="ghost" onClick={() => void luca.export.cancel()}>
           Cancel
@@ -146,10 +154,15 @@ export function ExportBar(): ReactElement | null {
   return (
     <div
       className={cn(
-        'flex h-7 shrink-0 items-center gap-2 border-b border-border px-3 text-[11px]',
-        p.status === 'error' ? 'bg-danger/10 text-danger' : 'bg-bg-muted text-text-2'
+        'rise-in flex h-8 shrink-0 items-center gap-2 border-b border-border px-3 text-[11px]',
+        p.status === 'error' ? 'bg-danger/10 text-danger' : 'bg-bg-subtle text-text-2'
       )}
     >
+      {p.status === 'done' ? (
+        <span className="pop-in flex size-4 shrink-0 items-center justify-center rounded-full bg-success text-white">
+          <CheckDraw className="size-3" />
+        </span>
+      ) : null}
       <span className="min-w-0 flex-1 truncate">
         {p.status === 'done'
           ? `Exported ${p.outputPath?.split('/').slice(-2).join('/') ?? ''}`

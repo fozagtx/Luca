@@ -35,6 +35,11 @@
   --color-clip-caption-edge: var(--clip-caption-edge);
   --color-clip-audio: var(--clip-audio);
   --color-clip-audio-edge: var(--clip-audio-edge);
+  --color-clip-video-ink: var(--clip-video-ink);
+  --color-clip-block-ink: var(--clip-block-ink);
+  --color-clip-component-ink: var(--clip-component-ink);
+  --color-clip-caption-ink: var(--clip-caption-ink);
+  --color-clip-audio-ink: var(--clip-audio-ink);
   --color-overlay: var(--overlay);
 
   --radius-control: 6px;
@@ -63,8 +68,9 @@
   --border: hsl(0 0% 89%);
   --border-strong: hsl(0 0% 80%);
   --text: hsl(0 0% 11%);
-  --text-2: hsl(0 0% 40%);
-  --text-3: hsl(0 0% 58%);
+  --text-2: hsl(0 0% 36%);
+  /* 4.5:1 on white: metadata, hints and idle icons stay readable in light mode */
+  --text-3: hsl(0 0% 46%);
   --accent: #007aff;
   --accent-fg: #ffffff;
   --secondary: hsl(210 100% 97%);
@@ -77,15 +83,21 @@
   --warning: #ff9f0a;
   --playhead: #ff3b30;
   --clip-video: #e8f1ff;
-  --clip-video-edge: #9cc3ff;
+  --clip-video-edge: #7fb2ff;
   --clip-block: #f1ecff;
-  --clip-block-edge: #c4b5fd;
-  --clip-component: #e6f6ff;
-  --clip-component-edge: #8ecdf5;
-  --clip-caption: #fff6e5;
-  --clip-caption-edge: #fcd38d;
-  --clip-audio: #eaf7ee;
-  --clip-audio-edge: #9fdcb0;
+  --clip-block-edge: #b39dfb;
+  --clip-component: #e3f4ff;
+  --clip-component-edge: #6dbef0;
+  --clip-caption: #fff4de;
+  --clip-caption-edge: #f2b64a;
+  --clip-audio: #e7f6eb;
+  --clip-audio-edge: #7ccf95;
+  /* saturated inks for icons, badges and waveforms: pastel edges vanish on white */
+  --clip-video-ink: #1f6feb;
+  --clip-block-ink: #7c3aed;
+  --clip-component-ink: #0277bd;
+  --clip-caption-ink: #b45309;
+  --clip-audio-ink: #15803d;
   --overlay: rgba(0, 0, 0, 0.22);
   --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.05);
@@ -131,6 +143,11 @@
   --clip-caption-edge: #c9a25a;
   --clip-audio: #1d3325;
   --clip-audio-edge: #5aa976;
+  --clip-video-ink: #8ab8ff;
+  --clip-block-ink: #b7a6ff;
+  --clip-component-ink: #7cc8f2;
+  --clip-caption-ink: #eabb6a;
+  --clip-audio-ink: #7fd19c;
   --overlay: rgba(0, 0, 0, 0.55);
   --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.06);
@@ -170,6 +187,20 @@ input,
 textarea {
   user-select: text;
   -webkit-user-select: text;
+}
+/* text fields show the I-beam so they read as places to type */
+textarea,
+input:not([type]),
+input[type='text'],
+input[type='search'],
+input[type='password'],
+input[type='email'],
+input[type='url'] {
+  cursor: text;
+}
+textarea:disabled,
+input:disabled {
+  cursor: default;
 }
 
 .selectable,
@@ -253,14 +284,22 @@ body.inactive ::selection {
   border-radius: 8px;
   overflow: hidden;
 }
+/* A side panel folded away by its toggle: no leftover hairline */
+.panel-collapsed {
+  border-width: 0;
+}
+/* Side panels glide open and shut (only while a toggle animates, never while dragging) */
+.panes-animating [data-panel] {
+  transition: flex-grow 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
 
-/* Panel header row: title left, actions right */
+/* Panel header row: title left, actions right. Every pane uses this height and gutter. */
 .panel-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 36px;
-  padding: 0 8px 0 10px;
+  height: 40px;
+  padding: 0 8px 0 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -511,6 +550,17 @@ body.inactive ::selection {
     animation: spin 0.8s linear infinite;
   }
 
+  /* Inline spinner for busy buttons, in the button's own text color */
+  .btn-spinner {
+    width: 11px;
+    height: 11px;
+    flex-shrink: 0;
+    border-radius: 999px;
+    border: 1.5px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-top-color: currentColor;
+    animation: spin 0.7s linear infinite;
+  }
+
   /* Avatar ring pulses while Luca works */
   .avatar-live {
     position: relative;
@@ -710,6 +760,184 @@ body.inactive ::selection {
 
 input.volume {
   accent-color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- progress and micro-motion */
+
+/* Progress bar: a determinate fill with a travelling sheen so long steps never look frozen */
+.progress-track {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 75%, #fff), var(--accent));
+  transition: width 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: translateX(-100%);
+  animation: progress-sheen 1.6s ease-in-out infinite;
+}
+.progress-indeterminate .progress-fill {
+  width: 38% !important;
+  animation: progress-slide 1.3s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes progress-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(270%);
+  }
+}
+
+/* A check that draws itself when a step completes */
+.check-draw path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  animation: check-draw 360ms 60ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+@keyframes check-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.pop-in {
+  animation: pop-in 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+.rise-in {
+  animation: rise-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+/* Breathing ring on the step that is running */
+.pulse-ring {
+  position: relative;
+}
+.pulse-ring::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  border: 1.5px solid var(--accent);
+  animation: avatar-pulse 1.6s ease-out infinite;
+}
+
+/* Caption previews: line entrances matching the composition's GSAP animations */
+.cap-enter {
+  animation-duration: 260ms;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.cap-enter-fade,
+.cap-enter-glow,
+.cap-enter-karaoke {
+  animation-name: cap-fade;
+}
+.cap-enter-slide {
+  animation-name: cap-slide;
+}
+.cap-enter-pop,
+.cap-enter-highlight {
+  animation-name: cap-pop;
+  animation-timing-function: cubic-bezier(0.34, 1.8, 0.64, 1);
+  animation-duration: 220ms;
+}
+.cap-enter-bounce {
+  animation-name: cap-bounce;
+  animation-duration: 520ms;
+  animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes cap-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes cap-slide {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes cap-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+}
+@keyframes cap-bounce {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.9);
+  }
+}
+
+/* Popovers and tooltips grow from their anchor; the palette drops in */
+.tip-popup {
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity 150ms ease-out,
+    transform 170ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tip-popup[data-starting-style],
+.tip-popup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.96);
+}
+.cmdk-pop {
+  animation: palette-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+/* Tailwind's -translate-x-1/2 uses the `translate` property, so this `transform` composes with it */
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+
+/* Toasts (sonner) in Luca's chrome */
+.luca-toast {
+  font-family: var(--font-sans) !important;
+  font-size: 12.5px !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--border) !important;
+  background: var(--bg) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow-popover) !important;
+  padding: 10px 12px !important;
+}
+.luca-toast [data-description] {
+  color: var(--text-2) !important;
+}
+.luca-toast [data-button] {
+  background: var(--accent) !important;
+  color: var(--accent-fg) !important;
+  border-radius: 6px !important;
+  font-weight: 500 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

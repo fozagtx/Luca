@@ -1,6 +1,13 @@
 import type {
   AgentEvent,
   Aspect,
+  CaptionConfig,
+  CaptionState,
+  CreateProgress,
+  ElementTransform,
+  ProjectFont,
+  StartArgs,
+  StartResult,
   CatalogItem,
   ChatMessage,
   Checkpoint,
@@ -20,7 +27,8 @@ import type {
   Settings,
   Timeline,
   TimelineEdit,
-  Transcript
+  Transcript,
+  VoiceEvent
 } from './types'
 
 export type Unsubscribe = () => void
@@ -53,8 +61,18 @@ export type LucaApi = {
     close: () => Promise<void>
     current: () => Promise<Project | null>
     recent: () => Promise<RecentProject[]>
+    /** New project from a video, an audio file, images, or nothing (start from scratch). */
+    start: (args: StartArgs) => Promise<StartResult>
     pickVideo: () => Promise<string | null>
+    /** Videos, audio or images (several at once) to start a project from. */
+    pickMedia: () => Promise<string[]>
+    /** Small data-URL preview of a local image or video file. */
+    mediaPreview: (path: string) => Promise<string | null>
     pickProjectDir: () => Promise<string | null>
+    /** Remove from Recent; the folder stays on disk. */
+    forget: (dir: string) => Promise<void>
+    /** Move the project folder to the Trash and remove it from Recent. */
+    trash: (dir: string) => Promise<void>
     files: () => Promise<
       { path: string; size: number; kind: 'html' | 'media' | 'json' | 'other' }[]
     >
@@ -64,6 +82,7 @@ export type LucaApi = {
     onOpened: (cb: (p: Project | null) => void) => Unsubscribe
     onRecentChanged: (cb: () => void) => Unsubscribe
     onDropFile: (cb: (path: string) => void) => Unsubscribe
+    onCreateProgress: (cb: (p: CreateProgress) => void) => Unsubscribe
     pathForFile: (file: File) => string
   }
   timeline: {
@@ -71,6 +90,7 @@ export type LucaApi = {
     edit: (edit: TimelineEdit) => Promise<{ ok: boolean; error?: string }>
     thumbs: () => Promise<{ dir: string; count: number; interval: number }>
     peaks: () => Promise<{ peaksPerSecond: number; peaks: number[] }>
+    transform: (t: ElementTransform) => Promise<{ ok: boolean; error?: string }>
   }
   agent: {
     send: (args: { text: string; chips: Chip[]; context: unknown }) => Promise<void>
@@ -80,7 +100,8 @@ export type LucaApi = {
     state: () => Promise<{ state: string; detail?: string }>
     restart: () => Promise<void>
     onEvent: (cb: (e: AgentEvent) => void) => Unsubscribe
-    onHistory: (cb: (msgs: ChatMessage[]) => void) => Unsubscribe
+    /** A message that was added or changed (new tool step, permission, end of turn). */
+    onMessage: (cb: (m: ChatMessage) => void) => Unsubscribe
   }
   catalog: {
     list: (args?: { refresh?: boolean }) => Promise<CatalogItem[]>
@@ -96,7 +117,18 @@ export type LucaApi = {
     status: () => Promise<CleanStatus>
     transcript: () => Promise<Transcript | null>
     edl: () => Promise<Edl | null>
+    /** Transcribe only (for captions), without proposing cuts. */
+    transcribe: () => Promise<void>
     onStatus: (cb: (s: CleanStatus) => void) => Unsubscribe
+  }
+  captions: {
+    state: () => Promise<CaptionState>
+    /** The words captions are built from (cleaned transcript, composition times). */
+    words: () => Promise<{ text: string; start: number; end: number }[]>
+    apply: (config: CaptionConfig) => Promise<{ lines: number }>
+    remove: () => Promise<void>
+    /** Pick font files (.ttf/.otf/.woff/.woff2) and add them to the project. */
+    addFonts: () => Promise<ProjectFont[]>
   }
   looks: {
     list: () => Promise<(Look & { thumb: string | null })[]>
@@ -122,6 +154,18 @@ export type LucaApi = {
   capture: {
     frame: (rect: { x: number; y: number; width: number; height: number }) => Promise<string>
   }
+  voice: {
+    /** macOS microphone permission (prompts the first time). */
+    micAccess: () => Promise<boolean>
+    /** Opens a streaming session; resolves once AssemblyAI has accepted it. */
+    start: (args: { sid: number; sampleRate: number }) => Promise<void>
+    /** 16-bit mono PCM at the session's sample rate, ~50 ms per chunk. */
+    audio: (sid: number, pcm: ArrayBuffer) => void
+    /** Ends the session after the last turn is final; resolves with the whole transcript. */
+    stop: (sid: number) => Promise<string>
+    cancel: (sid: number) => Promise<void>
+    onEvent: (cb: (e: VoiceEvent) => void) => Unsubscribe
+  }
   menu: {
     onCommand: (cb: (cmd: string, arg?: unknown) => void) => Unsubscribe
     popupClip: (args: {
@@ -134,5 +178,6 @@ export type LucaApi = {
   }
   window: {
     onActive: (cb: (active: boolean) => void) => Unsubscribe
+    onFullscreen: (cb: (fullscreen: boolean) => void) => Unsubscribe
   }
 }

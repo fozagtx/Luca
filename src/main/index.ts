@@ -8,7 +8,8 @@ import { VIDEO_EXT } from './projects'
 import { DEV_PORT, LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, setCurrentProject } from './state'
-import { loginShellPath } from './env'
+import { loginShellPath, prewarmHyperframes } from './env'
+import { cancelVoice } from './voice'
 import { stopWatching } from './watcher'
 
 export const server = new LucaServer(is.dev ? null : join(__dirname, '../renderer'), (id) => {
@@ -60,6 +61,12 @@ function createWindow(): BrowserWindow {
     const base = is.dev ? process.env.ELECTRON_RENDERER_URL! : server.baseUrl
     if (!url.startsWith(base)) e.preventDefault()
   })
+  // the toolbar leaves room for the traffic lights, which macOS hides in fullscreen
+  const sendFullscreen = (): void =>
+    win.webContents.send(Channels.windowFullscreen, win.isFullScreen())
+  win.on('enter-full-screen', sendFullscreen)
+  win.on('leave-full-screen', sendFullscreen)
+  win.webContents.on('did-finish-load', sendFullscreen)
   win.on('focus', () => win.webContents.send(Channels.windowActive, true))
   win.on('blur', () => win.webContents.send(Channels.windowActive, false))
   const saveBounds = (): void => {
@@ -100,10 +107,11 @@ app.whenReady().then(async () => {
   app.setAboutPanelOptions({
     applicationName: 'Luca',
     applicationVersion: app.getVersion(),
-    copyright: 'HyperFrames-native video editor',
+    copyright: 'A video editor where Claude does the editing',
     iconPath
   })
   await loginShellPath()
+  void prewarmHyperframes()
   await server.start(is.dev ? DEV_PORT : 0)
   registerHandlers(() => mainWindow, server)
   buildAppMenu()
@@ -124,12 +132,14 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  void cancelVoice()
   stopWatching()
   setCurrentProject(null)
   if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
+  void cancelVoice()
   stopWatching()
   server.stop()
 })

@@ -2,8 +2,32 @@ import '@xzdarcy/react-timeline-editor/dist/react-timeline-editor.css'
 import './timeline.css'
 import { Timeline as Editor, type TimelineState } from '@xzdarcy/react-timeline-editor'
 import type { TimelineAction, TimelineRow } from '@xzdarcy/timeline-engine'
-import { AudioLines, Captions, Film, Lock, Puzzle, Shapes, Volume2, VolumeX } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactElement } from 'react'
+import {
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  AudioLines,
+  Captions,
+  Film,
+  Lock,
+  LockOpen,
+  MessageSquarePlus,
+  Paintbrush,
+  Puzzle,
+  Scissors,
+  Shapes,
+  Trash2,
+  Volume2,
+  VolumeX
+} from 'lucide-react'
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactElement
+} from 'react'
 import type { Clip } from '../../../shared/types'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
@@ -15,6 +39,16 @@ import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useTimeline } from '../../stores/timeline'
 import { useUi } from '../../stores/ui'
+import { PlayheadTimecode } from '../viewer/PlayheadTimecode'
+import {
+  clipName,
+  clipToChat,
+  deleteClip,
+  findClip,
+  linkedAudio,
+  splitClip,
+  trimToPlayhead
+} from './clip-actions'
 import {
   ROW_HEIGHT,
   STRIP_HEIGHT,
@@ -25,13 +59,13 @@ import {
 } from './timeline-adapter'
 import { Waveform } from './Waveform'
 
-const LABEL_WIDTH = 120
+const LABEL_WIDTH = 132
 const START_LEFT = 8
 
 const KIND_LABEL: Record<RowMeta['kind'], string> = {
   strip: '',
   video: 'Video',
-  block: 'Blocks',
+  block: 'Graphics',
   component: 'Components',
   caption: 'Captions',
   audio: 'Audio'
@@ -46,48 +80,71 @@ const KIND_ICON: Record<RowMeta['kind'], typeof Film> = {
   audio: AudioLines
 }
 
-function TrackHead({ kind, height }: { kind: RowMeta['kind']; height: number }): ReactElement {
-  const [muted, setMuted] = useState(false)
-  const [locked, setLocked] = useState(false)
-  const Icon = KIND_ICON[kind]
-  if (kind === 'strip')
+function TrackHead({
+  meta,
+  clips,
+  height
+}: {
+  meta: RowMeta
+  clips: Clip[]
+  height: number
+}): ReactElement {
+  const locked = useTimeline((s) => s.locked.includes(meta.index))
+  const toggleLock = useTimeline((s) => s.toggleLock)
+  const edit = useTimeline((s) => s.edit)
+  const Icon = KIND_ICON[meta.kind]
+  if (meta.kind === 'strip')
     return (
       <div className="luca-track-head luca-track-head-strip" style={{ height }}>
         <Film size={13} strokeWidth={1.75} className="shrink-0 text-text-3" />
         <span className="text-text-3">Frames</span>
       </div>
     )
+  const sound = meta.kind === 'video' || meta.kind === 'audio'
+  const muted = sound && clips.length > 0 && clips.every((c) => c.volume === 0)
   return (
     <div
       className={cn('luca-track-head group/head', locked && 'luca-track-head-locked')}
       style={{ height }}
     >
-      <Icon size={13} strokeWidth={1.75} className={cn('shrink-0', `luca-track-icon-${kind}`)} />
-      <span className="min-w-0 flex-1 truncate">{KIND_LABEL[kind]}</span>
+      <Icon
+        size={13}
+        strokeWidth={1.75}
+        className={cn('shrink-0', `luca-track-icon-${meta.kind}`)}
+      />
+      <span className="min-w-0 flex-1 truncate">{KIND_LABEL[meta.kind]}</span>
       <div
-        className="flex shrink-0 items-center gap-px opacity-0 transition-opacity group-hover/head:opacity-100 data-[on=true]:opacity-100"
+        className="luca-track-tools opacity-0 transition-opacity duration-150 group-hover/head:opacity-100 data-[on=true]:opacity-100"
         data-on={muted || locked}
       >
-        <Tip label={muted ? 'Unmute' : 'Mute'} side="right">
-          <button
-            type="button"
-            className={cn('luca-track-btn', muted && 'luca-track-btn-on')}
-            aria-pressed={muted}
-            aria-label="Mute track"
-            onClick={() => setMuted((v) => !v)}
-          >
-            {muted ? <VolumeX size={11} strokeWidth={2} /> : <Volume2 size={11} strokeWidth={2} />}
-          </button>
-        </Tip>
-        <Tip label={locked ? 'Unlock' : 'Lock'} side="right">
+        {sound ? (
+          <Tip label={muted ? 'Unmute track' : 'Mute track'} side="right">
+            <button
+              type="button"
+              className={cn('luca-track-btn', muted && 'luca-track-btn-on')}
+              aria-pressed={muted}
+              aria-label={muted ? 'Unmute track' : 'Mute track'}
+              onClick={() =>
+                void edit({ op: 'mute', refs: clips.map((c) => c.ref), muted: !muted })
+              }
+            >
+              {muted ? (
+                <VolumeX size={12} strokeWidth={2} />
+              ) : (
+                <Volume2 size={12} strokeWidth={2} />
+              )}
+            </button>
+          </Tip>
+        ) : null}
+        <Tip label={locked ? 'Unlock track' : 'Lock track (no moving or trimming)'} side="right">
           <button
             type="button"
             className={cn('luca-track-btn', locked && 'luca-track-btn-on')}
             aria-pressed={locked}
-            aria-label="Lock track"
-            onClick={() => setLocked((v) => !v)}
+            aria-label={locked ? 'Unlock track' : 'Lock track'}
+            onClick={() => toggleLock(meta.index)}
           >
-            <Lock size={11} strokeWidth={2} />
+            {locked ? <Lock size={12} strokeWidth={2} /> : <LockOpen size={12} strokeWidth={2} />}
           </button>
         </Tip>
       </div>
@@ -98,8 +155,12 @@ function TrackHead({ kind, height }: { kind: RowMeta['kind']; height: number }):
 export function Timeline(): ReactElement {
   const project = useProject((s) => s.project)
   const projectDir = project?.dir ?? null
-  const version = useProject((s) => s.version)
-  const { timeline, load, loadMedia, reset, error } = useTimeline()
+  const version = useProject((s) => s.previewVersion)
+  const timeline = useTimeline((s) => s.timeline)
+  const load = useTimeline((s) => s.load)
+  const loadMedia = useTimeline((s) => s.loadMedia)
+  const reset = useTimeline((s) => s.reset)
+  const error = useTimeline((s) => s.error)
 
   useEffect(() => {
     if (!projectDir) {
@@ -115,26 +176,142 @@ export function Timeline(): ReactElement {
 
   if (!project) {
     return (
-      <div className="flex h-full items-center justify-center bg-panel text-[12px] text-text-3">
-        Open a project to see its timeline
+      <div className="flex h-full flex-col bg-panel">
+        <div className="panel-head">
+          <span className="panel-title">Timeline</span>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
+          <div className="text-[12.5px] font-medium text-text-2">No project open</div>
+          <div className="text-[11.5px] text-text-3">
+            Start one above and its video, graphics, captions and audio show up here.
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="relative flex h-full flex-col bg-panel">
+      <TimelineHead />
       {timeline ? (
         <Tracks key={project.id} projectId={project.id} />
       ) : (
         <div className="flex flex-1 items-center justify-center text-[12px] text-text-3">
-          {error ?? 'Reading timeline…'}
+          {error ?? <span className="shimmer-text">Reading the timeline…</span>}
         </div>
       )}
       {error && timeline ? (
-        <div className="pointer-events-none absolute left-[104px] top-9 rounded-[6px] bg-danger px-2 py-1 text-[11px] text-white shadow-popover">
+        <div className="fade-in pointer-events-none absolute bottom-3 left-1/2 z-20 max-w-[80%] -translate-x-1/2 truncate rounded-[8px] bg-danger px-2.5 py-1.5 text-[11px] text-white shadow-popover">
           {error}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/** Title, then either what you can do with the selected clip or the live move/trim readout. */
+function TimelineHead(): ReactElement {
+  const selected = useTimeline((s) => s.selected)
+  const drag = useTimeline((s) => s.drag)
+  const timeline = useTimeline((s) => s.timeline)
+  const fps = usePlayer((s) => s.fps)
+  const setCaptions = useUi((s) => s.setCaptions)
+  // re-read on every timeline change so the chip follows edits to the clip
+  const clip = timeline ? findClip(selected) : null
+  const dragClip = drag ? findClip(drag.ref) : null
+  const Icon = clip ? KIND_ICON[clip.kind] : Film
+  const linked = clip ? linkedAudio(clip) : null
+
+  const act = (
+    label: string,
+    icon: ReactElement,
+    run: () => void,
+    opts: { shortcut?: string; danger?: boolean; text?: string } = {}
+  ): ReactElement => (
+    <Tip label={label} shortcut={opts.shortcut}>
+      <button
+        type="button"
+        onClick={run}
+        aria-label={label}
+        className={cn(
+          'inline-flex h-7 min-w-7 shrink-0 items-center justify-center gap-1.5 rounded-[6px] px-1.5 text-[11.5px] font-medium transition-[background-color,color,transform] duration-150 active:scale-95',
+          opts.danger
+            ? 'text-danger hover:bg-danger/10'
+            : 'text-text-2 hover:bg-hover hover:text-text'
+        )}
+      >
+        {icon}
+        {opts.text ? (
+          <span className={opts.danger ? '' : 'hidden @[920px]:inline'}>{opts.text}</span>
+        ) : null}
+      </button>
+    </Tip>
+  )
+
+  return (
+    <div className="panel-head @container gap-1">
+      <span className="panel-title mr-1">Timeline</span>
+      {drag ? (
+        <span className="rise-in flex min-w-0 items-center gap-2 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-medium text-secondary-fg">
+          {drag.mode === 'move' ? 'Moving' : 'Trimming'} {dragClip ? clipName(dragClip) : ''}
+          <span className="font-mono tabular-nums">
+            {timecode(drag.start, fps)} – {timecode(drag.end, fps)}
+          </span>
+          <span className="font-mono text-secondary-fg/70 tabular-nums">
+            {clock(Math.max(0, drag.end - drag.start))}
+          </span>
+        </span>
+      ) : clip ? (
+        <div key={clip.ref} className="rise-in flex min-w-0 flex-1 items-center gap-0.5">
+          <span className="mr-1.5 flex max-w-[45%] min-w-[110px] shrink items-center gap-1.5 rounded-full border border-border bg-bg py-0.5 pr-2.5 pl-2 text-[11px] font-medium text-text">
+            <Icon size={12} strokeWidth={1.9} className={`shrink-0 luca-track-icon-${clip.kind}`} />
+            <span className="min-w-0 flex-1 truncate">{clipName(clip)}</span>
+            <span className="shrink-0 font-mono text-[10.5px] font-normal text-text-3 tabular-nums">
+              {clock(clip.end - clip.start)}
+            </span>
+          </span>
+          {act('Split at playhead', <Scissors size={13} />, () => void splitClip(clip), {
+            shortcut: 'S',
+            text: 'Split'
+          })}
+          {act(
+            'Trim start to playhead',
+            <ArrowLeftToLine size={13} />,
+            () => void trimToPlayhead(clip, 'start'),
+            { shortcut: '[', text: 'Trim start' }
+          )}
+          {act(
+            'Trim end to playhead',
+            <ArrowRightToLine size={13} />,
+            () => void trimToPlayhead(clip, 'end'),
+            { shortcut: ']', text: 'Trim end' }
+          )}
+          {clip.kind === 'caption'
+            ? act('Change the caption style', <Paintbrush size={13} />, () => setCaptions(true), {
+                text: 'Style'
+              })
+            : null}
+          {act(
+            'Ask Luca about this clip',
+            <MessageSquarePlus size={13} />,
+            () => clipToChat(clip),
+            {
+              text: 'Ask Luca'
+            }
+          )}
+          <span className="ml-auto" />
+          {act(
+            linked ? 'Delete this clip and its audio' : 'Delete this clip',
+            <Trash2 size={13} />,
+            () => void deleteClip(clip),
+            { shortcut: '⌫', danger: true, text: 'Delete' }
+          )}
+        </div>
+      ) : (
+        <span className="truncate text-[11px] text-text-3">
+          Click a clip to select it · drag its edges to trim · right-click for more
+        </span>
+      )}
     </div>
   )
 }
@@ -145,10 +322,11 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   const selected = useTimeline((s) => s.selected)
   const select = useTimeline((s) => s.select)
   const edit = useTimeline((s) => s.edit)
+  const setDrag = useTimeline((s) => s.setDrag)
+  const locked = useTimeline((s) => s.locked)
   const thumbs = useTimeline((s) => s.thumbs)
   const peaks = useTimeline((s) => s.peaks)
   const playerDuration = usePlayer((s) => s.duration)
-  const currentTime = usePlayer((s) => s.currentTime)
   const fps = usePlayer((s) => s.fps)
   const seek = usePlayer((s) => s.seek)
   const ref = useRef<TimelineState>(null)
@@ -171,19 +349,26 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   const { rows, meta, clips } = useMemo(() => toRows(timeline, duration), [timeline, duration])
   const { scale, splits } = rulerStep(zoom)
 
-  // Player → cursor (skip while the user drags the cursor).
+  // Player → cursor (skip while the user drags the cursor), set directly on the editor: as a
+  // render dependency the playhead re-rendered every track, clip and thumbnail on every frame.
   useEffect(() => {
-    if (!dragging.current) ref.current?.setTime(currentTime)
-  }, [currentTime])
+    const follow = (t: number): void => {
+      if (!dragging.current) ref.current?.setTime(t)
+    }
+    follow(usePlayer.getState().currentTime)
+    return usePlayer.subscribe((s, prev) => {
+      if (s.currentTime !== prev.currentTime) follow(s.currentTime)
+    })
+  }, [])
 
   const snapPoints = useMemo(() => {
-    const pts = new Set<number>([0, duration, currentTime])
+    const pts = new Set<number>([0, duration])
     for (const c of clips.values()) {
       pts.add(c.start)
       pts.add(c.end)
     }
     return [...pts]
-  }, [clips, duration, currentTime])
+  }, [clips, duration])
 
   const dropTime = (e: DragEvent<HTMLDivElement>): number => {
     const area = e.currentTarget.querySelector<HTMLElement>('.timeline-editor-edit-area')
@@ -209,7 +394,7 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
       d.source === 'remocn'
         ? `Place remocn \`${d.name}\` at ${tc}.`
         : `Insert \`${d.name}\` at ${tc} on a new track. It is installed; the \`add\` snippet was:\n\n\`\`\`html\n${(res.snippet ?? '').trim()}\n\`\`\``
-    if (!useUi.getState().chatOpen) useUi.getState().toggleChat()
+    if (!useUi.getState().chatOpen) useUi.getState().setChat(true)
     await chat.send(`Add ${d.title || d.name} at ${clock(at)}`, { time: at, note })
   }
 
@@ -217,25 +402,39 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     const tol = 6 / zoom
     let best = t
     let bestD = tol
-    for (const p of snapPoints) {
-      if (p === self.start || p === self.end) continue
+    const consider = (p: number): void => {
+      if (p === self.start || p === self.end) return
       const d = Math.abs(p - t)
       if (d < bestD) {
         best = p
         bestD = d
       }
     }
+    for (const p of snapPoints) consider(p)
+    consider(usePlayer.getState().currentTime)
     return best
   }
 
   const editorRows = useMemo(
     () =>
-      rows.map((r) => ({
-        ...r,
-        actions: r.actions.map((a) => ({ ...a, selected: a.id === selected }))
-      })),
-    [rows, selected]
+      rows.map((r) => {
+        const lock = locked.includes(meta.get(r.id)?.index ?? -2)
+        return {
+          ...r,
+          actions: r.actions.map((a) =>
+            a.id === STRIP_ROW
+              ? a
+              : { ...a, selected: a.id === selected, movable: !lock, flexible: !lock }
+          )
+        }
+      }),
+    [rows, selected, locked, meta]
   )
+
+  const trackClips = (rowId: string): Clip[] =>
+    (rows.find((r) => r.id === rowId)?.actions ?? [])
+      .map((a) => clips.get(a.id))
+      .filter((c): c is Clip => !!c)
 
   const renderAction = (action: TimelineAction, row: TimelineRow): ReactElement => {
     const m = meta.get(row.id)
@@ -243,41 +442,30 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     const clip = clips.get(action.id)
     if (!clip || !m) return <div />
     return (
-      <div
-        className={cn(
-          'luca-clip',
-          `luca-clip-${clip.kind}`,
-          action.selected && 'luca-clip-selected'
-        )}
-        title={`${clip.label} · ${timecode(clip.start, fps)} – ${timecode(clip.end, fps)}`}
-      >
-        {clip.kind === 'audio' && peaks && peaks.peaks.length > 0 ? (
-          <Waveform
-            peaks={peaks.peaks}
-            peaksPerSecond={peaks.peaksPerSecond}
-            start={clip.start}
-            end={clip.end}
-          />
-        ) : null}
-        <span className="luca-clip-label">
-          {clip.remocn ? <span className="luca-clip-badge">R</span> : null}
-          <span className="truncate">{clip.label}</span>
-        </span>
-        <span className="luca-clip-handle luca-clip-handle-l" />
-        <span className="luca-clip-handle luca-clip-handle-r" />
-      </div>
+      <ClipFace
+        clip={clip}
+        selected={!!action.selected}
+        locked={locked.includes(m.index)}
+        peaks={peaks}
+        fps={fps}
+      />
     )
   }
 
   return (
     <div className="flex min-h-0 flex-1">
       <div className="luca-track-heads shrink-0" style={{ width: LABEL_WIDTH }}>
-        <div className="flex h-8 items-end border-b border-border px-2.5 pb-1 font-mono text-[10px] tabular-nums text-text-3">
-          {timecode(currentTime, fps)}
+        <div className="flex h-8 items-end border-b border-border px-3 pb-1 font-mono text-[10.5px] text-text-2 tabular-nums">
+          <PlayheadTimecode />
         </div>
         <div style={{ height: 10 }} />
         {rows.map((r) => (
-          <TrackHead key={r.id} kind={meta.get(r.id)!.kind} height={r.rowHeight ?? ROW_HEIGHT} />
+          <TrackHead
+            key={r.id}
+            meta={meta.get(r.id)!}
+            clips={trackClips(r.id)}
+            height={r.rowHeight ?? ROW_HEIGHT}
+          />
         ))}
       </div>
       <div
@@ -299,12 +487,12 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
         }}
       >
         {dropAt !== null ? (
-          <div className="pointer-events-none absolute top-0 right-2 z-10 rounded-[4px] bg-accent px-1.5 py-0.5 text-[10px] text-white">
+          <div className="pointer-events-none absolute top-1 right-2 z-10 rounded-[5px] bg-accent px-1.5 py-0.5 text-[10.5px] text-white">
             Insert at {timecode(dropAt, fps)}
           </div>
         ) : null}
         {dropError ? (
-          <div className="absolute right-2 bottom-2 z-10 rounded-[4px] bg-danger px-1.5 py-0.5 text-[10px] text-white">
+          <div className="absolute right-2 bottom-2 z-10 rounded-[5px] bg-danger px-1.5 py-0.5 text-[10.5px] text-white">
             {dropError}
           </div>
         ) : null}
@@ -325,7 +513,7 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
           dragLine
           style={{ width: '100%', height: '100%' }}
           getActionRender={renderAction}
-          getScaleRender={(s) => <span>{timecode(s, fps).replace(/:\d\d$/, '')}</span>}
+          getScaleRender={(s) => <ScaleLabel seconds={s} fps={fps} />}
           onClickTimeArea={(t) => {
             seek(Math.max(0, Math.min(duration, t)))
             return true
@@ -339,6 +527,22 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
           onClickAction={(_, { action }) => {
             if (action.id !== STRIP_ROW) select(action.id)
           }}
+          onDoubleClickAction={(_, { action }) => {
+            const clip = clips.get(action.id)
+            if (clip?.kind === 'caption') useUi.getState().setCaptions(true)
+          }}
+          onContextMenuAction={(e, { action }) => {
+            const clip = clips.get(action.id)
+            if (!clip) return
+            e.preventDefault()
+            select(clip.ref)
+            void luca.menu.popupClip({
+              clipId: clip.ref,
+              track: clip.track,
+              start: clip.start,
+              end: clip.end
+            })
+          }}
           onClickRow={(e) => {
             if (!(e.target as HTMLElement).closest('.timeline-editor-action')) select(null)
           }}
@@ -351,9 +555,11 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
               action.start = s
               action.end = s + len
             }
+            setDrag({ ref: clip.ref, mode: 'move', start: action.start, end: action.start + len })
             return true
           }}
           onActionMoveEnd={({ action, start }) => {
+            setDrag(null)
             const clip = clips.get(action.id)
             if (!clip) return
             const t = Math.round(start * 1000) / 1000
@@ -365,9 +571,11 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
             if (!clip) return false
             if (dir === 'left') action.start = snap(start, clip)
             else action.end = snap(end, clip)
+            setDrag({ ref: clip.ref, mode: 'trim', start: action.start, end: action.end })
             return true
           }}
           onActionResizeEnd={({ action, start, end, dir }) => {
+            setDrag(null)
             const clip = clips.get(action.id)
             if (!clip) return
             const r = (n: number): number => Math.round(n * 1000) / 1000
@@ -385,7 +593,64 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   )
 }
 
-function Strip({
+// The editor re-renders every clip and ruler label on each tick of its cursor (the playhead);
+// memoized, the faces below are only rebuilt when what they show changes.
+
+const ClipFace = memo(function ClipFace({
+  clip,
+  selected,
+  locked,
+  peaks,
+  fps
+}: {
+  clip: Clip
+  selected: boolean
+  locked: boolean
+  peaks: { peaksPerSecond: number; peaks: number[] } | null
+  fps: number
+}): ReactElement {
+  return (
+    <div
+      className={cn(
+        'luca-clip',
+        `luca-clip-${clip.kind}`,
+        selected && 'luca-clip-selected',
+        clip.volume === 0 && 'luca-clip-muted',
+        locked && 'luca-clip-locked'
+      )}
+      title={`${clip.label} · ${timecode(clip.start, fps)} – ${timecode(clip.end, fps)}`}
+    >
+      {clip.kind === 'audio' && peaks && peaks.peaks.length > 0 ? (
+        <Waveform
+          peaks={peaks.peaks}
+          peaksPerSecond={peaks.peaksPerSecond}
+          start={clip.start}
+          end={clip.end}
+        />
+      ) : null}
+      <span className="luca-clip-label">
+        {clip.remocn ? <span className="luca-clip-badge">R</span> : null}
+        {clip.volume === 0 ? <VolumeX size={10} strokeWidth={2.2} className="shrink-0" /> : null}
+        <span className="truncate">{clip.label}</span>
+      </span>
+      <span className="luca-clip-handle luca-clip-handle-l" />
+      <span className="luca-clip-handle luca-clip-handle-r" />
+    </div>
+  )
+})
+
+const ScaleLabel = memo(function ScaleLabel({
+  seconds,
+  fps
+}: {
+  seconds: number
+  fps: number
+}): ReactElement {
+  return <span>{timecode(seconds, fps).replace(/:\d\d$/, '')}</span>
+})
+
+/** One <img> per second of footage; memoized so it only re-renders when zoom or thumbs change. */
+const Strip = memo(function Strip({
   projectId,
   thumbs,
   zoom
@@ -410,4 +675,4 @@ function Strip({
     )
   }
   return <div className="luca-strip">{imgs}</div>
-}
+})

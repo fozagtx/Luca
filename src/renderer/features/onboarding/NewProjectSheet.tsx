@@ -1,4 +1,4 @@
-import type { Aspect, Look } from '@shared/types'
+import type { Aspect, CreateProgress, Look } from '@shared/types'
 import { useEffect, useState, type ReactElement } from 'react'
 import { luca } from '../../lib/luca'
 import { Button } from '../../components/ui/button'
@@ -7,6 +7,7 @@ import { Sheet } from '../../components/ui/sheet'
 import { cn } from '../../lib/cn'
 import { errorMessage, useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
+import { CreateProgressList } from './CreateProgress'
 
 const aspects: { id: Aspect; label: string; hint: string; box: string }[] = [
   { id: 'landscape', label: 'Landscape', hint: '1920 × 1080', box: 'h-6 w-10' },
@@ -74,9 +75,23 @@ function NewProjectForm({
       .catch(() => undefined)
   }, [])
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<CreateProgress | null>(null)
+  const [seen, setSeen] = useState<CreateProgress['stage'][]>([])
+  const [since, setSince] = useState<number | undefined>()
+  useEffect(
+    () =>
+      luca.project.onCreateProgress((p) => {
+        setProgress(p)
+        setSeen((s) => (s.includes(p.stage) ? s : [...s, p.stage]))
+      }),
+    []
+  )
 
   const submit = async (): Promise<void> => {
     if (!file) return
+    setSince(Date.now())
+    setSeen([])
+    setProgress(null)
     try {
       await onCreate({ file, name: name.trim() || undefined, aspect, look: look || null })
     } catch (err) {
@@ -154,8 +169,8 @@ function NewProjectForm({
           </label>
         )}
         {loading && (
-          <div className="shimmer-text text-[12px] font-medium">
-            Setting up your project… copying the video and preparing the timeline.
+          <div className="rise-in rounded-[10px] border border-border bg-bg-subtle p-3">
+            <CreateProgressList kind="video" progress={progress} seen={seen} since={since} />
           </div>
         )}
         {error && (
@@ -169,7 +184,7 @@ function NewProjectForm({
         <Button onClick={onCancel} disabled={loading}>
           Cancel
         </Button>
-        <Button variant="primary" onClick={submit} disabled={loading}>
+        <Button variant="primary" onClick={submit} loading={loading}>
           {loading ? 'Creating…' : 'Create'}
         </Button>
       </div>

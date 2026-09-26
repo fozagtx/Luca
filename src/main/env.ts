@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { accessSync, constants } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { EnvStatus } from '../shared/types'
 import { hasSecret } from './secrets'
@@ -52,16 +52,20 @@ export async function childEnv(extra: Record<string, string> = {}): Promise<Node
   return env
 }
 
+const isExecutable = (p: string): boolean => {
+  try {
+    accessSync(p, constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function which(bin: string): Promise<string | null> {
   const PATH = await loginShellPath()
   for (const dir of PATH.split(delimiter)) {
     const p = join(dir, bin)
-    try {
-      accessSync(p, constants.X_OK)
-      return p
-    } catch {
-      // keep looking
-    }
+    if (isExecutable(p)) return p
   }
   return null
 }
@@ -77,6 +81,8 @@ export function run(
     timeoutMs?: number
     input?: string
     signal?: AbortSignal
+    /** Streamed output, e.g. ffmpeg's `-progress pipe:1` lines. */
+    onStdout?: (chunk: string) => void
   } = {}
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
@@ -88,7 +94,11 @@ export function run(
     })
     let stdout = ''
     let stderr = ''
-    child.stdout.on('data', (d) => (stdout += d.toString()))
+    child.stdout.on('data', (d) => {
+      const text = d.toString()
+      stdout += text
+      opts.onStdout?.(text)
+    })
     child.stderr.on('data', (d) => (stderr += d.toString()))
     const timer = opts.timeoutMs
       ? setTimeout(() => {
@@ -108,23 +118,129 @@ export function run(
   })
 }
 
-/** Run an `npx hyperframes …` command with the login PATH. */
+/** The HyperFrames CLI that Luca and its agent both run, pinned so every project reads the same. */
+export const HYPERFRAMES = 'hyperframes@0.8.78'
+
+let hyperframesBinP: Promise<string | null> | null = null
+
+/**
+ * The CLI's own executable in npx's cache, resolved (and installed, the first time) once.
+ * Going through `npx` costs about 0.6 s of npm start-up on every call, and Luca calls the CLI
+ * for every timeline read and edit.
+ */
+async function hyperframesBin(env: NodeJS.ProcessEnv): Promise<string | null> {
+  const seen = hyperframesBinP
+  const cached = seen ? await seen : null
+  if (cached && isExecutable(cached)) return cached
+  // first use, or npx's cache was cleared since: resolve again, once for every waiting caller
+  if (!hyperframesBinP || hyperframesBinP === seen) {
+    hyperframesBinP = (async () => {
+      const npx = (await which('npx')) ?? 'npx'
+      const r = await run(
+        npx,
+        ['--yes', '--package', HYPERFRAMES, '-c', 'command -v hyperframes'],
+        {
+          cwd: homedir(),
+          env,
+          timeoutMs: 300_000
+        }
+      )
+      const bin = r.code === 0 ? (r.stdout.trim().split('\n').pop() ?? '') : ''
+      return bin && isExecutable(bin) ? bin : null
+    })().catch(() => null)
+  }
+  const p = hyperframesBinP
+  const bin = await p
+  // not resolvable right now (offline, no npx): try again next time
+  if (!bin && hyperframesBinP === p) hyperframesBinP = null
+  return bin
+}
+
+const hyperframesEnv = (extra: Record<string, string> = {}): Promise<NodeJS.ProcessEnv> =>
+  childEnv({ HYPERFRAMES_SKIP_SKILLS: '1', CI: '1', NO_COLOR: '1', ...extra })
+
+/** Resolve (and if needed install) the CLI in the background so the first project doesn't wait. */
+export async function prewarmHyperframes(): Promise<void> {
+  await hyperframesBin(await hyperframesEnv())
+}
+
+/** Run a HyperFrames CLI command with the login PATH. */
 export async function runHyperframes(
   args: string[],
-  opts: { cwd: string; timeoutMs?: number; env?: Record<string, string>; signal?: AbortSignal }
+  opts: {
+    cwd: string
+    timeoutMs?: number
+    env?: Record<string, string>
+    signal?: AbortSignal
+    onStdout?: (chunk: string) => void
+  }
 ): Promise<RunResult> {
-  const env = await childEnv({
-    HYPERFRAMES_SKIP_SKILLS: '1',
-    CI: '1',
-    NO_COLOR: '1',
-    ...(opts.env ?? {})
-  })
-  const npx = (await which('npx')) ?? 'npx'
-  return run(npx, ['--yes', 'hyperframes@0.8.78', ...args], {
+  const env = await hyperframesEnv(opts.env)
+  const runOpts = {
     cwd: opts.cwd,
-    env,
     timeoutMs: opts.timeoutMs ?? 120_000,
-    signal: opts.signal
+    signal: opts.signal,
+    onStdout: opts.onStdout
+  }
+  const bin = await hyperframesBin(env)
+  if (bin) {
+    // as under npx, the CLI's own dependencies' executables come first on PATH
+    return run(bin, args, {
+      ...runOpts,
+      env: { ...env, PATH: dirname(bin) + delimiter + env.PATH }
+    })
+  }
+  const npx = (await which('npx')) ?? 'npx'
+  return run(npx, ['--yes', HYPERFRAMES, ...args], { ...runOpts, env })
+}
+
+/** Duration (s) and overall bitrate (bit/s) of a media file, from ffprobe. */
+export async function probeMedia(file: string): Promise<{ duration: number; bitrate: number }> {
+  const ffprobe = (await which('ffprobe')) ?? 'ffprobe'
+  const r = await run(
+    ffprobe,
+    ['-v', 'error', '-show_entries', 'format=duration,bit_rate', '-of', 'json', file],
+    { env: await childEnv(), timeoutMs: 30_000 }
+  )
+  const j = JSON.parse(r.stdout || '{}') as { format?: { duration?: string; bit_rate?: string } }
+  return {
+    duration: Number(j.format?.duration ?? 0),
+    bitrate: Number(j.format?.bit_rate ?? 0)
+  }
+}
+
+/**
+ * Run ffmpeg and report real progress (0..1) from its `-progress` stream against the length of
+ * the output in seconds.
+ */
+export async function ffmpegProgress(
+  args: string[],
+  outputSeconds: number,
+  onProgress: (p: number) => void,
+  opts: { timeoutMs?: number } = {}
+): Promise<RunResult> {
+  const ffmpeg = (await which('ffmpeg')) ?? 'ffmpeg'
+  let buf = ''
+  let last = -1
+  return run(ffmpeg, ['-progress', 'pipe:1', '-nostats', ...args], {
+    env: await childEnv(),
+    timeoutMs: opts.timeoutMs,
+    onStdout: (chunk) => {
+      buf += chunk
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''
+      for (const line of lines) {
+        const m = /^out_time_(?:us|ms)=(\d+)/.exec(line)
+        let p: number | null = null
+        if (m && outputSeconds > 0) p = Math.min(1, Number(m[1]) / 1e6 / outputSeconds)
+        else if (line.startsWith('progress=end')) p = 1
+        // ~100 updates at most; IPC and React don't need every frame
+        if (p !== null && (p - last >= 0.01 || p === 1)) {
+          last = p
+          onProgress(p)
+        }
+      }
+    }
   })
 }
 

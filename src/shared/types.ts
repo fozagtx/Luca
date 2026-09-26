@@ -36,6 +36,8 @@ export type Clip = {
   src?: string | null
   ref: string
   remocn?: boolean
+  /** data-volume of audio/video clips (1 = unchanged, 0 = muted). */
+  volume?: number
 }
 
 export type Track = {
@@ -74,7 +76,8 @@ export type Chip =
   | { kind: 'transcript'; text: string; start: number; end: number }
 
 export type AgentEvent =
-  | { type: 'text-delta'; text: string }
+  /** Streamed reply text for the assistant message `id`. */
+  | { type: 'text-delta'; id: string; text: string }
   | {
       type: 'tool'
       id: string
@@ -237,11 +240,36 @@ export type TimelineEdit =
   | { op: 'move'; ref: string; time: number }
   | { op: 'trim'; ref: string; start?: number; end?: number }
   | { op: 'split'; ref: string; time: number }
-  | { op: 'delete'; ref: string }
+  /** `with`: linked clips removed in the same checkpoint (a video's own audio). */
+  | { op: 'delete'; ref: string; with?: string[] }
+  /** Mute (0) or restore the clips' `data-volume`; the level before muting is kept. */
+  | { op: 'mute'; refs: string[]; muted: boolean }
 
-export type ProjectChanged = { paths: string[]; version: number }
+/**
+ * Move/resize an element on the canvas. Written as the CSS `translate`, `scale` and
+ * `transform-origin` properties, which compose with (and never fight) GSAP's `transform`.
+ */
+export type ElementTransform = {
+  /** Composition file holding the element, e.g. index.html or compositions/x.html. */
+  file: string
+  id: string
+  /** Composition pixels. */
+  translate: [number, number]
+  scale: number
+  /** Composition pixels relative to the element's own box. */
+  origin?: [number, number]
+}
+
+export type ProjectChanged = {
+  paths: string[]
+  version: number
+  /** False when only files the preview never loads changed (Luca's state, the cut list…). */
+  composition: boolean
+}
 
 export type CleanStatus = {
+  /** `transcribe` stops after the transcript (for captions); `clean` goes on to cut. */
+  task?: 'clean' | 'transcribe'
   stage:
     | 'idle'
     | 'extracting'
@@ -254,7 +282,87 @@ export type CleanStatus = {
     | 'done'
     | 'error'
   message?: string
+  /** Progress of the current stage, 0..1, when it can be measured. */
   progress?: number
+  /** True when `progress` is an estimate (AssemblyAI does not report transcription progress). */
+  estimated?: boolean
+  /** When the current stage started (ms since epoch), for elapsed-time readouts. */
+  since?: number
 }
 
 export type CleanResult = { cuts: number; cleanFile: string }
+
+/**
+ * Real-time speech-to-text events (AssemblyAI Universal-Streaming), tagged with the session id
+ * the renderer chose. Each turn sends `partial` updates, then exactly one `final`.
+ */
+export type VoiceEvent =
+  | { type: 'partial'; sid: number; order: number; text: string }
+  | { type: 'final'; sid: number; order: number; text: string; language?: string }
+  | { type: 'closed'; sid: number; reason?: string }
+
+/** Stages of making a new project, pushed while it is created. */
+export type CreateProgress = {
+  stage: 'preparing' | 'copying' | 'scaffolding' | 'media' | 'starting' | 'done' | 'error'
+  message?: string
+  /** 0..1 within the stage when measurable. */
+  progress?: number
+}
+
+/** What a new project starts from: a video, an audio track, images, or nothing but an idea. */
+export type StartKind = 'video' | 'audio' | 'images' | 'scratch'
+
+export type StartArgs = {
+  name?: string
+  aspect: Aspect
+  /** Absolute paths: one video, one audio file, or any number of images. */
+  files: string[]
+  look?: string | null
+  /** Target length in seconds for image and scratch projects. */
+  duration?: number
+}
+
+export type StartResult = {
+  project: Project
+  kind: StartKind
+  /** Hidden context for Luca's first turn: what the project starts from and what is in it. */
+  brief: string
+}
+
+/** One line of captions, with the words it shows. Times are composition seconds. */
+export type CaptionGroup = {
+  text: string
+  start: number
+  end: number
+  words: { text: string; start: number; end: number }[]
+}
+
+export type CaptionConfig = {
+  style: string
+  /** Font family; a built-in HyperFrames font or one added to the project. */
+  font: string
+  size: 'sm' | 'md' | 'lg'
+  position: 'bottom' | 'middle' | 'top'
+  wordsPerLine: 'short' | 'normal' | 'long'
+  uppercase: boolean
+  /** Active-word / highlight color override. */
+  accent?: string
+  /** Drop "um", "uh", stutters and false starts. */
+  clean: boolean
+}
+
+export type ProjectFont = {
+  family: string
+  /** Project-relative file for fonts added by the user; absent for built-in fonts. */
+  file?: string
+}
+
+export type CaptionState = {
+  /** Words available to caption (after a transcription or clean edit). */
+  words: number
+  /** The config last put on the timeline, if captions are on it. */
+  applied: CaptionConfig | null
+  fonts: ProjectFont[]
+  /** The project has audio worth transcribing. */
+  hasAudio: boolean
+}

@@ -1,5 +1,5 @@
 import { existsSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { simpleGit, type SimpleGit } from 'simple-git'
 import type { Checkpoint } from '../shared/types'
 import { Channels, broadcast } from './ipc'
@@ -37,7 +37,28 @@ function git(dir: string): SimpleGit {
   }).env(env)
 }
 
-export async function ensureRepo(dir: string): Promise<void> {
+const queues = new Map<string, Promise<unknown>>()
+
+/**
+ * One writing git operation at a time per project. Checkpoints are fired and forgotten (after an
+ * edit, after an agent turn), and two commits at once fail on HEAD's lock and lose one of them.
+ */
+function serial<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+  const key = resolve(dir)
+  const next = (queues.get(key) ?? Promise.resolve()).then(fn, fn)
+  const tail = next.catch(() => undefined)
+  queues.set(key, tail)
+  void tail.then(() => {
+    if (queues.get(key) === tail) queues.delete(key)
+  })
+  return next
+}
+
+export function ensureRepo(dir: string): Promise<void> {
+  return serial(dir, () => ensureRepoNow(dir))
+}
+
+async function ensureRepoNow(dir: string): Promise<void> {
   const g = git(dir)
   if (!existsSync(join(dir, '.git'))) await g.init()
   const gi = join(dir, '.gitignore')
@@ -49,7 +70,11 @@ export async function ensureRepo(dir: string): Promise<void> {
 }
 
 /** Commit only when something changed. Returns the new sha or null. */
-export async function checkpoint(dir: string, message: string): Promise<string | null> {
+export function checkpoint(dir: string, message: string): Promise<string | null> {
+  return serial(dir, () => checkpointNow(dir, message))
+}
+
+async function checkpointNow(dir: string, message: string): Promise<string | null> {
   const g = git(dir)
   await g.add(['-A'])
   const st = await g.status()
@@ -83,7 +108,11 @@ export async function history(dir: string, limit = 60): Promise<Checkpoint[]> {
 }
 
 /** Check out a checkpoint's files on top of HEAD and commit; history is never rewritten. */
-export async function restore(dir: string, sha: string): Promise<void> {
+export function restore(dir: string, sha: string): Promise<void> {
+  return serial(dir, () => restoreNow(dir, sha))
+}
+
+async function restoreNow(dir: string, sha: string): Promise<void> {
   const g = git(dir)
   await g.add(['-A'])
   if ((await g.status()).files.length > 0) await g.commit('Before restore')
@@ -96,13 +125,13 @@ export async function restore(dir: string, sha: string): Promise<void> {
   broadcast(Channels.historyChanged)
 }
 
-/** ⌘Z: restore the checkpoint before HEAD. */
-export async function undo(dir: string): Promise<void> {
-  const g = git(dir)
-  const log = await g.log({ maxCount: 2 })
-  const prev = log.all[1]
-  if (!prev) return
-  await restore(dir, prev.hash)
+/** ⌘Z: restore the checkpoint before HEAD (after any checkpoint still being written). */
+export function undo(dir: string): Promise<void> {
+  return serial(dir, async () => {
+    const log = await git(dir).log({ maxCount: 2 })
+    const prev = log.all[1]
+    if (prev) await restoreNow(dir, prev.hash)
+  })
 }
 
 export async function headSha(dir: string): Promise<string | null> {

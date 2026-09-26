@@ -32,7 +32,11 @@ export function getSettings(): Settings {
   const f = file()
   if (existsSync(f)) {
     try {
-      cache = { ...defaults(), ...(JSON.parse(readFileSync(f, 'utf8')) as Partial<Settings>) }
+      const saved = JSON.parse(readFileSync(f, 'utf8')) as Partial<Settings>
+      cache = { ...defaults(), ...saved }
+      // earlier versions kept every recent project's poster here as base64, making each write
+      // (window moves, pane sizes, theme) rewrite about a megabyte; posters are read per project now
+      cache.recentProjects = cache.recentProjects.map((r) => ({ ...r, thumb: null }))
       return cache
     } catch {
       // fall through

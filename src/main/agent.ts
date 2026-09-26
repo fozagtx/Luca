@@ -21,7 +21,7 @@ import type {
   Project
 } from '../shared/types'
 import { describeActivity, isRiskyCommand } from '../shared/activity'
-import { childEnv, run, which } from './env'
+import { childEnv, HYPERFRAMES, run, which } from './env'
 import { Channels, broadcast } from './ipc'
 import { catalogTitle } from './library'
 import { lucaMcpServer } from './mcp'
@@ -32,9 +32,10 @@ const SYSTEM_RULES = [
   'You are Luca, the editing agent inside Luca, a local video editor built on HyperFrames HTML compositions.',
   '1. The HTML files are the source of truth; never edit anything in media/ or renders/.',
   '2. Before building any visual from scratch (text, titles, captions, lower thirds, overlays, transitions, effects, backgrounds, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
-  '3. Add HyperFrames items with `npx hyperframes add <name> --json`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.',
-  '4. After every edit, run `npx hyperframes lint --json` and fix errors before replying.',
+  `3. Add HyperFrames items with \`npx ${HYPERFRAMES} add <name> --json\`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.`,
+  `4. After every edit, run \`npx ${HYPERFRAMES} lint --json\` and fix errors before replying. Always run the CLI as \`npx ${HYPERFRAMES}\` (this exact version, the one Luca uses), never plain \`npx hyperframes\`.`,
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
+  'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a title, caption, scene, animation, effect, transition, background) and use the plain-English title of anything you added, not its id.',
   'Keep replies short: say what you changed and why, no preamble.'
 ].join('\n')
 
@@ -57,7 +58,16 @@ type Pending = {
   rule: string | null
 }
 
-type Turn = { text: string; chips: Chip[]; context: unknown; userId?: string }
+type TurnOutcome = { isError: boolean; error?: string }
+
+type Turn = {
+  text: string
+  chips: Chip[]
+  context: unknown
+  userId?: string
+  /** Called once when this turn ends, or is dropped because the project closed. */
+  done?: (outcome: TurnOutcome) => void
+}
 
 /** SDK result subtypes, as people should read them. */
 const PLAIN_ERRORS: Record<string, string> = {
@@ -89,7 +99,7 @@ function summarize(name: string, input: Record<string, unknown>): string {
     case 'Bash': {
       const cmd = String(input.command ?? '')
       const m = /npx\s+hyperframes(?:@[\w.-]+)?\s+(\w+)/.exec(cmd)
-      if (m) return `Ran hyperframes ${m[1]}`
+      if (m) return `Ran ${m[1]}`
       return `Ran ${cmd.split('\n')[0].slice(0, 80)}`
     }
     default:
@@ -134,6 +144,8 @@ export class ProjectAgent {
   private working = false
   private queued: Turn[] = []
   private interrupted = false
+  /** The turn being answered now. */
+  private active: Turn | null = null
   private abort = new AbortController()
 
   constructor(readonly project: Project) {
@@ -209,8 +221,9 @@ export class ProjectAgent {
     this.stateDetail = detail
     this.emit({ type: 'status', state, detail })
   }
-  private pushHistory(): void {
-    broadcast(Channels.agentHistoryPush, this.messages)
+  /** Send the renderer one message that changed, not the whole (growing) history. */
+  private pushMessage(m: ChatMessage | null): void {
+    if (m) broadcast(Channels.agentMessage, m)
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -261,9 +274,9 @@ export class ProjectAgent {
 
   async stop(): Promise<void> {
     this.closed = true
-    // nothing may be dispatched into the closing session
+    // nothing may be dispatched into the closing session, so queued requests won't be answered
     this.q = null
-    this.queued = []
+    for (const t of this.queued.splice(0)) t.done?.({ isError: true, error: PLAIN_ERRORS.closed })
     this.abort.abort()
     for (const w of this.waiters.splice(0)) w(null)
     this.cancelPending('Project closed')
@@ -317,7 +330,7 @@ export class ProjectAgent {
     }
     this.messages.push(user)
     this.rewriteHistory()
-    this.pushHistory()
+    this.pushMessage(user)
     const t = { ...turn, userId: user.id }
     if (this.working) {
       this.queued.push(t)
@@ -326,8 +339,19 @@ export class ProjectAgent {
     this.dispatch(t)
   }
 
+  /**
+   * Send a turn and wait for that turn to end: when Luca is busy it is queued, and the turn
+   * running now ends first.
+   */
+  run(turn: Omit<Turn, 'done'>): Promise<TurnOutcome> {
+    return new Promise((resolve, reject) => {
+      this.send({ ...turn, done: resolve }).catch(reject)
+    })
+  }
+
   private dispatch(turn: Turn): void {
     this.interrupted = false
+    this.active = turn
     this.working = true
     this.turnStartedAt = Date.now()
     this.streamedText = ''
@@ -342,7 +366,7 @@ export class ProjectAgent {
       replyTo: turn.userId
     }
     this.messages.push(this.current)
-    this.pushHistory()
+    this.pushMessage(this.current)
     this.emit({ type: 'turn-start' })
     this.setState('working')
 
@@ -373,10 +397,14 @@ export class ProjectAgent {
       }
     }
     if (turn.context && typeof turn.context === 'object') {
-      const ctx = turn.context as { time?: number; note?: string }
+      const ctx = turn.context as { time?: number; note?: string; voice?: boolean }
       if (typeof ctx.time === 'number') lines.push(`Playhead is at ${ctx.time.toFixed(2)}s.`)
       // technical detail the UI keeps out of the visible message (e.g. a catalog snippet)
       if (typeof ctx.note === 'string' && ctx.note.trim()) lines.push(ctx.note.trim())
+      if (ctx.voice)
+        lines.push(
+          'The user said this out loud in voice mode (speech recognition, so allow for misheard words) and your reply will be read aloud: answer in one or two short spoken sentences, with no markdown, lists or code.'
+        )
     }
     if (existsSync(join(lucaDir(this.project.dir), 'LOOK.md')))
       lines.push('An active Look is set: read .luca/LOOK.md and follow it for every visual choice.')
@@ -445,7 +473,7 @@ export class ProjectAgent {
       ...(rule ? { rule } : {})
     }
     this.current?.parts?.push(part)
-    this.pushHistory()
+    this.pushMessage(this.current)
     this.emit({ type: 'permission', id, tool: toolName, input, ...(rule ? { rule } : {}) })
     return new Promise<PermissionResult>((resolvePerm) => {
       this.pending.set(id, { resolve: resolvePerm, rule })
@@ -464,7 +492,7 @@ export class ProjectAgent {
     )
     if (part) part.resolved = decision
     this.emit({ type: 'permission-resolved', id })
-    this.pushHistory()
+    this.pushMessage(this.current)
     if (decision === 'deny') {
       p.resolve({ behavior: 'deny', message: 'The user denied this action in Luca.' })
       return
@@ -552,7 +580,7 @@ export class ProjectAgent {
             this.tools.set(block.id, part)
             this.current?.parts?.push(part)
             this.emit(part)
-            this.pushHistory()
+            this.pushMessage(this.current)
           }
         }
         return
@@ -598,7 +626,7 @@ export class ProjectAgent {
               }
             }
             this.emit(part)
-            this.pushHistory()
+            this.pushMessage(this.current)
           }
         }
         return
@@ -629,7 +657,7 @@ export class ProjectAgent {
     if (last && last.type === 'text') last.text += text
     else parts.push({ type: 'text', text })
     this.current.text += text
-    this.emit({ type: 'text-delta', text })
+    this.emit({ type: 'text-delta', id: this.current.id, text })
   }
 
   /** End the in-flight assistant message: open steps and permission cards can't finish now. */
@@ -665,10 +693,10 @@ export class ProjectAgent {
             : (PLAIN_ERRORS[error] ?? error)
         )
       }
+      this.pushMessage(this.current)
       this.current = null
     }
     this.rewriteHistory()
-    this.pushHistory()
     const end: Extract<AgentEvent, { type: 'turn-end' }> = {
       type: 'turn-end',
       sessionId: this.sessionId ?? '',
@@ -679,9 +707,18 @@ export class ProjectAgent {
     }
     this.emit(end)
     for (const cb of turnEndListeners) cb(this.project, end)
+    const turn = this.active
+    this.active = null
+    turn?.done?.({
+      isError: isError || stopped,
+      error: stopped ? 'Stopped' : error && (PLAIN_ERRORS[error] ?? error)
+    })
     if (this.state === 'working') this.setState('ready')
-    const next = this.queued.shift()
-    if (next && this.q) this.dispatch(next)
+    // without a session (restart, close) queued turns wait: shifting one off here would lose it
+    if (this.q) {
+      const next = this.queued.shift()
+      if (next) this.dispatch(next)
+    }
   }
 }
 

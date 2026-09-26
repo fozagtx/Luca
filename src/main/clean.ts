@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CleanResult, CleanStatus, Cut, Edl, Project, Transcript } from '../shared/types'
-import { activeAgent, agentFor, onTurnEnd } from './agent'
-import { childEnv, run, which } from './env'
+import { activeAgent, agentFor } from './agent'
+import { ffmpegProgress, probeMedia } from './env'
 import { Channels, broadcast } from './ipc'
 import { getSettings } from './settings'
 import { extractAudio, isFiller, transcribe } from './transcribe'
@@ -16,15 +16,26 @@ const MIN_KEPT = 0.1
 const JOIN_FADE = 0.01
 
 let status: CleanStatus = { stage: 'idle' }
+let task: CleanStatus['task'] = 'clean'
+let lastPush = 0
 export function cleanStatus(): CleanStatus {
   return status
 }
-function setStatus(s: CleanStatus): void {
-  status = s
-  broadcast(Channels.cleanStatusPush, s)
+/** Stage changes go out at once; progress within a stage at most every 100 ms. */
+function setStatus(s: Omit<CleanStatus, 'task' | 'since'>): void {
+  const now = Date.now()
+  const sameStage = s.stage === status.stage
+  status = { ...s, task, since: sameStage && status.since ? status.since : now }
+  if (sameStage && s.progress !== 1 && now - lastPush < 100) return
+  lastPush = now
+  broadcast(Channels.cleanStatusPush, status)
 }
+const busy = (): boolean =>
+  status.stage !== 'idle' && status.stage !== 'done' && status.stage !== 'error'
 
 export function sourcePath(p: Project): string | null {
+  // projects started from images or from scratch have no source
+  if (!p.source) return null
   for (const f of [join(p.dir, 'media', p.source), join(p.dir, p.source)]) {
     if (existsSync(f)) return f
   }
@@ -126,28 +137,16 @@ function keptSegments(cuts: Cut[], duration: number): { start: number; end: numb
   return out
 }
 
-async function probe(file: string): Promise<{ duration: number; bitrate: number }> {
-  const ffprobe = (await which('ffprobe')) ?? 'ffprobe'
-  const r = await run(
-    ffprobe,
-    ['-v', 'error', '-show_entries', 'format=duration,bit_rate', '-of', 'json', file],
-    { env: await childEnv(), timeoutMs: 30_000 }
-  )
-  const j = JSON.parse(r.stdout || '{}') as { format?: { duration?: string; bit_rate?: string } }
-  return {
-    duration: Number(j.format?.duration ?? 0),
-    bitrate: Number(j.format?.bit_rate ?? 0)
-  }
-}
+const probe = probeMedia
 
 /** ffmpeg: trim kept segments, 10 ms audio fades at every join, concat, VideoToolbox H.264 + AAC. */
 async function renderClean(
   source: string,
   segs: { start: number; end: number }[],
   bitrate: number,
-  out: string
+  out: string,
+  onProgress: (p: number) => void
 ): Promise<void> {
-  const ffmpeg = (await which('ffmpeg')) ?? 'ffmpeg'
   const parts: string[] = []
   const labels: string[] = []
   segs.forEach((s, i) => {
@@ -187,7 +186,8 @@ async function renderClean(
     '+faststart',
     out
   ]
-  const r = await run(ffmpeg, args, { env: await childEnv(), timeoutMs: 3_600_000 })
+  const kept = segs.reduce((n, s) => n + (s.end - s.start), 0)
+  const r = await ffmpegProgress(args, kept, onProgress, { timeoutMs: 3_600_000 })
   if (r.code !== 0 || !existsSync(out)) throw new Error(`ffmpeg failed: ${r.stderr.slice(-800)}`)
 }
 
@@ -250,11 +250,13 @@ export async function applyEdl(p: Project, edl: Edl): Promise<CleanResult> {
   const cleanRel = `media/clean-${hash}.mp4`
   const out = join(p.dir, cleanRel)
   mkdirSync(join(p.dir, 'media'), { recursive: true })
-  setStatus({ stage: 'applying', message: `${cuts.length} cuts` })
+  setStatus({ stage: 'applying', message: `${cuts.length} cuts`, progress: 0 })
   if (!existsSync(out) || statSync(out).size === 0) {
     const segs = keptSegments(cuts, duration)
     if (!segs.length) throw new Error('The EDL cuts the whole clip')
-    await renderClean(source, segs, bitrate, out)
+    await renderClean(source, segs, bitrate, out, (progress) =>
+      setStatus({ stage: 'applying', message: `${cuts.length} cuts`, progress })
+    )
   }
   const original =
     (existsSync(join(p.dir, '.luca', 'transcript.original.json'))
@@ -273,27 +275,14 @@ export async function applyEdl(p: Project, edl: Edl): Promise<CleanResult> {
   return { cuts: cuts.length, cleanFile: cleanRel }
 }
 
-function waitForTurn(dir: string): Promise<{ isError: boolean; error?: string }> {
-  return new Promise((resolve) => {
-    const off = onTurnEnd((p, e) => {
-      if (p.dir !== dir) return
-      off()
-      resolve(e)
-    })
-  })
-}
-
 /** The full pipeline (spec steps 2–10). Step 11 (auto edit) is left to the user's next turn. */
 export async function runCleanEdit(p: Project): Promise<void> {
-  if (status.stage !== 'idle' && status.stage !== 'done' && status.stage !== 'error')
-    throw new Error('A clean edit is already running')
+  if (busy()) throw new Error('A clean edit or transcription is already running')
+  task = 'clean'
   try {
     const source = sourcePath(p)
     if (!source) throw new Error(`Source ${p.source} not found`)
-    setStatus({ stage: 'extracting' })
-    const flac = await extractAudio(p.dir, source)
-    const keyterms = [...getSettings().keyterms, ...(readLookKeyterms(p) ?? [])]
-    const transcript = await transcribe(p.dir, flac, keyterms, (stage) => setStatus({ stage }))
+    const transcript = await transcribeSource(p, source)
     setStatus({ stage: 'candidates' })
     const { duration } = await probe(source)
     const candidates = cutCandidates(transcript, duration)
@@ -304,7 +293,7 @@ export async function runCleanEdit(p: Project): Promise<void> {
     let edl: Edl | null = null
     let feedback = ''
     for (let attempt = 0; attempt < 3 && !edl; attempt++) {
-      await agent.send({
+      const end = await agent.run({
         text:
           attempt === 0
             ? `Review the clean-edit cut list. \`.luca/cut-candidates.json\` holds ${candidates.length} deterministic cut candidates (fillers and long pauses) for \`${p.source}\` (${duration.toFixed(2)}s); \`transcript.json\` has word times. ` +
@@ -317,7 +306,6 @@ export async function runCleanEdit(p: Project): Promise<void> {
         chips: [],
         context: { cleanEdit: true }
       })
-      const end = await waitForTurn(p.dir)
       if (end.isError) throw new Error(end.error ?? 'Claude turn failed')
       const candidate = readEdl(p.dir)
       if (!candidate) {
@@ -333,6 +321,39 @@ export async function runCleanEdit(p: Project): Promise<void> {
     }
     if (!edl) throw new Error(`Claude did not produce a valid edl.json (${feedback})`)
     await applyEdl(p, edl)
+  } catch (err) {
+    setStatus({ stage: 'error', message: err instanceof Error ? err.message : String(err) })
+    throw err
+  }
+}
+
+/** Extract the audio and transcribe it with AssemblyAI, reporting each stage's progress. */
+async function transcribeSource(p: Project, source: string): Promise<Transcript> {
+  setStatus({ stage: 'extracting', progress: 0 })
+  const flac = await extractAudio(p.dir, source, (progress) =>
+    setStatus({ stage: 'extracting', progress })
+  )
+  const keyterms = [...getSettings().keyterms, ...(readLookKeyterms(p) ?? [])]
+  return transcribe(p.dir, flac, keyterms, (s) => setStatus(s))
+}
+
+/**
+ * Transcribe only, for captions. After a clean edit the transcript already follows the clean
+ * master (remapped), so there is nothing to do.
+ */
+export async function runTranscribeOnly(p: Project): Promise<void> {
+  if (busy()) throw new Error('A clean edit or transcription is already running')
+  task = 'transcribe'
+  try {
+    if (readEdl(p.dir) && existsSync(join(p.dir, 'transcript.json'))) {
+      setStatus({ stage: 'done', message: 'Transcript ready' })
+      return
+    }
+    const source = sourcePath(p)
+    if (!source) throw new Error('This project has no video or audio to transcribe')
+    const t = await transcribeSource(p, source)
+    await checkpoint(p.dir, 'Transcribe audio')
+    setStatus({ stage: 'done', message: `${t.words.length} words transcribed` })
   } catch (err) {
     setStatus({ stage: 'error', message: err instanceof Error ? err.message : String(err) })
     throw err

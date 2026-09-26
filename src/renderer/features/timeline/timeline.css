@@ -92,10 +92,11 @@
   border-right: 1px solid var(--color-border);
 }
 .luca-track-head {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 6px 0 10px;
+  gap: 7px;
+  padding: 0 8px 0 12px;
   font-size: 11px;
   font-weight: 500;
   color: var(--color-text-2);
@@ -108,13 +109,24 @@
 .luca-track-head-locked {
   color: var(--color-text-3);
 }
+/* Mute/lock float over the label's end so the track name is never squeezed */
+.luca-track-tools {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: flex;
+  gap: 1px;
+  padding-left: 14px;
+  transform: translateY(-50%);
+  background: linear-gradient(90deg, transparent, var(--color-bg-subtle) 12px);
+}
 .luca-track-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
   color: var(--color-text-3);
   transition:
     background-color 120ms ease-out,
@@ -126,28 +138,30 @@
 }
 .luca-track-btn-on {
   color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
 }
 .luca-track-icon-video {
-  color: var(--color-clip-video-edge);
+  color: var(--color-clip-video-ink);
 }
 .luca-track-icon-block {
-  color: var(--color-clip-block-edge);
+  color: var(--color-clip-block-ink);
 }
 .luca-track-icon-component {
-  color: var(--color-clip-component-edge);
+  color: var(--color-clip-component-ink);
 }
 .luca-track-icon-caption {
-  color: var(--color-clip-caption-edge);
+  color: var(--color-clip-caption-ink);
 }
 .luca-track-icon-audio {
-  color: var(--color-clip-audio-edge);
+  color: var(--color-clip-audio-ink);
 }
 
 /* Luca clip renderers */
 .luca-clip {
   --fill: var(--color-clip-video);
   --edge: var(--color-clip-video-edge);
-  --waveform: color-mix(in srgb, color-mix(in srgb, var(--edge) 60%, var(--color-text)) 50%, transparent);
+  --ink: var(--color-clip-video-ink);
+  --waveform: color-mix(in srgb, var(--ink) 62%, transparent);
   position: relative;
   height: calc(100% - 4px);
   margin-top: 2px;
@@ -166,22 +180,27 @@
 .luca-clip-video {
   --fill: var(--color-clip-video);
   --edge: var(--color-clip-video-edge);
+  --ink: var(--color-clip-video-ink);
 }
 .luca-clip-block {
   --fill: var(--color-clip-block);
   --edge: var(--color-clip-block-edge);
+  --ink: var(--color-clip-block-ink);
 }
 .luca-clip-component {
   --fill: var(--color-clip-component);
   --edge: var(--color-clip-component-edge);
+  --ink: var(--color-clip-component-ink);
 }
 .luca-clip-caption {
   --fill: var(--color-clip-caption);
   --edge: var(--color-clip-caption-edge);
+  --ink: var(--color-clip-caption-ink);
 }
 .luca-clip-audio {
   --fill: var(--color-clip-audio);
   --edge: var(--color-clip-audio-edge);
+  --ink: var(--color-clip-audio-ink);
 }
 .luca-clip-audio canvas {
   top: 4px;
@@ -215,7 +234,7 @@
   width: 12px;
   height: 12px;
   border-radius: 3px;
-  background: var(--edge);
+  background: var(--ink);
   color: white;
   font-size: 8px;
   font-weight: 700;
@@ -228,13 +247,15 @@
 }
 .luca-clip-handle {
   position: absolute;
-  top: 6px;
-  bottom: 6px;
-  width: 3px;
+  top: 5px;
+  bottom: 5px;
+  width: 4px;
   border-radius: 2px;
-  background: var(--edge);
+  background: var(--ink);
   opacity: 0;
-  transition: opacity 120ms ease-out;
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms ease-out;
   pointer-events: none;
 }
 .luca-clip-handle-l {
@@ -245,7 +266,27 @@
 }
 .luca-clip:hover .luca-clip-handle,
 .luca-clip-selected .luca-clip-handle {
+  opacity: 0.85;
+}
+/* the library's stretch areas sit over the handles: light the one under the pointer */
+.timeline-editor-action:has(.timeline-editor-action-left-stretch:hover) .luca-clip-handle-l,
+.timeline-editor-action:has(.timeline-editor-action-right-stretch:hover) .luca-clip-handle-r {
   opacity: 1;
+  transform: scaleY(1.15);
+}
+.luca-clip-muted {
+  --waveform: color-mix(in srgb, var(--color-text-3) 40%, transparent);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0 6px,
+      color-mix(in srgb, var(--color-text) 5%, transparent) 6px 12px
+    ),
+    var(--fill);
+}
+.luca-clip-locked {
+  cursor: not-allowed;
+  opacity: 0.75;
 }
 .luca-clip-selected .luca-clip-handle {
   background: var(--color-accent);

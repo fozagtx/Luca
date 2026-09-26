@@ -91,7 +91,7 @@ export function LooksTab(): ReactElement {
   return (
     <div className="flex h-full flex-col">
       <PaneHead title="Looks" />
-      <div className="p-2.5">
+      <div className="p-3">
         {naming ? (
           <div className="flex gap-1.5">
             <Input
@@ -137,7 +137,7 @@ export function LooksTab(): ReactElement {
           hint="Save this project's style to reuse its fonts, colors, captions, transitions and pacing on another video."
         />
       ) : (
-        <div className="scroll grid auto-rows-min grid-cols-2 gap-2.5 px-2.5 pb-2.5">
+        <div className="scroll grid auto-rows-min grid-cols-2 gap-2.5 px-3 pb-3">
           {looks.map((l) => (
             <div
               key={l.slug}
