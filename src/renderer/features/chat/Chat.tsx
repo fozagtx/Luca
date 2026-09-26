@@ -24,6 +24,7 @@ import {
 } from 'react'
 import { Button } from '../../components/ui/button'
 import { cn } from '../../lib/cn'
+import { catalogChip, hasCatalogDrag, readCatalogDrag } from '../../lib/drag'
 import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
 import { usePlayer } from '../../stores/player'
@@ -346,7 +347,8 @@ export function ChipPill({ chip, onRemove }: { chip: Chip; onRemove?: () => void
 }
 
 function Composer({ disabled }: { disabled: boolean }): ReactElement {
-  const { draft, setDraft, chips, removeChip, send, stop, state, error } = useChat()
+  const { draft, setDraft, chips, addChip, removeChip, send, stop, state, error } = useChat()
+  const [over, setOver] = useState(false)
   const currentTime = usePlayer((s) => s.currentTime)
   const ref = useRef<HTMLTextAreaElement>(null)
   const working = state === 'working'
@@ -372,7 +374,24 @@ function Composer({ disabled }: { disabled: boolean }): ReactElement {
   }
 
   return (
-    <div className="shrink-0 border-t border-border p-2">
+    <div
+      className={cn('shrink-0 border-t border-border p-2', over && 'bg-accent/8')}
+      onDragOver={(e) => {
+        if (!hasCatalogDrag(e.dataTransfer)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        if (!over) setOver(true)
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        setOver(false)
+        const d = readCatalogDrag(e.dataTransfer)
+        if (!d) return
+        e.preventDefault()
+        addChip(catalogChip(d))
+        ref.current?.focus()
+      }}
+    >
       {error ? (
         <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] text-[#FF3B30]">
           <CircleAlert size={12} />{' '}

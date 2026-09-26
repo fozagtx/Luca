@@ -3,14 +3,18 @@ import './timeline.css'
 import { Timeline as Editor, type TimelineState } from '@xzdarcy/react-timeline-editor'
 import type { TimelineAction, TimelineRow } from '@xzdarcy/timeline-engine'
 import { Minus, Plus } from 'lucide-react'
-import { useEffect, useMemo, useRef, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactElement } from 'react'
 import type { Clip } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
 import { cn } from '../../lib/cn'
+import { catalogChip, hasCatalogDrag, readCatalogDrag, type CatalogDrag } from '../../lib/drag'
+import { luca } from '../../lib/luca'
 import { timecode } from '../../lib/timecode'
+import { useChat } from '../../stores/chat'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useTimeline } from '../../stores/timeline'
+import { useUi } from '../../stores/ui'
 import {
   ROW_HEIGHT,
   STRIP_HEIGHT,
@@ -110,6 +114,8 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   const seek = usePlayer((s) => s.seek)
   const ref = useRef<TimelineState>(null)
   const dragging = useRef(false)
+  const [dropAt, setDropAt] = useState<number | null>(null)
+  const [dropError, setDropError] = useState<string | null>(null)
 
   const duration = Math.max(timeline.duration, playerDuration, 1)
   const { rows, meta, clips } = useMemo(() => toRows(timeline, duration), [timeline, duration])
@@ -128,6 +134,33 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     }
     return [...pts]
   }, [clips, duration, currentTime])
+
+  const dropTime = (e: DragEvent<HTMLDivElement>): number => {
+    const area = e.currentTarget.querySelector<HTMLElement>('.timeline-editor-edit-area')
+    const box = (area ?? e.currentTarget).getBoundingClientRect()
+    const x = e.clientX - box.left - START_LEFT + (area?.scrollLeft ?? 0)
+    const t = Math.max(0, Math.min(duration, x / zoom))
+    return Math.round(t * fps) / fps
+  }
+
+  const placeCatalogItem = async (d: CatalogDrag, at: number): Promise<void> => {
+    setDropError(null)
+    const res = await luca.catalog.add(d.name)
+    if (!res.ok) {
+      setDropError(res.error ?? `Could not add ${d.name}`)
+      setTimeout(() => setDropError(null), 6000)
+      return
+    }
+    const chat = useChat.getState()
+    chat.addChip(catalogChip(d))
+    const tc = timecode(at, fps)
+    const text =
+      d.source === 'remocn'
+        ? `Place remocn \`${d.name}\` at ${tc}.`
+        : `Insert \`${d.name}\` at ${tc} on a new track. It is installed; the \`add\` snippet was:\n\n\`\`\`html\n${(res.snippet ?? '').trim()}\n\`\`\``
+    if (!useUi.getState().chatOpen) useUi.getState().toggleChat()
+    await chat.send(text, { time: at })
+  }
 
   const snap = (t: number, self: Clip): number => {
     const tol = 6 / zoom
@@ -201,7 +234,33 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
           )
         })}
       </div>
-      <div className="min-w-0 flex-1">
+      <div
+        className={cn('relative min-w-0 flex-1', dropAt !== null && 'bg-accent/5')}
+        onDragOver={(e) => {
+          if (!hasCatalogDrag(e.dataTransfer)) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+          setDropAt(dropTime(e))
+        }}
+        onDragLeave={() => setDropAt(null)}
+        onDrop={(e) => {
+          const d = readCatalogDrag(e.dataTransfer)
+          setDropAt(null)
+          if (!d) return
+          e.preventDefault()
+          void placeCatalogItem(d, dropTime(e))
+        }}
+      >
+        {dropAt !== null ? (
+          <div className="pointer-events-none absolute top-0 right-2 z-10 rounded-[4px] bg-accent px-1.5 py-0.5 text-[10px] text-white">
+            Insert at {timecode(dropAt, fps)}
+          </div>
+        ) : null}
+        {dropError ? (
+          <div className="absolute right-2 bottom-2 z-10 rounded-[4px] bg-[#FF3B30] px-1.5 py-0.5 text-[10px] text-white">
+            {dropError}
+          </div>
+        ) : null}
         <Editor
           ref={ref}
           editorData={editorRows}
