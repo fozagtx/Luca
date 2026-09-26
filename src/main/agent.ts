@@ -204,8 +204,9 @@ export class ProjectAgent {
     this.stateDetail = detail
     this.emit({ type: 'status', state, detail })
   }
-  private pushHistory(): void {
-    broadcast(Channels.agentHistoryPush, this.messages)
+  /** Send the renderer one message that changed, not the whole (growing) history. */
+  private pushMessage(m: ChatMessage | null): void {
+    if (m) broadcast(Channels.agentMessage, m)
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -317,7 +318,7 @@ export class ProjectAgent {
     }
     this.messages.push(user)
     this.rewriteHistory()
-    this.pushHistory()
+    this.pushMessage(user)
     if (this.working) {
       this.queued.push(turn)
       return
@@ -350,7 +351,7 @@ export class ProjectAgent {
       pending: true
     }
     this.messages.push(this.current)
-    this.pushHistory()
+    this.pushMessage(this.current)
     this.emit({ type: 'turn-start' })
     this.setState('working')
 
@@ -442,7 +443,7 @@ export class ProjectAgent {
     const id = randomUUID()
     const part: ChatContentPart = { type: 'permission', id, tool: toolName, input }
     this.current?.parts?.push(part)
-    this.pushHistory()
+    this.pushMessage(this.current)
     this.emit({ type: 'permission', id, tool: toolName, input })
     return new Promise<PermissionResult>((resolvePerm) => {
       this.pending.set(id, { resolve: resolvePerm, tool: key, suggestions })
@@ -459,7 +460,7 @@ export class ProjectAgent {
     )
     if (part) part.resolved = decision
     this.emit({ type: 'permission-resolved', id })
-    this.pushHistory()
+    this.pushMessage(this.current)
     if (decision === 'deny') {
       p.resolve({ behavior: 'deny', message: 'The user denied this action in Luca.' })
       return
@@ -539,7 +540,7 @@ export class ProjectAgent {
             this.tools.set(block.id, part)
             this.current?.parts?.push(part)
             this.emit(part)
-            this.pushHistory()
+            this.pushMessage(this.current)
           }
         }
         return
@@ -568,7 +569,7 @@ export class ProjectAgent {
               part.detail = out.length > 4000 ? out.slice(0, 4000) + '\n…' : out
             }
             this.emit(part)
-            this.pushHistory()
+            this.pushMessage(this.current)
           }
         }
         return
@@ -599,7 +600,7 @@ export class ProjectAgent {
     if (last && last.type === 'text') last.text += text
     else parts.push({ type: 'text', text })
     this.current.text += text
-    this.emit({ type: 'text-delta', text })
+    this.emit({ type: 'text-delta', id: this.current.id, text })
   }
 
   private finishTurn(isError: boolean, error?: string): void {
@@ -614,10 +615,10 @@ export class ProjectAgent {
           this.state === 'needs-login' ? 'Sign in to Claude Code to continue.' : error
         )
       }
+      this.pushMessage(this.current)
       this.current = null
     }
     this.rewriteHistory()
-    this.pushHistory()
     const end: Extract<AgentEvent, { type: 'turn-end' }> = {
       type: 'turn-end',
       sessionId: this.sessionId ?? '',

@@ -72,7 +72,7 @@ const api: LucaApi = {
     state: () => invoke(C.agentState),
     restart: () => invoke(C.agentRestart),
     onEvent: (cb) => on(C.agentEvent, cb),
-    onHistory: (cb) => on(C.agentHistoryPush, cb)
+    onMessage: (cb) => on(C.agentMessage, cb)
   },
   catalog: {
     list: (args) => invoke(C.catalogList, args),

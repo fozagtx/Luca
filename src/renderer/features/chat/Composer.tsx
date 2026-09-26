@@ -31,14 +31,21 @@ const MAX_LINES = 8
  * dropped on it is what the video starts from).
  */
 export function Composer({ noProject }: { noProject: boolean }): ReactElement {
-  const { draft, setDraft, chips, addChip, removeChip, send, stop, state, error } = useChat()
+  const draft = useChat((s) => s.draft)
+  const setDraft = useChat((s) => s.setDraft)
+  const chips = useChat((s) => s.chips)
+  const addChip = useChat((s) => s.addChip)
+  const removeChip = useChat((s) => s.removeChip)
+  const send = useChat((s) => s.send)
+  const stop = useChat((s) => s.stop)
+  const state = useChat((s) => s.state)
+  const error = useChat((s) => s.error)
   const voiceMode = useVoice((s) => s.mode)
   const voiceError = useVoice((s) => s.error)
   const needsKey = useVoice((s) => s.needsKey)
   const startVoice = useVoice((s) => s.start)
   const dismissVoice = useVoice((s) => s.dismiss)
   const [over, setOver] = useState(false)
-  const currentTime = usePlayer((s) => s.currentTime)
   const grab = usePlayer((s) => s.grab)
   const toggleGrab = usePlayer((s) => s.toggleGrab)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -60,7 +67,8 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const submit = (): void => {
     const text = draft.trim()
     if (!canSend || disabled) return
-    void send(text, { time: currentTime })
+    // read at send time: subscribing would re-render the composer on every frame of playback
+    void send(text, { time: usePlayer.getState().currentTime })
   }
   /** Anywhere on the box (not a button) puts the caret in the text, at the end. */
   const focusText = (e: MouseEvent): void => {

@@ -76,7 +76,8 @@ export type Chip =
   | { kind: 'transcript'; text: string; start: number; end: number }
 
 export type AgentEvent =
-  | { type: 'text-delta'; text: string }
+  /** Streamed reply text for the assistant message `id`. */
+  | { type: 'text-delta'; id: string; text: string }
   | {
       type: 'tool'
       id: string

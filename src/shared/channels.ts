@@ -79,7 +79,7 @@ export const Channels = {
   projectDropFile: 'project:drop-file',
   projectCreateProgress: 'project:create-progress',
   agentEvent: 'agent:event',
-  agentHistoryPush: 'agent:history-push',
+  agentMessage: 'agent:message',
   cleanStatusPush: 'clean:status-push',
   historyChanged: 'history:changed',
   exportProgress: 'export:progress',
