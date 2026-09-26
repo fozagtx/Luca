@@ -1,5 +1,5 @@
 import type { Look } from '@shared/types'
-import { Check, MoreHorizontal, Plus } from 'lucide-react'
+import { Check, CircleAlert, MoreHorizontal, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
 import { Button } from '../../../components/ui/button'
 import { GenerateButton } from '../../../components/ui/generate-button'
@@ -8,6 +8,8 @@ import { cn } from '../../../lib/cn'
 import { luca } from '../../../lib/luca'
 import { errorMessage, useProject } from '../../../stores/project'
 import { EmptyPane } from '../EmptyPane'
+import { PaneHead } from '../Sidebar'
+import { relativeDate } from '../../../lib/format'
 
 type LookCard = Look & { thumb: string | null }
 
@@ -87,7 +89,8 @@ export function LooksTab(): ReactElement {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-border p-2">
+      <PaneHead title="Looks" />
+      <div className="p-2.5">
         {naming ? (
           <div className="flex gap-1.5">
             <Input
@@ -101,26 +104,31 @@ export function LooksTab(): ReactElement {
                 if (e.key === 'Escape') setNaming(false)
               }}
             />
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={saving || !name.trim()}
-              onClick={() => void save()}
-            >
+            <Button variant="primary" disabled={saving || !name.trim()} onClick={() => void save()}>
               {saving ? 'Saving…' : 'Save'}
             </Button>
           </div>
         ) : (
-          <Button size="sm" disabled={!project || saving} onClick={() => setNaming(true)}>
-            <Plus size={12} /> Save current style
+          <Button
+            variant="primary"
+            className="w-full"
+            disabled={!project || saving}
+            onClick={() => setNaming(true)}
+          >
+            <Plus size={13} strokeWidth={2} /> Save current style
           </Button>
         )}
         {saving ? (
-          <p className="mt-1 text-[10.5px] text-text-3">
+          <p className="mt-1.5 text-[10.5px] leading-[1.45] text-text-3">
             Claude is writing LOOK.md, then components and a thumbnail are captured…
           </p>
         ) : null}
-        {error ? <p className="mt-1 text-[10.5px] text-danger">{error}</p> : null}
+        {error ? (
+          <div className="mt-2 flex items-start gap-1.5 rounded-[6px] border border-danger/25 bg-danger/8 px-2 py-1.5 text-[10.5px] leading-[1.4] text-danger">
+            <CircleAlert size={12} className="mt-px shrink-0" />
+            <span className="select-text">{error}</span>
+          </div>
+        ) : null}
       </div>
       {!looks ? null : looks.length === 0 ? (
         <EmptyPane
@@ -128,44 +136,56 @@ export function LooksTab(): ReactElement {
           hint="Save this project's style to reuse its fonts, colors, captions, transitions and pacing on another video."
         />
       ) : (
-        <div className="grid grid-cols-2 gap-2 overflow-y-auto p-2">
+        <div className="scroll grid auto-rows-min grid-cols-2 gap-2.5 px-2.5 pb-2.5">
           {looks.map((l) => (
             <div
               key={l.slug}
               className={cn(
-                'group relative overflow-hidden rounded-[8px] border border-border bg-bg',
-                active === l.slug && 'border-accent'
+                'card card-hover group relative p-1.5',
+                active === l.slug && 'ring-2 ring-accent ring-offset-1 ring-offset-bg'
               )}
               onContextMenu={(e) => {
                 e.preventDefault()
                 void luca.menu.popupLook(l.slug)
               }}
             >
-              <div className="aspect-video bg-bg-muted">
+              <div className="relative aspect-video overflow-hidden rounded-[5px] bg-bg-muted">
                 {l.thumb ? (
-                  <img src={l.thumb} alt="" className="h-full w-full object-cover" />
+                  <img
+                    src={l.thumb}
+                    alt=""
+                    draggable={false}
+                    className="h-full w-full object-cover"
+                  />
+                ) : null}
+                {active === l.slug ? (
+                  <span className="absolute top-1.5 left-1.5 inline-flex items-center gap-1 rounded-[4px] bg-accent px-1.5 py-px text-[9.5px] font-medium text-accent-fg">
+                    <Check size={10} strokeWidth={2.5} /> Active
+                  </span>
                 ) : null}
               </div>
-              <div className="flex items-center gap-1 px-2 py-1.5">
+              <div className="flex items-center gap-1 px-1 pt-1.5 pb-1">
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[11.5px] font-medium text-text">{l.name}</div>
                   <div className="truncate text-[10px] text-text-3">
-                    {l.sourceProject} · {l.catalogItems.length} catalog items
+                    {relativeDate(l.createdAt)}
+                    {l.catalogItems.length > 0 && ` · ${l.catalogItems.length} items`}
                   </div>
                 </div>
-                <button
-                  className="rounded p-0.5 text-text-3 hover:bg-hover"
+                <Button
+                  variant="icon"
+                  className="h-6 w-6 shrink-0 text-text-3 hover:text-text"
                   onClick={() => void luca.menu.popupLook(l.slug)}
                   aria-label="Look menu"
                 >
                   <MoreHorizontal size={13} />
-                </button>
+                </Button>
               </div>
-              <div className="px-2 pb-2">
+              <div className="px-1 pb-1">
                 {active === l.slug ? (
-                  <span className="flex items-center gap-1 text-[10.5px] text-accent">
-                    <Check size={11} /> Active
-                  </span>
+                  <Button variant="outline" size="sm" className="w-full" disabled>
+                    Applied
+                  </Button>
                 ) : (
                   <GenerateButton
                     size="sm"
@@ -175,6 +195,7 @@ export function LooksTab(): ReactElement {
                     generating={busy === l.slug}
                     disabled={!project || busy !== null}
                     onClick={() => void apply(l.slug)}
+                    className="w-full"
                   />
                 )}
               </div>

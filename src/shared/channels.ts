@@ -58,6 +58,7 @@ export const Channels = {
   menuPopupLook: 'menu:popup-look',
   projectChanged: 'project:changed',
   projectOpened: 'project:opened',
+  projectRecentChanged: 'project:recent-changed',
   projectDropFile: 'project:drop-file',
   agentEvent: 'agent:event',
   agentHistoryPush: 'agent:history-push',

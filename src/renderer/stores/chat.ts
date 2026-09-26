@@ -42,7 +42,13 @@ export const useChat = create<ChatStore>((set, get) => ({
 
   load: async () => {
     const [messages, status] = await Promise.all([luca.agent.history(), luca.agent.state()])
-    set({ messages, state: status.state as AgentState, detail: status.detail })
+    set({
+      messages,
+      state: status.state as AgentState,
+      detail: status.detail,
+      chips: [],
+      error: null
+    })
   },
 
   send: async (text, context) => {

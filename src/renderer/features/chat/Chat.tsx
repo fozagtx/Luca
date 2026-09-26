@@ -1,6 +1,6 @@
 import type { ChatContentPart, ChatMessage, Chip } from '@shared/types'
 import {
-  Check,
+  AtSign,
   ChevronRight,
   CircleAlert,
   FileCode2,
@@ -9,6 +9,7 @@ import {
   MousePointer2,
   Package,
   Scissors,
+  Sparkles,
   Square,
   Type,
   X
@@ -38,14 +39,16 @@ export function Chat(): ReactElement {
     bind()
   }, [bind])
   useEffect(() => {
-    if (projectDir) void load()
+    void load()
   }, [projectDir, load])
 
   return (
     <section className="flex h-full flex-col bg-panel">
-      <header className="flex h-11 shrink-0 items-center justify-between border-b border-border px-3 text-[12px] font-medium text-text-2">
-        <span>Chat</span>
-        <StatusDot />
+      <header className="panel-head shrink-0">
+        <span className="panel-title">Chat</span>
+        <div className="ml-auto">
+          <StatusDot />
+        </div>
       </header>
       {state === 'needs-login' || state === 'missing-claude' ? (
         <Onboarding state={state} detail={detail} />
@@ -90,45 +93,60 @@ function Onboarding({ state, detail }: { state: string; detail?: string }): Reac
     void window.luca.env.installClaudeCommand().then(setCmd)
   }, [])
   return (
-    <div className="m-3 rounded-[10px] border border-border bg-bg-muted p-3 text-[12px] leading-[1.5] text-text">
-      {state === 'missing-claude' ? (
-        <>
-          <div className="font-medium">Install Claude Code</div>
-          <p className="mt-1 text-text-2">
-            Luca drives your own Claude Code binary. Install it, then retry.
-          </p>
-          <code className="mt-2 block select-text rounded-[6px] bg-bg px-2 py-1 font-mono text-[11px]">
-            {cmd}
-          </code>
-          <div className="mt-2 flex gap-2">
-            <Button size="sm" variant="primary" onClick={() => void retry()}>
-              Retry
-            </Button>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="font-medium">Sign in to Claude Code</div>
-          <p className="mt-1 text-text-2">
-            Luca uses your Claude account through the stock{' '}
-            <code className="font-mono">claude</code> binary. Sign in opens Terminal running{' '}
-            <code className="font-mono">claude /login</code>; Luca never sees your credentials.
-          </p>
-          {detail ? (
-            <pre className="mt-2 max-h-16 select-text overflow-auto whitespace-pre-wrap font-mono text-[10.5px] text-text-3">
-              {detail}
-            </pre>
-          ) : null}
-          <div className="mt-2 flex gap-2">
-            <Button size="sm" variant="primary" onClick={() => void signIn()}>
-              Sign in
-            </Button>
-            <Button size="sm" onClick={() => void retry()}>
-              I signed in, retry
-            </Button>
-          </div>
-        </>
-      )}
+    <div className="glow-card m-3">
+      <div className="rounded-[11px] bg-bg p-3.5 text-[12px] leading-[1.5] text-text">
+        {state === 'missing-claude' ? (
+          <>
+            <div className="flex items-center gap-2 text-[13px] font-semibold">
+              <span className="flex size-6 items-center justify-center rounded-[6px] bg-secondary text-secondary-fg">
+                <Sparkles size={13} />
+              </span>
+              Install Claude Code
+            </div>
+            <p className="mt-1 text-text-2">
+              Luca drives your own Claude Code binary. Install it, then retry.
+            </p>
+            <code className="mt-2 block select-text rounded-[6px] bg-bg px-2 py-1 font-mono text-[11px]">
+              {cmd}
+            </code>
+            <div className="mt-3 flex gap-2">
+              <Button variant="primary" onClick={() => void retry()}>
+                Retry
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2 text-[13px] font-semibold">
+              <span className="flex size-6 items-center justify-center rounded-[6px] bg-secondary text-secondary-fg">
+                <Sparkles size={13} />
+              </span>
+              Sign in to Claude Code
+            </div>
+            <p className="mt-1 text-text-2">
+              Luca uses your Claude account through the stock{' '}
+              <code className="font-mono">claude</code> binary. Sign in opens Terminal running{' '}
+              <code className="font-mono">claude /login</code>; Luca never sees your credentials.
+            </p>
+            {detail ? (
+              <div className="mt-2.5 flex items-start gap-2 rounded-[8px] border border-danger/25 bg-danger/8 px-2.5 py-2 text-danger">
+                <CircleAlert size={13} className="mt-px shrink-0" />
+                <pre className="max-h-16 min-w-0 flex-1 select-text overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.45]">
+                  {detail}
+                </pre>
+              </div>
+            ) : null}
+            <div className="mt-3 flex gap-2">
+              <Button variant="primary" onClick={() => void signIn()}>
+                Sign in
+              </Button>
+              <Button variant="outline" onClick={() => void retry()}>
+                I signed in, retry
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -147,11 +165,16 @@ function Messages({ messages }: { messages: ChatMessage[] }): ReactElement {
   }
   if (messages.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center text-[12px] text-text-3">
-        <span>Ask Claude to edit your video.</span>
-        <span className="text-[11px]">
-          “Add a title that says Hello”, “Make the captions bigger”, “Cut the first 2 seconds”.
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+        <span className="flex size-9 items-center justify-center rounded-[10px] bg-secondary text-secondary-fg">
+          <Sparkles size={16} />
         </span>
+        <div>
+          <div className="text-[13px] font-medium text-text">Ask Claude to edit your video</div>
+          <div className="mt-1 text-[11.5px] leading-[1.5] text-text-3">
+            “Add a title that says Hello” · “Make the captions bigger” · “Cut the first 2 seconds”
+          </div>
+        </div>
       </div>
     )
   }
@@ -222,27 +245,36 @@ function Part({ part }: { part: ChatContentPart }): ReactElement {
 function ToolRow({ part }: { part: Extract<ChatContentPart, { type: 'tool' }> }): ReactElement {
   const [open, setOpen] = useState(false)
   return (
-    <div className="rounded-[6px] text-[12px]">
+    <div className="text-[12px]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 rounded-[6px] px-1.5 py-1 text-left text-text-2 hover:bg-hover"
-      >
-        <ChevronRight
-          size={12}
-          className={cn('shrink-0 transition-transform', open && 'rotate-90')}
-        />
-        {part.status === 'running' ? (
-          <LoaderCircle size={12} className="shrink-0 animate-spin text-accent" />
-        ) : part.status === 'error' ? (
-          <CircleAlert size={12} className="shrink-0 text-danger" />
-        ) : (
-          <Check size={12} className="shrink-0 text-[#34C759]" />
+        className={cn(
+          'inline-flex max-w-full items-center gap-1.5 rounded-[6px] border border-border bg-bg-subtle py-[3px] pr-2 pl-1.5 text-left font-mono text-[11px] text-text-2 transition-colors hover:bg-hover',
+          open && 'rounded-b-none'
         )}
-        <span className="truncate">{part.summary}</span>
+      >
+        <span
+          className={cn(
+            'size-1.5 shrink-0 rounded-full',
+            part.status === 'running'
+              ? 'animate-pulse bg-accent'
+              : part.status === 'error'
+                ? 'bg-danger'
+                : 'bg-success'
+          )}
+        />
+        <span className="shrink-0 font-medium text-text-2">{part.name}</span>
+        <span className="truncate text-text-3">{part.summary}</span>
+        {part.detail ? (
+          <ChevronRight
+            size={11}
+            className={cn('shrink-0 text-text-3 transition-transform', open && 'rotate-90')}
+          />
+        ) : null}
       </button>
       {open && part.detail ? (
-        <pre className="mx-1.5 mb-1 max-h-60 select-text overflow-auto whitespace-pre-wrap rounded-[6px] bg-bg-muted p-2 font-mono text-[11px] leading-[1.45] text-text-2">
+        <pre className="max-h-60 select-text overflow-auto whitespace-pre-wrap rounded-[6px] rounded-tl-none border border-border bg-bg-subtle p-2 font-mono text-[11px] leading-[1.45] text-text-2">
           {part.detail}
         </pre>
       ) : null}
@@ -375,7 +407,7 @@ function Composer({ disabled }: { disabled: boolean }): ReactElement {
 
   return (
     <div
-      className={cn('shrink-0 border-t border-border p-2', over && 'bg-accent/8')}
+      className="shrink-0 border-t border-border p-2.5"
       onDragOver={(e) => {
         if (!hasCatalogDrag(e.dataTransfer)) return
         e.preventDefault()
@@ -393,52 +425,62 @@ function Composer({ disabled }: { disabled: boolean }): ReactElement {
       }}
     >
       {error ? (
-        <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] text-danger">
-          <CircleAlert size={12} />{' '}
-          {error.replace(/^Error invoking remote method '[^']+': Error: /, '')}
+        <div className="mb-2 flex items-start gap-2 rounded-[8px] border border-danger/25 bg-danger/8 px-2.5 py-1.5 text-[11.5px] leading-[1.4] text-danger">
+          <CircleAlert size={13} className="mt-px shrink-0" />
+          <span className="select-text">
+            {error.replace(/^Error invoking remote method '[^']+': Error: /, '')}
+          </span>
         </div>
       ) : null}
-      {chips.length > 0 ? (
-        <div className="mb-1.5 flex flex-wrap gap-1 px-1">
+      <div
+        className={cn(
+          'rounded-[10px] border border-border bg-input shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] duration-150',
+          'focus-within:border-accent focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]',
+          over && 'border-accent bg-accent/5'
+        )}
+      >
+        <div className="flex flex-wrap items-center gap-1 px-2 pt-2">
           {chips.map((c, i) => (
             <ChipPill key={i} chip={c} onRemove={() => removeChip(i)} />
           ))}
+          <span className="inline-flex h-[22px] items-center gap-1 rounded-full px-1.5 text-[10.5px] text-text-3">
+            <AtSign size={11} />
+            {chips.length === 0 ? 'Grab an element or frame, or drop a catalog item' : 'Context'}
+          </span>
         </div>
-      ) : null}
-      <div className="flex items-end gap-1.5 rounded-[10px] border border-border bg-bg px-2 py-1.5 focus-within:border-accent">
-        <textarea
-          ref={ref}
-          id="chat-composer"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKey}
-          disabled={disabled}
-          rows={1}
-          placeholder={disabled ? 'Open a project to chat' : 'Ask Claude…'}
-          className="flex-1 resize-none select-text bg-transparent text-[13px] leading-[19px] text-text outline-none placeholder:text-text-3"
-        />
-        {working ? (
-          <GenerateButton
-            size="sm"
-            hue={210}
-            generating
-            label="Send"
-            generatingLabel="Stop"
-            icon={<Square size={10} fill="currentColor" />}
-            onClick={() => void stop()}
-            title="Stop"
+        <div className="flex items-end gap-2 px-2 pt-1 pb-2">
+          <textarea
+            ref={ref}
+            id="chat-composer"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={onKey}
+            disabled={disabled}
+            rows={1}
+            placeholder={disabled ? 'Open a project to chat' : 'Ask Claude to edit…'}
+            className="flex-1 resize-none select-text bg-transparent px-1 pb-1.5 text-[13px] leading-[19px] text-text outline-none placeholder:text-text-3"
           />
-        ) : (
-          <GenerateButton
-            size="sm"
-            hue={210}
-            label="Send"
-            generatingLabel="Sending"
-            disabled={disabled || !draft.trim()}
-            onClick={submit}
-            title="Send (↩)"
-          />
-        )}
+          {working ? (
+            <GenerateButton
+              hue={210}
+              generating
+              label="Send"
+              generatingLabel="Stop"
+              icon={<Square size={10} fill="currentColor" />}
+              onClick={() => void stop()}
+              title="Stop"
+            />
+          ) : (
+            <GenerateButton
+              hue={210}
+              label="Send"
+              generatingLabel="Sending"
+              disabled={disabled || !draft.trim()}
+              onClick={submit}
+              title="Send (↩)"
+            />
+          )}
+        </div>
       </div>
     </div>
   )

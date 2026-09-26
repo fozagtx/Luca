@@ -2,10 +2,10 @@ import '@xzdarcy/react-timeline-editor/dist/react-timeline-editor.css'
 import './timeline.css'
 import { Timeline as Editor, type TimelineState } from '@xzdarcy/react-timeline-editor'
 import type { TimelineAction, TimelineRow } from '@xzdarcy/timeline-engine'
-import { Minus, Plus } from 'lucide-react'
+import { AudioLines, Captions, Film, Lock, Puzzle, Shapes, Volume2, VolumeX } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactElement } from 'react'
 import type { Clip } from '../../../shared/types'
-import { Button } from '../../components/ui/button'
+import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { catalogChip, hasCatalogDrag, readCatalogDrag, type CatalogDrag } from '../../lib/drag'
 import { luca } from '../../lib/luca'
@@ -25,7 +25,7 @@ import {
 } from './timeline-adapter'
 import { Waveform } from './Waveform'
 
-const LABEL_WIDTH = 96
+const LABEL_WIDTH = 120
 const START_LEFT = 8
 
 const KIND_LABEL: Record<RowMeta['kind'], string> = {
@@ -37,11 +37,69 @@ const KIND_LABEL: Record<RowMeta['kind'], string> = {
   audio: 'Audio'
 }
 
+const KIND_ICON: Record<RowMeta['kind'], typeof Film> = {
+  strip: Film,
+  video: Film,
+  block: Shapes,
+  component: Puzzle,
+  caption: Captions,
+  audio: AudioLines
+}
+
+function TrackHead({ kind, height }: { kind: RowMeta['kind']; height: number }): ReactElement {
+  const [muted, setMuted] = useState(false)
+  const [locked, setLocked] = useState(false)
+  const Icon = KIND_ICON[kind]
+  if (kind === 'strip')
+    return (
+      <div className="luca-track-head luca-track-head-strip" style={{ height }}>
+        <Film size={13} strokeWidth={1.75} className="shrink-0 text-text-3" />
+        <span className="text-text-3">Frames</span>
+      </div>
+    )
+  return (
+    <div
+      className={cn('luca-track-head group/head', locked && 'luca-track-head-locked')}
+      style={{ height }}
+    >
+      <Icon size={13} strokeWidth={1.75} className={cn('shrink-0', `luca-track-icon-${kind}`)} />
+      <span className="min-w-0 flex-1 truncate">{KIND_LABEL[kind]}</span>
+      <div
+        className="flex shrink-0 items-center gap-px opacity-0 transition-opacity group-hover/head:opacity-100 data-[on=true]:opacity-100"
+        data-on={muted || locked}
+      >
+        <Tip label={muted ? 'Unmute' : 'Mute'} side="right">
+          <button
+            type="button"
+            className={cn('luca-track-btn', muted && 'luca-track-btn-on')}
+            aria-pressed={muted}
+            aria-label="Mute track"
+            onClick={() => setMuted((v) => !v)}
+          >
+            {muted ? <VolumeX size={11} strokeWidth={2} /> : <Volume2 size={11} strokeWidth={2} />}
+          </button>
+        </Tip>
+        <Tip label={locked ? 'Unlock' : 'Lock'} side="right">
+          <button
+            type="button"
+            className={cn('luca-track-btn', locked && 'luca-track-btn-on')}
+            aria-pressed={locked}
+            aria-label="Lock track"
+            onClick={() => setLocked((v) => !v)}
+          >
+            <Lock size={11} strokeWidth={2} />
+          </button>
+        </Tip>
+      </div>
+    </div>
+  )
+}
+
 export function Timeline(): ReactElement {
   const project = useProject((s) => s.project)
   const projectDir = project?.dir ?? null
   const version = useProject((s) => s.version)
-  const { timeline, load, loadMedia, reset, zoom, error } = useTimeline()
+  const { timeline, load, loadMedia, reset, error } = useTimeline()
 
   useEffect(() => {
     if (!projectDir) {
@@ -72,25 +130,6 @@ export function Timeline(): ReactElement {
           {error ?? 'Reading timeline…'}
         </div>
       )}
-      <div className="absolute bottom-1.5 right-2 flex items-center gap-0.5 dock">
-        <Button
-          variant="icon"
-          aria-label="Zoom out"
-          onClick={() => useTimeline.getState().zoomBy(0.8)}
-        >
-          <Minus size={12} />
-        </Button>
-        <span className="w-10 text-center text-[10px] tabular-nums text-text-3">
-          {Math.round(zoom)}px/s
-        </span>
-        <Button
-          variant="icon"
-          aria-label="Zoom in"
-          onClick={() => useTimeline.getState().zoomBy(1.25)}
-        >
-          <Plus size={12} />
-        </Button>
-      </div>
       {error && timeline ? (
         <div className="pointer-events-none absolute left-[104px] top-9 rounded-[6px] bg-danger px-2 py-1 text-[11px] text-white shadow-popover">
           {error}
@@ -116,6 +155,17 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   const dragging = useRef(false)
   const [dropAt, setDropAt] = useState<number | null>(null)
   const [dropError, setDropError] = useState<string | null>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const setViewportWidth = useTimeline((s) => s.setViewportWidth)
+
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setViewportWidth(el.clientWidth))
+    ro.observe(el)
+    setViewportWidth(el.clientWidth)
+    return () => ro.disconnect()
+  }, [setViewportWidth])
 
   const duration = Math.max(timeline.duration, playerDuration, 1)
   const { rows, meta, clips } = useMemo(() => toRows(timeline, duration), [timeline, duration])
@@ -210,31 +260,27 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
         ) : null}
         <span className="luca-clip-label">
           {clip.remocn ? <span className="luca-clip-badge">R</span> : null}
-          {clip.label}
+          <span className="truncate">{clip.label}</span>
         </span>
+        <span className="luca-clip-handle luca-clip-handle-l" />
+        <span className="luca-clip-handle luca-clip-handle-r" />
       </div>
     )
   }
 
   return (
     <div className="flex min-h-0 flex-1">
-      <div className="shrink-0 border-r border-border bg-bg-subtle" style={{ width: LABEL_WIDTH }}>
-        <div className="h-8 border-b border-border" />
+      <div className="luca-track-heads shrink-0" style={{ width: LABEL_WIDTH }}>
+        <div className="flex h-8 items-end border-b border-border px-2.5 pb-1 font-mono text-[10px] tabular-nums text-text-3">
+          {timecode(currentTime, fps)}
+        </div>
         <div style={{ height: 10 }} />
-        {rows.map((r) => {
-          const m = meta.get(r.id)!
-          return (
-            <div
-              key={r.id}
-              className="flex items-center px-2 text-[11px] font-medium text-text-2"
-              style={{ height: r.rowHeight ?? ROW_HEIGHT }}
-            >
-              {m.kind === 'strip' ? '' : KIND_LABEL[m.kind]}
-            </div>
-          )
-        })}
+        {rows.map((r) => (
+          <TrackHead key={r.id} kind={meta.get(r.id)!.kind} height={r.rowHeight ?? ROW_HEIGHT} />
+        ))}
       </div>
       <div
+        ref={viewportRef}
         className={cn('relative min-w-0 flex-1', dropAt !== null && 'bg-accent/5')}
         onDragOver={(e) => {
           if (!hasCatalogDrag(e.dataTransfer)) return
@@ -355,8 +401,8 @@ function Strip({
       <img
         key={i}
         src={`/p/${encodeURIComponent(projectId)}/${thumbs.dir}/${String(i + 1).padStart(4, '0')}.jpg`}
-        style={{ width: w, height: STRIP_HEIGHT - 4 }}
-        className="shrink-0 object-cover"
+        style={{ width: w, height: STRIP_HEIGHT }}
+        className="block shrink-0 object-cover"
         draggable={false}
         alt=""
       />

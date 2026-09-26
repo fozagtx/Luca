@@ -1,46 +1,93 @@
-import { RefreshCw, Search } from 'lucide-react'
+import { Blocks, Puzzle, RefreshCw, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { CatalogItem, RemocnItem } from '../../../../shared/types'
 import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
+import { Segmented } from '../../../components/ui/segmented'
+import { Tip } from '../../../components/ui/tooltip'
 import { cn } from '../../../lib/cn'
 import { catalogChip, setCatalogDrag } from '../../../lib/drag'
 import { luca } from '../../../lib/luca'
 import { useChat } from '../../../stores/chat'
 import { useUi } from '../../../stores/ui'
 import { EmptyPane } from '../EmptyPane'
+import { PaneHead } from '../Sidebar'
 
-type Filter = 'all' | 'block' | 'component'
-type Source = 'hyperframes' | 'remocn'
+type View = 'block' | 'component' | 'remocn'
+
+const views = [
+  { id: 'block', label: 'Blocks' },
+  { id: 'component', label: 'Components' },
+  { id: 'remocn', label: 'Remocn' }
+] as const satisfies readonly { id: View; label: string }[]
 
 export function CatalogTab(): ReactElement {
-  const [source, setSource] = useState<Source>('hyperframes')
+  const [view, setView] = useState<View>('block')
   return (
     <div className="flex h-full flex-col">
-      <div className="flex gap-0.5 border-b border-border px-2 py-1.5">
-        {(['hyperframes', 'remocn'] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setSource(s)}
-            className={cn(
-              'flex-1 rounded-[5px] py-0.5 text-[11px]',
-              source === s ? 'bg-bg-muted font-medium text-text' : 'text-text-2 hover:text-text'
-            )}
-          >
-            {s === 'hyperframes' ? 'HyperFrames' : 'Remocn'}
-          </button>
-        ))}
+      <PaneHead title="Catalog" />
+      <div className="px-2.5 pt-2.5 pb-1">
+        <Segmented
+          items={[...views]}
+          value={view}
+          onChange={setView}
+          ariaLabel="Catalog source"
+          className="w-full"
+        />
       </div>
-      {source === 'hyperframes' ? <HyperframesCatalog /> : <RemocnCatalog />}
+      {view === 'remocn' ? <RemocnCatalog /> : <HyperframesCatalog filter={view} />}
     </div>
   )
 }
 
-function HyperframesCatalog(): ReactElement {
+function SkeletonGrid(): ReactElement {
+  return (
+    <div className="grid flex-1 grid-cols-2 gap-2.5 overflow-hidden px-2.5 pb-2">
+      {Array.from({ length: 8 }, (_, i) => (
+        <div key={i} className="card p-1.5">
+          <div className="skeleton aspect-video rounded-[5px]" />
+          <div className="skeleton mt-2 h-2.5 w-3/4 rounded-[3px]" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SearchBox({
+  value,
+  onChange,
+  placeholder,
+  children
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+  children?: ReactElement
+}): ReactElement {
+  return (
+    <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+      <div className="relative flex-1">
+        <Search
+          size={13}
+          strokeWidth={1.75}
+          className="absolute top-1/2 left-2 -translate-y-1/2 text-text-3"
+        />
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="pl-7"
+        />
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function HyperframesCatalog({ filter }: { filter: 'block' | 'component' }): ReactElement {
   const [items, setItems] = useState<CatalogItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<Filter>('all')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async (refresh = false): Promise<void> => {
@@ -64,7 +111,7 @@ function HyperframesCatalog(): ReactElement {
     const q = query.trim().toLowerCase()
     return items.filter(
       (i) =>
-        (filter === 'all' || i.type === filter) &&
+        i.type === filter &&
         (!q ||
           i.name.includes(q) ||
           i.title.toLowerCase().includes(q) ||
@@ -74,55 +121,38 @@ function HyperframesCatalog(): ReactElement {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-1.5 border-b border-border px-2 py-1.5">
-        <div className="relative flex-1">
-          <Search size={12} className="absolute top-2 left-2 text-text-3" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search blocks and components"
-            className="pl-6"
-          />
-        </div>
-        <Button
-          variant="icon"
-          title="Refresh catalog"
-          disabled={busy}
-          onClick={() => void load(true)}
-        >
-          <RefreshCw size={13} className={busy ? 'animate-spin' : ''} />
-        </Button>
-      </div>
-      <div className="flex gap-0.5 px-2 py-1.5">
-        {(['all', 'block', 'component'] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={cn(
-              'flex-1 rounded-[5px] py-0.5 text-[11px] capitalize',
-              filter === f ? 'bg-bg-muted font-medium text-text' : 'text-text-2 hover:text-text'
-            )}
+      <SearchBox
+        value={query}
+        onChange={setQuery}
+        placeholder={filter === 'block' ? 'Search blocks' : 'Search components'}
+      >
+        <Tip label="Refresh catalog">
+          <Button
+            variant="icon"
+            aria-label="Refresh catalog"
+            disabled={busy}
+            onClick={() => void load(true)}
           >
-            {f === 'all' ? 'All' : `${f}s`}
-          </button>
-        ))}
-      </div>
+            <RefreshCw size={13} className={busy ? 'animate-spin' : ''} />
+          </Button>
+        </Tip>
+      </SearchBox>
       {error ? (
         <EmptyPane title="Catalog unavailable" hint={error} />
       ) : items === null ? (
-        <EmptyPane title="Loading catalog…" hint="npx hyperframes catalog --json" />
+        <SkeletonGrid />
       ) : shown.length === 0 ? (
-        <EmptyPane title="No matches" hint="Try another search or filter." />
+        <EmptyPane title="No matches" hint="Try another search." />
       ) : (
-        <div className="grid flex-1 grid-cols-2 gap-2 overflow-y-auto px-2 pb-2">
+        <div className="scroll grid flex-1 auto-rows-min grid-cols-2 gap-2.5 px-2.5 pb-2">
           {shown.map((i) => (
             <Card key={i.name} item={i} />
           ))}
         </div>
       )}
       {items ? (
-        <div className="border-t border-border px-2 py-1 text-[10px] text-text-3">
-          {shown.length} of {items.length} · drag to timeline or chat · ⌘-click to attach
+        <div className="truncate border-t border-border px-3 py-1.5 text-[10.5px] text-text-3">
+          {shown.length} of {items.length} · drag to add · ⌘-click to attach
         </div>
       ) : null}
     </div>
@@ -155,16 +185,15 @@ function Card({ item }: { item: CatalogItem }): ReactElement {
   return (
     <div
       draggable
-      title={item.description}
       onDragStart={(e) => setCatalogDrag(e.dataTransfer, { ...item, source: 'hyperframes' })}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onClick={(e) => {
         if (e.metaKey) attach()
       }}
-      className="group cursor-grab select-none active:cursor-grabbing"
+      className="card card-hover group cursor-grab select-none p-1.5 active:cursor-grabbing"
     >
-      <div className="relative aspect-video overflow-hidden rounded-[6px] border border-border bg-bg-muted">
+      <div className="relative aspect-video overflow-hidden rounded-[5px] bg-bg-muted">
         {item.preview?.poster ? (
           <img
             src={item.preview.poster}
@@ -173,7 +202,11 @@ function Card({ item }: { item: CatalogItem }): ReactElement {
             draggable={false}
             className="absolute inset-0 h-full w-full object-cover"
           />
-        ) : null}
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-text-3/60">
+            {item.type === 'block' ? <Blocks size={18} /> : <Puzzle size={18} />}
+          </div>
+        )}
         {item.preview?.video ? (
           <video
             ref={video}
@@ -188,12 +221,17 @@ function Card({ item }: { item: CatalogItem }): ReactElement {
             )}
           />
         ) : null}
-        <span className="absolute top-1 left-1 rounded-[3px] bg-black/55 px-1 text-[9px] text-white capitalize">
+        <span className="absolute right-1 bottom-1 rounded-[4px] bg-black/55 px-1 py-px text-[9px] font-medium tracking-[0.02em] text-white uppercase backdrop-blur-sm">
           {item.type}
         </span>
       </div>
-      <div className="mt-1 truncate text-[11px] text-text" title={item.title}>
-        {item.title}
+      <div className="px-0.5 pt-1.5 pb-0.5">
+        <span
+          className="block truncate text-[11.5px] font-medium text-text"
+          title={`${item.title}\n${item.description}`}
+        >
+          {item.title}
+        </span>
       </div>
     </div>
   )
@@ -258,7 +296,7 @@ function RemocnCatalog(): ReactElement {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {studio && !studio.ready ? (
-        <div className="m-2 rounded-[8px] border border-border bg-bg-muted p-2 text-[11px] text-text-2">
+        <div className="card mx-2.5 mt-1.5 p-2.5 text-[11px] text-text-2">
           <div className="font-medium text-text">Remocn studio not set up</div>
           <p className="mt-0.5">
             Luca renders remocn components to transparent clips with a shared Remotion workspace (~2
@@ -277,42 +315,41 @@ function RemocnCatalog(): ReactElement {
           </div>
         </div>
       ) : null}
-      <div className="flex items-center gap-1.5 border-b border-border px-2 py-1.5">
-        <div className="relative flex-1">
-          <Search size={12} className="absolute top-2 left-2 text-text-3" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search remocn"
-            className="pl-6"
-          />
-        </div>
+      <SearchBox value={query} onChange={setQuery} placeholder="Search remocn">
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          className="h-7 max-w-[110px] rounded-[6px] border border-border bg-bg-muted px-1 text-[11px] text-text"
+          className="h-7 max-w-[110px] rounded-[6px] border border-border bg-bg px-1 text-[11px] text-text hover:bg-hover"
         >
           {categories.map((c) => (
             <option key={c}>{c}</option>
           ))}
         </select>
-      </div>
+      </SearchBox>
       {error ? (
         <EmptyPane title="Remocn unavailable" hint={error} />
       ) : items === null ? (
-        <EmptyPane title="Loading remocn…" hint="remocn.dev/llms-components.txt" />
+        <div className="flex flex-1 flex-col gap-2 px-2.5 pb-2">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="card p-2.5">
+              <div className="skeleton h-2.5 w-1/2 rounded-[3px]" />
+              <div className="skeleton mt-2 h-2 w-full rounded-[3px]" />
+              <div className="skeleton mt-1 h-2 w-2/3 rounded-[3px]" />
+            </div>
+          ))}
+        </div>
       ) : shown.length === 0 ? (
         <EmptyPane title="No matches" hint="Try another search or category." />
       ) : (
-        <div className="flex-1 overflow-y-auto px-2 pb-2">
+        <div className="scroll flex flex-1 flex-col gap-2 px-2.5 pb-2">
           {shown.map((i) => (
             <RemocnCard key={i.name} item={i} />
           ))}
         </div>
       )}
       {items ? (
-        <div className="border-t border-border px-2 py-1 text-[10px] text-text-3">
-          {shown.length} of {items.length} · drag to timeline or chat · ⌘-click to attach
+        <div className="truncate border-t border-border px-3 py-1.5 text-[10.5px] text-text-3">
+          {shown.length} of {items.length} · drag to add · ⌘-click to attach
         </div>
       ) : null}
     </div>
@@ -340,10 +377,10 @@ function RemocnCard({ item }: { item: RemocnItem }): ReactElement {
         if (e.metaKey) attach()
       }}
       title={`Avoid for: ${item.avoidFor}`}
-      className="mt-2 cursor-grab rounded-[6px] border border-border bg-bg p-2 select-none active:cursor-grabbing"
+      className="card card-hover cursor-grab p-2.5 select-none active:cursor-grabbing"
     >
       <div className="flex items-center gap-1.5">
-        <span className="rounded-[3px] bg-accent/15 px-1 text-[9px] font-semibold text-accent">
+        <span className="flex size-4 items-center justify-center rounded-[4px] bg-secondary text-[9px] font-bold text-secondary-fg">
           R
         </span>
         <span className="truncate font-mono text-[11px] text-text">{item.name}</span>

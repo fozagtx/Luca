@@ -47,6 +47,7 @@ const api: LucaApi = {
     revealInFinder: (rel) => invoke(C.projectReveal, rel),
     onChanged: (cb) => on(C.projectChanged, cb),
     onOpened: (cb) => on(C.projectOpened, cb),
+    onRecentChanged: (cb) => on(C.projectRecentChanged, cb),
     onDropFile: (cb) => on(C.projectDropFile, cb),
     pathForFile: (file) => webUtils.getPathForFile(file)
   },

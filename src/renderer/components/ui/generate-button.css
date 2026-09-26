@@ -12,11 +12,12 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 12px 0 10px;
+  height: 32px;
+  padding: 0 14px 0 11px;
   font: inherit;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   line-height: 1;
   color: #fff;
   background-color: var(--button-color);
@@ -26,7 +27,8 @@
     inset 0 1px 1px rgba(255, 255, 255, 0.2),
     inset 0 2px 2px rgba(255, 255, 255, 0.12),
     inset 0 6px 8px rgba(255, 255, 255, 0.05),
-    0 1px 2px rgba(0, 0, 0, 0.25);
+    0 1px 2px rgba(0, 0, 0, 0.25),
+    0 0 14px hsla(var(--highlight-color-hue), 100%, 55%, 0.45);
   transition:
     box-shadow var(--transition),
     border var(--transition),
@@ -35,9 +37,17 @@
     opacity 150ms ease-out;
 }
 .gen-btn[data-size='sm'] {
-  height: 24px;
-  padding: 0 10px 0 8px;
-  font-size: 11px;
+  height: 28px;
+  padding: 0 12px 0 9px;
+  font-size: 12px;
+}
+.gen-btn:hover {
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.25),
+    inset 0 2px 2px rgba(255, 255, 255, 0.12),
+    inset 0 6px 8px rgba(255, 255, 255, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.25),
+    0 0 20px hsla(var(--highlight-color-hue), 100%, 55%, 0.6);
 }
 .gen-btn:disabled {
   opacity: 0.45;
@@ -91,7 +101,7 @@
 .gen-btn-letter {
   position: relative;
   display: inline-block;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.92);
   animation: gen-letter-anim 2s ease-in-out infinite;
   transition:
     color var(--transition),
@@ -100,7 +110,7 @@
 }
 @keyframes gen-letter-anim {
   50% {
-    text-shadow: 0 0 3px rgba(255, 255, 255, 0.5);
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
     color: #fff;
   }
 }

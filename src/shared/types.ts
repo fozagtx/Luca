@@ -17,6 +17,7 @@ export type RecentProject = {
   dir: string
   aspect: Aspect
   lastOpenedAt: string
+  duration?: number | null
   thumb?: string | null
 }
 

@@ -22,13 +22,21 @@ A personal macOS video editor where Claude does the editing and HyperFrames HTML
 
 ## Screenshots
 
-| Empty state                                      | Dark mode (View → Appearance, or ⌘K)            |
-| ------------------------------------------------ | ----------------------------------------------- |
-| ![Empty state](docs/screenshots/empty-state.png) | ![Editor, dark](docs/screenshots/editor-dark.png) |
+| Empty state                                      | Dark mode (toolbar toggle, View → Appearance, ⇧⌘D) |
+| ------------------------------------------------ | -------------------------------------------------- |
+| ![Empty state](docs/screenshots/empty-state.png) | ![Editor, dark](docs/screenshots/editor-dark.png)  |
 
-| Chat                                              | Export sheet                                       |
-| ------------------------------------------------- | -------------------------------------------------- |
-| ![Chat](docs/screenshots/chat-generate.png)       | ![Export sheet](docs/screenshots/export-sheet.png) |
+| Timeline with a selected clip                                      | Chat                               |
+| ------------------------------------------------------------------ | ---------------------------------- |
+| ![Timeline, selected clip](docs/screenshots/timeline-selected.png) | ![Chat](docs/screenshots/chat.png) |
+
+| Catalog                                  | Looks                                | Transcript                                     |
+| ---------------------------------------- | ------------------------------------ | ---------------------------------------------- |
+| ![Catalog](docs/screenshots/catalog.png) | ![Looks](docs/screenshots/looks.png) | ![Transcript](docs/screenshots/transcript.png) |
+
+| Export sheet                                       |
+| -------------------------------------------------- |
+| ![Export sheet](docs/screenshots/export-sheet.png) |
 
 ## Download
 

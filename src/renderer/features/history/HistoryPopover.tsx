@@ -54,10 +54,11 @@ export function HistoryPopover(): ReactElement {
       <Tip label="History" shortcut="⌘Y">
         <Popover.Trigger
           render={
-            <Button variant="icon" active={open} disabled={!projectDir} aria-label="History" />
+            <Button variant="ghost" active={open} disabled={!projectDir} aria-label="History" />
           }
         >
-          <History size={16} strokeWidth={1.5} />
+          <History size={15} strokeWidth={1.75} />
+          History
         </Popover.Trigger>
       </Tip>
       <Popover.Portal>
