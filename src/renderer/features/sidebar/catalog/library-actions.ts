@@ -11,9 +11,7 @@ export function dragOf(i: LibraryItem): CatalogDrag {
 /** Attach an item to the chat composer and hand focus there (needs an open project). */
 export function askLuca(i: LibraryItem): void {
   if (!useProject.getState().project) return
-  const chat = useChat.getState()
-  chat.addChip(catalogChip(dragOf(i)))
-  if (!chat.draft.trim()) chat.setDraft(`Add ${i.title} `)
+  useChat.getState().fillDraft(`Add ${i.title} `, catalogChip(dragOf(i)))
   if (!useUi.getState().chatOpen) useUi.getState().toggleChat()
   requestAnimationFrame(() => document.getElementById('chat-composer')?.focus())
 }

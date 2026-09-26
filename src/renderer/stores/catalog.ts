@@ -21,6 +21,10 @@ type CatalogStore = {
   category: LibraryCategory | 'all'
   /** Someone picked a Remocn item while its studio isn't set up: show the setup card. */
   wantsRemocn: boolean
+  /** The one-time Remocn setup is running (it outlives the tab, which remounts). */
+  settingUp: boolean
+  setupError: string | null
+  setupRemocn: () => Promise<void>
   /** Load both catalogs once; `refresh` refetches. */
   load: (refresh?: boolean) => Promise<void>
   refreshStudio: () => Promise<void>
@@ -42,6 +46,8 @@ export const useCatalog = create<CatalogStore>((set, get) => ({
   source: 'all',
   category: 'all',
   wantsRemocn: false,
+  settingUp: false,
+  setupError: null,
 
   load: (refresh = false) => {
     if (!refresh && get().hf && get().rc) return Promise.resolve()
@@ -74,6 +80,23 @@ export const useCatalog = create<CatalogStore>((set, get) => ({
       .remocnStudioStatus()
       .catch((): StudioStatus => ({ ready: false }))
     set((s) => ({ studio, wantsRemocn: studio.ready ? false : s.wantsRemocn }))
+  },
+
+  setupRemocn: async () => {
+    if (get().settingUp) return
+    set({ settingUp: true, setupError: null })
+    // show each step as it happens
+    const poll = setInterval(() => void get().refreshStudio(), 1500)
+    try {
+      const r = await luca.catalog.remocnSetup()
+      if (!r.ok) set({ setupError: r.error ?? 'Setup failed' })
+    } catch (e) {
+      set({ setupError: e instanceof Error ? e.message : String(e) })
+    } finally {
+      clearInterval(poll)
+      set({ settingUp: false })
+      await get().refreshStudio()
+    }
   },
 
   setQuery: (query) => set({ query }),

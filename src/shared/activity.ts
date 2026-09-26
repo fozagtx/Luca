@@ -51,15 +51,107 @@ const act = (kind: ActivityKind, active: string, done: string): Activity => ({
   done
 })
 
-const RISKY =
-  /[;&|<>`\n]|\$\(|\s-delete\b|\s-exec(dir)?\b|\bxargs\b|\brm\b|\bmv\b|\bcurl\b|\bwget\b/
+/**
+ * The command as the shell parses it, with quoted text neutralised: operators inside quotes are
+ * just text (though `$(…)` and backticks still run inside double quotes), backslash-newline is a
+ * continuation, and harmless stderr redirects (2>&1, 2>/dev/null) are dropped.
+ */
+function shellProbe(command: string): string {
+  let out = ''
+  let quote: "'" | '"' | null = null
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]
+    if (quote === "'") {
+      if (c === "'") quote = null
+      out += c === "'" ? c : 'x'
+      continue
+    }
+    if (c === '\\' && i + 1 < command.length) {
+      out += command[i + 1] === '\n' ? ' ' : 'x'
+      i++
+      continue
+    }
+    if (quote === '"') {
+      if (c === '"') quote = null
+      out += /[;&|<>\n]/.test(c) ? ' ' : c
+      continue
+    }
+    if (c === "'" || c === '"') quote = c
+    out += c
+  }
+  return out.replace(/[ \t]\d?>&\d\b/g, ' ').replace(/[ \t]\d?>[ \t]*\/dev\/null\b/g, ' ')
+}
+
+/** Commands that change, delete, download or run other code. */
+const RISKY_FIRST = new Set([
+  'rm',
+  'rmdir',
+  'mv',
+  'cp',
+  'tee',
+  'dd',
+  'chmod',
+  'chown',
+  'ln',
+  'touch',
+  'mkdir',
+  'curl',
+  'wget',
+  'git',
+  'sudo',
+  'kill',
+  'pkill',
+  'xargs',
+  'sh',
+  'bash',
+  'zsh',
+  'python',
+  'python3',
+  'node',
+  'perl',
+  'ruby',
+  'osascript',
+  'open',
+  'npx',
+  'npm',
+  'pnpm',
+  'yarn',
+  'bun',
+  'pip',
+  'pip3',
+  'brew',
+  'env',
+  'eval',
+  'exec'
+])
+
+/**
+ * Whether a shell command could change or delete anything, download, or chain further commands.
+ * Such commands never get a reassuring label and can't be "always allowed".
+ */
+export function isRiskyCommand(command: string): boolean {
+  const probe = shellProbe(command.trim())
+  if (/[;&|<>`\n]|\$\(/.test(probe)) return true
+  const first = probe.split(/\s+/)[0] ?? ''
+  if (!first || first.includes('=')) return true
+  const name = first.replace(/^.*\//, '')
+  if (RISKY_FIRST.has(name)) return true
+  if (name === 'find' && /\s-(delete|exec|execdir|ok|okdir|fprint0?|fprintf|fls)\b/.test(probe))
+    return true
+  if (name === 'sed' && /\s(-[a-zA-Z]*i|--in-place)/.test(probe)) return true
+  if (name === 'tree' && /\s-o\b/.test(probe)) return true
+  if (name === 'rg' && /\s--pre\b/.test(probe)) return true
+  return false
+}
 
 function bash(command: string, titleOf?: TitleOf): Activity {
   const cmd = command.trim()
-  // chained, piped, redirected, deleting or downloading commands can do anything: never give
-  // them a reassuring label (stderr redirects like 2>&1 or 2>/dev/null are harmless)
-  const probe = cmd.replace(/\s\d?>&\d\b/g, ' ').replace(/\s\d?>\s*\/dev\/null\b/g, ' ')
-  if (RISKY.test(probe)) return act('other', 'Running a command', 'Ran a command')
+  // hyperframes' own commands are known; anything else that could change things gets no
+  // reassuring label
+  // `npx hyperframes …` is judged on the hyperframes part (npx alone could run anything)
+  const hf0 = /^npx\s+(?:--yes\s+|-y\s+)?hyperframes(?:@[\w.-]+)?\s/.test(cmd)
+  if (isRiskyCommand(hf0 ? cmd.replace(/^npx\s+(?:--yes\s+|-y\s+)?/, '') : cmd))
+    return act('other', 'Running a command', 'Ran a command')
   const hf = /(?:^|\s)npx\s+(?:--yes\s+)?hyperframes(?:@[\w.-]+)?\s+(\w+)(?:\s+([\w@/.-]+))?/.exec(
     cmd
   )

@@ -116,23 +116,8 @@ const SECTIONS: { title: string; ideas: Idea[] }[] = [
   }
 ]
 
-const IDEAS = SECTIONS.flatMap((s) => s.ideas)
-
 function tryIdea(idea: Idea, item: LibraryItem | undefined): void {
-  const chat = useChat.getState()
-  const draft = chat.draft.trim()
-  // the box still holds an earlier idea, untouched: swap that idea (and its chip) out
-  const previous = IDEAS.find((x) => x.prompt.trim() === draft)
-  if (previous)
-    useChat.setState((s) => ({
-      chips: s.chips.filter((c) => !(c.kind === 'catalog' && c.name === previous.item))
-    }))
-  const attached = useChat
-    .getState()
-    .chips.some((c) => c.kind === 'catalog' && c.name === item?.name)
-  if (item && !attached) chat.addChip(catalogChip(dragOf(item)))
-  // never overwrite words the person typed themselves
-  if (!draft || previous) chat.setDraft(idea.prompt)
+  useChat.getState().fillDraft(idea.prompt, item ? catalogChip(dragOf(item)) : undefined)
   if (!useUi.getState().chatOpen) useUi.getState().toggleChat()
   requestAnimationFrame(() => {
     const el = document.getElementById('chat-composer') as HTMLTextAreaElement | null

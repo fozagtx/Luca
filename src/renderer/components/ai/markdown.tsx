@@ -25,11 +25,19 @@ export function Markdown({
             <li key={j}>
               {inline(it.text)}
               {it.sub.length > 0 ? (
-                <ul>
-                  {it.sub.map((x, k) => (
-                    <li key={k}>{inline(x)}</li>
-                  ))}
-                </ul>
+                it.subKind === 'ol' ? (
+                  <ol start={it.subStart}>
+                    {it.sub.map((x, k) => (
+                      <li key={k}>{inline(x)}</li>
+                    ))}
+                  </ol>
+                ) : (
+                  <ul>
+                    {it.sub.map((x, k) => (
+                      <li key={k}>{inline(x)}</li>
+                    ))}
+                  </ul>
+                )
               ) : null}
               {j === b.items.length - 1 ? tail : null}
             </li>
@@ -61,7 +69,7 @@ export function Markdown({
   )
 }
 
-type Item = { text: string; sub: string[] }
+type Item = { text: string; sub: string[]; subKind?: 'ul' | 'ol'; subStart?: number }
 type List = { kind: 'ul'; items: Item[] } | { kind: 'ol'; items: Item[]; start: number }
 type Block = { kind: 'p'; text: string } | { kind: 'h'; text: string } | List
 
@@ -69,6 +77,10 @@ function parseBlocks(src: string): Block[] {
   const out: Block[] = []
   let para: string[] = []
   let list: List | null = null
+  // the list's own indent: only deeper markers nest under the previous item
+  let base = 0
+  // the last list line was a nested item, so continuation text belongs to it
+  let inSub = false
   // a blank line inside a list only ends it if what follows isn't more of the same list
   let gap = false
   const flushPara = (): void => {
@@ -79,10 +91,11 @@ function parseBlocks(src: string): Block[] {
     if (list) out.push(list)
     list = null
     gap = false
+    inSub = false
   }
   for (const raw of src.replace(/\r/g, '').split('\n')) {
     const line = raw.trimEnd()
-    const indented = /^\s{2,}\S/.test(raw)
+    const ind = raw.length - raw.trimStart().length
     const ul = /^\s*[-*•]\s+(.*)$/.exec(line)
     const ol = /^\s*(\d+)[.)]\s+(.*)$/.exec(line)
     const h = /^#{1,6}\s+(.*)$/.exec(line)
@@ -92,9 +105,15 @@ function parseBlocks(src: string): Block[] {
       continue
     }
     const current = list as List | null
-    // an indented bullet under an item belongs to that item
-    if (current && indented && ul && current.items.length) {
-      current.items[current.items.length - 1].sub.push(ul[1])
+    // a marker indented deeper than the list belongs to the item above it
+    if (current && (ul || ol) && ind > base && current.items.length) {
+      const item = current.items[current.items.length - 1]
+      if (!item.subKind) {
+        item.subKind = ul ? 'ul' : 'ol'
+        if (ol) item.subStart = Number(ol[1])
+      }
+      item.sub.push(ul ? ul[1] : ol![2])
+      inSub = true
       gap = false
       continue
     }
@@ -104,16 +123,19 @@ function parseBlocks(src: string): Block[] {
       if (!current || current.kind !== kind) {
         flushList()
         list = ol ? { kind: 'ol', items: [], start: Number(ol[1]) } : { kind: 'ul', items: [] }
+        base = ind
       }
       ;(list as List).items.push({ text: ul ? ul[1] : ol![2], sub: [] })
+      inSub = false
       gap = false
     } else if (h) {
       flushPara()
       flushList()
       out.push({ kind: 'h', text: h[1] })
-    } else if (current && indented && !gap) {
+    } else if (current && ind > base && !gap) {
       const last = current.items[current.items.length - 1]
-      last.text += ` ${line.trim()}`
+      if (inSub && last.sub.length) last.sub[last.sub.length - 1] += ` ${line.trim()}`
+      else last.text += ` ${line.trim()}`
     } else {
       flushList()
       para.push(line)

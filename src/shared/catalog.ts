@@ -267,38 +267,49 @@ const STOPWORDS = new Set([
   'this',
   'it',
   'please',
-  'video',
-  'clip',
-  'footage',
   'something',
-  'like',
-  'can',
-  'you',
   'could',
   'would',
   'need',
   'nice',
   'cool',
   'good',
-  'find',
   'give',
-  'get',
-  'one',
   'into',
   'onto',
-  'from',
-  'our',
   'your',
-  'we',
   'some',
   'kind'
 ])
 
-export function queryWords(query: string): string[] {
-  return query
+const stemOf = (w: string): string => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w)
+
+/** Words after one of these say where something goes, not what it is: "captions to my demo". */
+const PLACE_WORDS = new Set(['to', 'for', 'on', 'in', 'into', 'onto', 'over', 'across', 'at'])
+
+type QueryWord = { w: string; context: boolean }
+
+/** Search words minus filler, each marked as context when it follows a place word. */
+function parseQuery(query: string): QueryWord[] {
+  const tokens = query
     .toLowerCase()
     .split(/[^a-z0-9-]+/)
-    .filter((w) => w && !STOPWORDS.has(w))
+    .filter(Boolean)
+  const out: QueryWord[] = []
+  let context = false
+  for (const w of tokens) {
+    if (PLACE_WORDS.has(w)) context = true
+    if (!STOPWORDS.has(w) && !STOPWORDS.has(stemOf(w))) out.push({ w, context })
+  }
+  // a query made only of filler searches for what was typed
+  if (out.length === 0) return tokens.map((w) => ({ w, context: false }))
+  // with nothing but context words, they are what the query is about
+  if (out.every((q) => q.context)) return out.map((q) => ({ ...q, context: false }))
+  return out
+}
+
+export function queryWords(query: string): string[] {
+  return parseQuery(query).map((q) => q.w)
 }
 
 type Hay = { name: string; title: string; tags: string[]; category: string; body: string }
@@ -341,7 +352,7 @@ function scoreTerm(h: Hay, t: string, strong = false): number {
 const synonymsOf = (w: string): string[] => (Object.hasOwn(SYNONYMS, w) ? SYNONYMS[w] : [])
 
 function scoreWord(h: Hay, w: string): number {
-  const stem = w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w
+  const stem = stemOf(w)
   let best = Math.max(scoreTerm(h, w), stem !== w ? scoreTerm(h, stem) * 0.95 : 0)
   const syns = synonymsOf(stem).length ? synonymsOf(stem) : synonymsOf(w)
   for (const syn of syns) best = Math.max(best, scoreTerm(h, syn, true) * 0.6)
@@ -363,9 +374,15 @@ export function filterLibrary(items: LibraryItem[], f: LibraryFilter): LibraryIt
   )
 }
 
+/** A match in the name, title, tags or category; description-only matches score lower. */
+const STRONG = 4
+
 /**
- * Rank items for a free-text query. Most words have to match something (name, title, tags,
- * category or description, directly or through a synonym); with no query the input order is kept.
+ * Rank items for a free-text query. Every word counts, but a match in an item's name, title,
+ * tags or category (strong) weighs far more than one only in its description (weak), so filler
+ * or context words can't push out what the query is about. Words after "to", "for", "on"… say
+ * where it goes ("captions to my product demo") and weigh less. Items matching every word, even
+ * weakly, get a bonus. With no query the input order is kept.
  */
 export function searchLibrary(
   items: LibraryItem[],
@@ -373,32 +390,28 @@ export function searchLibrary(
   f: LibraryFilter = {}
 ): LibraryItem[] {
   const pool = filterLibrary(items, f)
-  const words = queryWords(query)
+  const words = parseQuery(query)
   if (words.length === 0) return pool
   const rows = pool.map((i) => {
     const h = hay(i)
-    return { i, scores: words.map((w) => scoreWord(h, w)) }
+    let key = 0
+    let hits = 0
+    let s = 0
+    for (const q of words) {
+      const v = scoreWord(h, q.w)
+      if (v <= 0) continue
+      const weight = q.context ? 0.3 : 1
+      key += (v >= STRONG ? 1 : 0.35) * weight
+      hits++
+      s += v * weight
+    }
+    if (words.length > 1 && hits === words.length) key += 0.5
+    return { i, key, hits, s }
   })
-  // a word nothing matches ("my", "wedding") can't tell items apart, so it can't veto them
-  const informative = words.map((_, k) => rows.some((r) => r.scores[k] > 0))
-  const count = informative.filter(Boolean).length
-  if (count === 0) return []
-  const rank = (need: number): LibraryItem[] =>
-    rows
-      .map(({ i, scores }) => {
-        let s = 0
-        let hit = 0
-        scores.forEach((v, k) => {
-          if (!informative[k] || v <= 0) return
-          hit++
-          s += v
-        })
-        return { i, hit, s: s * (hit / count) }
-      })
-      .filter((r) => r.hit >= need)
-      .sort((a, b) => b.s - a.s || a.i.title.localeCompare(b.i.title))
-      .map((r) => r.i)
-  const strict = rank(Math.max(1, Math.ceil(count * 0.6)))
-  // phrasing that matches only a few items strictly still shows the closest ones
-  return strict.length >= 3 || count === 1 ? strict : rank(1)
+  // with no strong match anywhere, description matches are all there is
+  const anyStrong = rows.some((r) => r.key >= 1)
+  return rows
+    .filter((r) => (anyStrong ? r.key >= 1 : r.hits > 0))
+    .sort((a, b) => b.key - a.key || b.s - a.s || a.i.title.localeCompare(b.i.title))
+    .map((r) => r.i)
 }

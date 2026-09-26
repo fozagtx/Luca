@@ -23,7 +23,6 @@ import { Thumb } from '../../../components/ui/thumb'
 import { Tip } from '../../../components/ui/tooltip'
 import { cn } from '../../../lib/cn'
 import { setCatalogDrag } from '../../../lib/drag'
-import { luca } from '../../../lib/luca'
 import { useCatalog, type CatalogSource, type StudioStatus } from '../../../stores/catalog'
 import { useProject } from '../../../stores/project'
 import { useUi } from '../../../stores/ui'
@@ -114,7 +113,7 @@ export function CatalogTab(): ReactElement {
       </div>
 
       {studio && !studio.ready && (source === 'remocn' || wantsRemocn) ? (
-        <RemocnSetup studio={studio} onChanged={refreshStudio} />
+        <RemocnSetup studio={studio} />
       ) : null}
 
       {error ? (
@@ -464,34 +463,9 @@ function SkeletonGrid(): ReactElement {
   )
 }
 
-function RemocnSetup({
-  studio,
-  onChanged
-}: {
-  studio: StudioStatus
-  onChanged: () => Promise<void>
-}): ReactElement {
-  const [settingUp, setSettingUp] = useState(false)
-  const [err, setErr] = useState<string | null>(studio.error ?? null)
-
-  useEffect(() => {
-    if (!settingUp) return
-    const id = setInterval(() => void onChanged(), 1500)
-    return () => clearInterval(id)
-  }, [settingUp, onChanged])
-
-  const setup = async (): Promise<void> => {
-    setSettingUp(true)
-    setErr(null)
-    try {
-      const r = await luca.catalog.remocnSetup()
-      if (!r.ok) setErr(r.error ?? 'Setup failed')
-      await onChanged()
-    } finally {
-      setSettingUp(false)
-    }
-  }
-
+function RemocnSetup({ studio }: { studio: StudioStatus }): ReactElement {
+  const settingUp = useCatalog((s) => s.settingUp)
+  const err = useCatalog((s) => s.setupError) ?? studio.error ?? null
   return (
     <div className="card mx-2.5 mb-2 p-2.5 text-[11.5px] text-text-2">
       <div className="font-medium text-text">Remocn needs a one-time setup</div>
@@ -503,7 +477,12 @@ function RemocnSetup({
         <p className="mt-1 line-clamp-3 text-[10.5px] text-danger select-text">{err}</p>
       ) : null}
       <div className="mt-2 flex items-center gap-2">
-        <Button size="sm" variant="primary" disabled={settingUp} onClick={() => void setup()}>
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={settingUp}
+          onClick={() => void useCatalog.getState().setupRemocn()}
+        >
           {settingUp ? 'Setting up…' : 'Set up Remocn'}
         </Button>
         {settingUp && studio.step ? (

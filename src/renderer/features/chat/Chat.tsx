@@ -77,14 +77,14 @@ function Messages({
   // for Try again: the request each assistant message answered (older history has no replyTo,
   // so fall back to the user message just before it)
   const askedBefore = useMemo(() => {
-    const byId = new Map(messages.filter((m) => m.role === 'user').map((m) => [m.id, m.text]))
-    const out = new Map<string, string>()
-    let asked: string | undefined
+    const byId = new Map(messages.filter((m) => m.role === 'user').map((m) => [m.id, m]))
+    const out = new Map<string, ChatMessage>()
+    let asked: ChatMessage | undefined
     for (const m of messages) {
-      if (m.role === 'user') asked = m.text
+      if (m.role === 'user') asked = m
       else {
-        const text = (m.replyTo && byId.get(m.replyTo)) || asked
-        if (text) out.set(m.id, text)
+        const request = (m.replyTo && byId.get(m.replyTo)) || asked
+        if (request) out.set(m.id, request)
       }
     }
     return out
@@ -118,7 +118,7 @@ function Messages({
                     key={m.id}
                     m={m}
                     animate={animate}
-                    lastUserText={askedBefore.get(m.id)}
+                    request={askedBefore.get(m.id)}
                   />
                 )
               })}

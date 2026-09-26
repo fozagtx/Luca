@@ -182,11 +182,12 @@ function Thinking({ since, onStop }: { since: string; onStop: () => void }): Rea
 export function AssistantMessage({
   m,
   animate,
-  lastUserText
+  request
 }: {
   m: ChatMessage
   animate: boolean
-  lastUserText?: string
+  /** The user message this reply answers, for Try again. */
+  request?: ChatMessage
 }): ReactElement {
   const stop = useChat((s) => s.stop)
   const resend = useChat((s) => s.resend)
@@ -214,7 +215,15 @@ export function AssistantMessage({
     <div className={cn('group/msg flex flex-col gap-2.5', animate && 'msg-in')}>
       {groups.map((g, i) => {
         if (g.kind === 'steps')
-          return <Steps key={i} parts={g.parts} live={!!m.pending} animate={anim} />
+          return (
+            <Steps
+              key={i}
+              parts={g.parts}
+              live={!!m.pending}
+              stopped={!!m.stopped}
+              animate={anim}
+            />
+          )
         if (g.kind === 'permission')
           return <PermissionCard key={g.part.id} part={g.part} animate={anim} />
         return (
@@ -244,8 +253,8 @@ export function AssistantMessage({
               Nothing was lost. You can try again or rephrase what you&apos;d like.
             </div>
           </div>
-          {lastUserText ? (
-            <Button size="sm" onClick={() => void resend(lastUserText)} className="shrink-0">
+          {request ? (
+            <Button size="sm" onClick={() => void resend(request)} className="shrink-0">
               <RotateCcw size={11} /> Try again
             </Button>
           ) : null}
@@ -274,12 +283,8 @@ export function AssistantMessage({
 
 // ------------------------------------------------------------------------------------ permission
 
-/** What "Always allow" would permit, from the rule the main process stores. */
-function allowScope(part: Extract<ChatContentPart, { type: 'permission' }>): string {
-  const input = (part.input ?? {}) as Record<string, unknown>
-  const rule =
-    part.rule ??
-    (part.tool === 'Bash' ? `Bash(${String(input.command ?? '').split(/\s+/)[0]})` : part.tool)
+/** What "Always allow" would permit. Only plain commands get a rule (see canUseTool). */
+function allowScope(rule: string): string {
   const bash = /^Bash\((.+)\)$/.exec(rule)
   return bash ? `every “${bash[1]} …” command` : `every “${rule}” step`
 }
@@ -297,7 +302,7 @@ function PermissionCard({
   const activity = describeActivity(part.tool, input)
   const bash = part.tool === 'Bash'
   const exact = bash ? String(input.command ?? '') : JSON.stringify(input, null, 2)
-  const scope = allowScope(part)
+  const scope = part.rule ? allowScope(part.rule) : null
 
   if (part.resolved) {
     const denied = part.resolved === 'deny'
@@ -314,7 +319,7 @@ function PermissionCard({
           {denied
             ? `You didn't allow: ${activity.active.toLowerCase()}`
             : part.resolved === 'allow-always'
-              ? `Always allowed in this project: ${scope}`
+              ? `Always allowed in this project: ${scope ?? activity.active.toLowerCase()}`
               : `Allowed once: ${activity.active.toLowerCase()}`}
         </span>
       </div>
@@ -369,19 +374,23 @@ function PermissionCard({
         <Button size="sm" variant="primary" onClick={() => void decide(part.id, 'allow')}>
           Allow once
         </Button>
-        <Button
-          size="sm"
-          onClick={() => void decide(part.id, 'allow-always')}
-          title={`Lets ${scope} run in this project without asking again`}
-        >
-          Always allow
-        </Button>
+        {scope ? (
+          <Button
+            size="sm"
+            onClick={() => void decide(part.id, 'allow-always')}
+            title={`Lets ${scope} run in this project without asking again`}
+          >
+            Always allow
+          </Button>
+        ) : null}
         <Button size="sm" variant="ghost" onClick={() => void decide(part.id, 'deny')}>
           Don&apos;t allow
         </Button>
       </div>
       <p className="mt-2 pl-[38px] text-[10.5px] leading-[1.4] text-text-3">
-        Always allow lets {scope} run in this project without asking again.
+        {scope
+          ? `Always allow lets ${scope} run in this project without asking again.`
+          : 'This command could change, delete or download things, so Luca will ask every time.'}
       </p>
     </div>
   )

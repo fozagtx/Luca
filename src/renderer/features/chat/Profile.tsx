@@ -72,7 +72,7 @@ const suggestions: { icon: LucideIcon; text: string }[] = [
 
 /** Starter prompts (prompt-kit PromptSuggestion). They fill the box so people can adjust first. */
 export function Suggestions({ disabled }: { disabled: boolean }): ReactElement {
-  const setDraft = useChat((s) => s.setDraft)
+  const fillDraft = useChat((s) => s.fillDraft)
   return (
     <div className="flex flex-col gap-1.5">
       <div className="px-1 pb-0.5 text-[11px] font-medium text-text-3">Try asking</div>
@@ -82,7 +82,7 @@ export function Suggestions({ disabled }: { disabled: boolean }): ReactElement {
           type="button"
           disabled={disabled}
           onClick={() => {
-            setDraft(s.text)
+            fillDraft(s.text)
             requestAnimationFrame(() => document.getElementById('chat-composer')?.focus())
           }}
           style={{ animationDelay: `${80 + i * 50}ms` }}

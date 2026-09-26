@@ -3,7 +3,6 @@ import {
   type CanUseTool,
   type Options,
   type PermissionResult,
-  type PermissionUpdate,
   type Query,
   type SDKMessage,
   type SDKUserMessage
@@ -21,7 +20,7 @@ import type {
   PermissionDecision,
   Project
 } from '../shared/types'
-import { describeActivity } from '../shared/activity'
+import { describeActivity, isRiskyCommand } from '../shared/activity'
 import { childEnv, run, which } from './env'
 import { Channels, broadcast } from './ipc'
 import { catalogTitle } from './library'
@@ -54,8 +53,8 @@ const ALLOWED_TOOLS = [
 
 type Pending = {
   resolve: (r: PermissionResult) => void
-  tool: string
-  suggestions?: PermissionUpdate[]
+  /** The always-allow rule, or null when this request may only be allowed once. */
+  rule: string | null
 }
 
 type Turn = { text: string; chips: Chip[]; context: unknown; userId?: string }
@@ -65,7 +64,9 @@ const PLAIN_ERRORS: Record<string, string> = {
   error_during_execution: 'Something went wrong while working on this.',
   error_max_turns: 'This needed more steps than Luca can take in one go.',
   error_max_budget_usd: 'This reached the spending limit for a single request.',
-  error_max_structured_output_retries: 'Something went wrong while working on this.'
+  error_max_structured_output_retries: 'Something went wrong while working on this.',
+  restarted: 'Luca restarted before finishing this.',
+  closed: 'The project was closed before Luca finished.'
 }
 
 type ToolPart = Extract<ChatContentPart, { type: 'tool' }>
@@ -156,8 +157,10 @@ export class ProjectAgent {
       try {
         const m = JSON.parse(line) as ChatMessage
         // a turn cut off by a crash or quit was saved mid-step; those steps can't finish now
-        for (const p of m.parts ?? [])
+        for (const p of m.parts ?? []) {
           if (p.type === 'tool' && p.status === 'running') p.status = 'error'
+          else if (p.type === 'permission' && !p.resolved) p.resolved = 'deny'
+        }
         out.push(m)
       } catch {
         // skip corrupt line
@@ -258,18 +261,14 @@ export class ProjectAgent {
 
   async stop(): Promise<void> {
     this.closed = true
-    if (this.working) {
-      this.settleCurrent(true)
-      this.current = null
-      this.working = false
-      this.rewriteHistory()
-    }
+    // nothing may be dispatched into the closing session
+    this.q = null
+    this.queued = []
     this.abort.abort()
     for (const w of this.waiters.splice(0)) w(null)
-    for (const p of this.pending.values())
-      p.resolve({ behavior: 'deny', message: 'Project closed' })
-    this.pending.clear()
-    this.q = null
+    this.cancelPending('Project closed')
+    // ends the turn the normal way, so clean edit / Look waiters are released too
+    if (this.working) this.finishTurn(true, 'closed')
   }
 
   async restart(): Promise<void> {
@@ -277,14 +276,16 @@ export class ProjectAgent {
     for (const w of this.waiters.splice(0)) w(null)
     this.q = null
     this.closed = false
-    if (this.working) {
-      this.settleCurrent(true)
-      this.current = null
-      this.rewriteHistory()
-      this.pushHistory()
-    }
-    this.working = false
+    this.cancelPending('Luca restarted')
+    // q is null, so finishing here can't dispatch a queued turn into the dead session
+    if (this.working) this.finishTurn(true, 'restarted')
+    this.interrupted = false
     await this.start()
+    // messages sent while the old session ran are answered by the new one
+    if (this.q && !this.working) {
+      const next = this.queued.shift()
+      if (next) this.dispatch(next)
+    }
   }
 
   private async *stream(): AsyncGenerator<SDKUserMessage> {
@@ -311,7 +312,8 @@ export class ProjectAgent {
       role: 'user',
       createdAt: new Date().toISOString(),
       text: turn.text,
-      chips: turn.chips
+      chips: turn.chips,
+      context: turn.context
     }
     this.messages.push(user)
     this.rewriteHistory()
@@ -325,6 +327,7 @@ export class ProjectAgent {
   }
 
   private dispatch(turn: Turn): void {
+    this.interrupted = false
     this.working = true
     this.turnStartedAt = Date.now()
     this.streamedText = ''
@@ -404,7 +407,7 @@ export class ProjectAgent {
   }
 
   // ---------------------------------------------------------------- permissions
-  private canUseTool: CanUseTool = async (toolName, input, { suggestions }) => {
+  private canUseTool: CanUseTool = async (toolName, input) => {
     // Never let edits escape the project folder.
     const target = input.file_path ?? input.path ?? input.notebook_path
     if (
@@ -420,19 +423,32 @@ export class ProjectAgent {
         return { behavior: 'deny', message: 'media/ and renders/ are immutable in Luca.' }
       }
     }
+    // "Always allow" remembers a command by its first word, so it is only offered (and only
+    // honoured) for plain commands that can't change, delete, download or chain anything
+    const command = toolName === 'Bash' ? String(input.command ?? '').trim() : ''
+    const rule =
+      toolName !== 'Bash'
+        ? toolName
+        : isRiskyCommand(command)
+          ? null
+          : `Bash(${command.split(/\s+/)[0]})`
     const always = getSettings().alwaysAllow?.[this.project.id] ?? []
-    const key =
-      toolName === 'Bash' ? `Bash(${String(input.command ?? '').split(/\s+/)[0]})` : toolName
-    if (always.includes(key)) return { behavior: 'allow', updatedInput: input }
+    if (rule && always.includes(rule)) return { behavior: 'allow', updatedInput: input }
 
     const id = randomUUID()
     // `rule` is what "Always allow" stores, so the card can say exactly what it would permit
-    const part: ChatContentPart = { type: 'permission', id, tool: toolName, input, rule: key }
+    const part: ChatContentPart = {
+      type: 'permission',
+      id,
+      tool: toolName,
+      input,
+      ...(rule ? { rule } : {})
+    }
     this.current?.parts?.push(part)
     this.pushHistory()
-    this.emit({ type: 'permission', id, tool: toolName, input, rule: key })
+    this.emit({ type: 'permission', id, tool: toolName, input, ...(rule ? { rule } : {}) })
     return new Promise<PermissionResult>((resolvePerm) => {
-      this.pending.set(id, { resolve: resolvePerm, tool: key, suggestions })
+      this.pending.set(id, { resolve: resolvePerm, rule })
     })
   }
 
@@ -440,6 +456,8 @@ export class ProjectAgent {
     const p = this.pending.get(id)
     if (!p) return
     this.pending.delete(id)
+    // a request that can't be always-allowed is allowed once, whatever was clicked
+    if (decision === 'allow-always' && !p.rule) decision = 'allow'
     const part = this.current?.parts?.find(
       (x): x is Extract<ChatContentPart, { type: 'permission' }> =>
         x.type === 'permission' && x.id === id
@@ -451,15 +469,23 @@ export class ProjectAgent {
       p.resolve({ behavior: 'deny', message: 'The user denied this action in Luca.' })
       return
     }
-    if (decision === 'allow-always') {
+    if (decision === 'allow-always' && p.rule) {
       const s = getSettings()
       const list = new Set(s.alwaysAllow?.[this.project.id] ?? [])
-      list.add(p.tool)
+      list.add(p.rule)
       updateSettings({ alwaysAllow: { ...(s.alwaysAllow ?? {}), [this.project.id]: [...list] } })
-      p.resolve({ behavior: 'allow', updatedPermissions: p.suggestions })
-      return
     }
+    // Luca keeps its own always-allow list; the SDK's suggested rules can be broader than the card says
     p.resolve({ behavior: 'allow' })
+  }
+
+  /** Answer every open permission request with deny (the turn it belongs to is over). */
+  private cancelPending(message: string): void {
+    for (const [id, p] of this.pending) {
+      p.resolve({ behavior: 'deny', message })
+      this.emit({ type: 'permission-resolved', id })
+    }
+    this.pending.clear()
   }
 
   // ---------------------------------------------------------------- event mapping
@@ -545,7 +571,7 @@ export class ProjectAgent {
             const b = block as { tool_use_id: string; is_error?: boolean; content?: unknown }
             const part = this.tools.get(b.tool_use_id)
             if (!part) continue
-            part.status = b.is_error ? 'error' : 'done'
+            part.status = b.is_error ? (this.interrupted ? 'stopped' : 'error') : 'done'
             const out = Array.isArray(b.content)
               ? (b.content as { type: string; text?: string }[]).map((c) => c.text ?? '').join('\n')
               : typeof b.content === 'string'
@@ -606,28 +632,31 @@ export class ProjectAgent {
     this.emit({ type: 'text-delta', text })
   }
 
-  /** End the in-flight assistant message; steps still running can no longer finish. */
-  private settleCurrent(isError: boolean): void {
+  /** End the in-flight assistant message: open steps and permission cards can't finish now. */
+  private settleCurrent(isError: boolean, stopped: boolean): void {
     if (!this.current) return
-    for (const p of this.current.parts ?? [])
+    for (const p of this.current.parts ?? []) {
       if (p.type === 'tool' && p.status === 'running') {
-        p.status = 'error'
+        p.status = stopped ? 'stopped' : 'error'
         this.emit(p)
-      }
+      } else if (p.type === 'permission' && !p.resolved) p.resolved = 'deny'
+    }
     this.current.pending = false
     this.current.isError = isError
+    if (stopped) this.current.stopped = true
     this.current.durationMs = Date.now() - this.turnStartedAt
   }
 
   private finishTurn(isError: boolean, error?: string): void {
     if (!this.working) return
     this.working = false
-    // a turn the person stopped is not a failure
+    // a turn the person stopped isn't shown as a failure, but whoever waits on it must not
+    // carry on as if it had succeeded
     const stopped = this.interrupted
     this.interrupted = false
-    if (stopped) isError = false
+    this.cancelPending(stopped ? 'Stopped' : 'The turn ended')
     if (this.current) {
-      this.settleCurrent(isError)
+      this.settleCurrent(isError && !stopped, stopped)
       if (stopped && !this.current.text) this.appendText('Stopped.')
       else if (isError && error && !this.current.text) {
         this.appendText(
@@ -644,8 +673,9 @@ export class ProjectAgent {
       type: 'turn-end',
       sessionId: this.sessionId ?? '',
       durationMs: Date.now() - this.turnStartedAt,
-      isError,
-      error
+      isError: isError || stopped,
+      stopped,
+      error: stopped ? 'Stopped' : error
     }
     this.emit(end)
     for (const cb of turnEndListeners) cb(this.project, end)

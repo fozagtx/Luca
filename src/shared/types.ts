@@ -80,15 +80,26 @@ export type AgentEvent =
       id: string
       name: string
       summary: string
-      status: 'running' | 'done' | 'error'
+      status: ToolStatus
       detail?: string
       activity?: Activity
     }
   | { type: 'permission'; id: string; tool: string; input: unknown; rule?: string }
   | { type: 'permission-resolved'; id: string }
   | { type: 'turn-start' }
-  | { type: 'turn-end'; sessionId: string; durationMs: number; isError: boolean; error?: string }
+  | {
+      type: 'turn-end'
+      sessionId: string
+      durationMs: number
+      /** True for failures and for turns the person stopped (whoever waits must not carry on). */
+      isError: boolean
+      stopped?: boolean
+      error?: string
+    }
   | { type: 'status'; state: AgentState; detail?: string }
+
+/** `stopped`: the person pressed Stop while the step ran. */
+export type ToolStatus = 'running' | 'done' | 'error' | 'stopped'
 
 export type AgentState =
   'idle' | 'starting' | 'ready' | 'working' | 'needs-login' | 'missing-claude' | 'error'
@@ -102,7 +113,7 @@ export type ChatContentPart =
       id: string
       name: string
       summary: string
-      status: 'running' | 'done' | 'error'
+      status: ToolStatus
       detail?: string
       /** Plain-language description (older history may not have it). */
       activity?: Activity
@@ -130,6 +141,10 @@ export type ChatMessage = {
   durationMs?: number
   /** For an assistant message: the id of the user message it answers. */
   replyTo?: string
+  /** The person pressed Stop during this reply. */
+  stopped?: boolean
+  /** For a user message: the hidden context it was sent with (playhead, notes), for Try again. */
+  context?: unknown
 }
 
 export type CutReason = 'filler' | 'pause' | 'retake' | 'false_start' | 'manual'
