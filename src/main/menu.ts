@@ -1,5 +1,7 @@
 import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { join } from 'node:path'
 import { Channels } from './ipc'
+import { looksDir } from './looks'
 
 function send(cmd: string, arg?: unknown): void {
   const w = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
@@ -145,7 +147,7 @@ export function popupLookMenu(win: BrowserWindow, slug: string): Promise<void> {
       { label: 'Apply to This Project', click: () => send('look-apply', slug) },
       { label: 'Update from This Project', click: () => send('look-update', slug) },
       { type: 'separator' },
-      { label: 'Reveal in Finder', click: () => send('look-reveal', slug) },
+      { label: 'Reveal in Finder', click: () => shell.showItemInFolder(join(looksDir(), slug)) },
       { label: 'Delete Look', click: () => send('look-delete', slug) }
     ])
     menu.popup({ window: win, callback: () => resolve() })

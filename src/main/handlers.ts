@@ -8,6 +8,7 @@ import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
 import { remocnCatalog, setupStudio, studioStatus } from './remocn'
 import { Channels, broadcast, handle } from './ipc'
+import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { popupClipMenu, popupLookMenu } from './menu'
 import { createProject, listFiles, openProject, recentProjects, safeJoin } from './projects'
 import { hasSecret, setSecret } from './secrets'
@@ -74,7 +75,12 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     Channels.projectCreate,
     async (args: { file: string; name?: string; aspect: Aspect; look?: string | null }) => {
       const p = await createProject(args)
-      return activate(p.dir)
+      const opened = await activate(p.dir)
+      if (args.look) {
+        await applyLook(opened, args.look)
+        return activate(p.dir)
+      }
+      return opened
     }
   )
   handle(Channels.projectOpen, (dir: string) => activate(dir))
@@ -152,11 +158,16 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.cleanEdl, () => readEdl(requireProject().dir))
 
   // looks
-  handle(Channels.looksList, () => [])
-  handle(Channels.looksSave, notReady('Looks'))
-  handle(Channels.looksUpdate, notReady('Looks'))
-  handle(Channels.looksApply, notReady('Looks'))
-  handle(Channels.looksRemove, notReady('Looks'))
+  handle(Channels.looksList, () => listLooks())
+  handle(Channels.looksSave, (name: string) => saveLook(requireProject(), name))
+  handle(Channels.looksUpdate, (slug: string) => updateLook(requireProject(), slug))
+  handle(Channels.looksApply, async (slug: string) => {
+    const p = requireProject()
+    await applyLook(p, slug)
+    setCurrentProject(openProject(p.dir))
+    await checkpoint(p.dir, `Apply Look: ${lookName(slug)}`)
+  })
+  handle(Channels.looksRemove, (slug: string) => removeLook(slug))
   handle(Channels.looksActive, () => currentProject()?.look ?? null)
 
   // history

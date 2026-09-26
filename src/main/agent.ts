@@ -342,6 +342,8 @@ export class ProjectAgent {
       const ctx = turn.context as { time?: number }
       if (typeof ctx.time === 'number') lines.push(`Playhead is at ${ctx.time.toFixed(2)}s.`)
     }
+    if (existsSync(join(lucaDir(this.project.dir), 'LOOK.md')))
+      lines.push('An active Look is set: read .luca/LOOK.md and follow it for every visual choice.')
     const text = lines.length
       ? `${turn.text}\n\n<context>\n${lines.join('\n')}\n</context>`
       : turn.text
