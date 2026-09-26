@@ -4,9 +4,11 @@ import {
   Crosshair,
   FolderOpen,
   History,
+  Moon,
   Palette,
   Plus,
   Scissors,
+  Sun,
   Upload
 } from 'lucide-react'
 import type { ReactElement } from 'react'
@@ -93,6 +95,18 @@ export function CommandPalette(): ReactElement {
       needsProject: true
     },
     {
+      id: 'theme',
+      label: ui.theme === 'dark' ? 'Appearance: Light' : 'Appearance: Dark',
+      shortcut: '⇧⌘D',
+      icon:
+        ui.theme === 'dark' ? (
+          <Sun size={14} strokeWidth={1.5} />
+        ) : (
+          <Moon size={14} strokeWidth={1.5} />
+        ),
+      run: () => ui.toggleTheme()
+    },
+    {
       id: 'goto',
       label: 'Go to timecode…',
       shortcut: '⌘G',
@@ -107,8 +121,8 @@ export function CommandPalette(): ReactElement {
       open={open}
       onOpenChange={setOpen}
       label="Command palette"
-      overlayClassName="fixed inset-0 z-40 bg-black/10"
-      contentClassName="fixed left-1/2 top-[18%] z-50 w-[520px] -translate-x-1/2 overflow-hidden rounded-[10px] bg-bg shadow-popover outline-none cmdk-pop"
+      overlayClassName="fixed inset-0 z-40 bg-overlay"
+      contentClassName="fixed left-1/2 top-[18%] z-50 w-[520px] -translate-x-1/2 overflow-hidden rounded-[10px] border border-border bg-bg shadow-popover outline-none cmdk-pop"
     >
       <Command.Input
         placeholder="Type a command…"
@@ -127,7 +141,7 @@ export function CommandPalette(): ReactElement {
               setOpen(false)
               it.run()
             }}
-            className="flex h-8 items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] text-text data-[selected=true]:bg-black/[0.05] data-[disabled=true]:opacity-40"
+            className="flex h-8 items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] text-text data-[selected=true]:bg-hover data-[disabled=true]:opacity-40"
           >
             <span className="text-text-2">{it.icon}</span>
             <span className="flex-1">{it.label}</span>

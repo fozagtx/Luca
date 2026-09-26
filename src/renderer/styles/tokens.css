@@ -1,29 +1,35 @@
 @import 'tailwindcss';
 
-@theme {
-  --color-bg: #ffffff;
-  --color-bg-subtle: #fafafa;
-  --color-bg-muted: #f4f4f5;
-  --color-viewer-bg: #f2f2f4;
-  --color-border: rgba(0, 0, 0, 0.08);
-  --color-text: #0a0a0b;
-  --color-text-2: #52525b;
-  --color-text-3: #a1a1aa;
-  --color-accent: #007aff;
-  --color-playhead: #ff3b30;
-  --color-clip-video: #e8f1ff;
-  --color-clip-video-edge: #9cc3ff;
-  --color-clip-block: #f1ecff;
-  --color-clip-block-edge: #c4b5fd;
-  --color-clip-caption: #fff6e5;
-  --color-clip-caption-edge: #fcd38d;
-  --color-clip-audio: #eaf7ee;
-  --color-clip-audio-edge: #9fdcb0;
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-bg-muted: var(--bg-muted);
+  --color-panel: var(--panel);
+  --color-viewer-bg: var(--viewer-bg);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-hover: var(--hover);
+  --color-press: var(--press);
+  --color-danger: var(--danger);
+  --color-playhead: var(--playhead);
+  --color-clip-video: var(--clip-video);
+  --color-clip-block: var(--clip-block);
+  --color-clip-component: var(--clip-component);
+  --color-clip-caption: var(--clip-caption);
+  --color-clip-audio: var(--clip-audio);
+  --color-overlay: var(--overlay);
 
   --radius-control: 6px;
   --radius-card: 10px;
 
-  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --shadow-popover: var(--shadow-popover);
 
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
@@ -37,16 +43,60 @@
 
 :root {
   --bg: #ffffff;
-  --bg-subtle: #fafafa;
-  --bg-muted: #f4f4f5;
-  --viewer-bg: #f2f2f4;
-  --border: rgba(0, 0, 0, 0.08);
-  --text: #0a0a0b;
-  --text-2: #52525b;
-  --text-3: #a1a1aa;
+  --bg-subtle: hsl(210 20% 98%);
+  --bg-muted: hsl(0 0% 94%);
+  --panel: hsl(210 20% 98%);
+  --viewer-bg: hsl(0 0% 96%);
+  --border: hsl(0 0% 89%);
+  --border-strong: hsl(0 0% 80%);
+  --text: hsl(0 0% 11%);
+  --text-2: hsl(0 0% 38%);
+  --text-3: hsl(0 0% 58%);
   --accent: #007aff;
-  --playhead: #ff3b30;
+  --accent-fg: #ffffff;
+  --hover: rgba(0, 0, 0, 0.05);
+  --press: rgba(0, 0, 0, 0.09);
+  --danger: #ff3b30;
+  --playhead: #007aff;
+  --clip-video: hsl(0 0% 26%);
+  --clip-block: #ba5d7a;
+  --clip-component: #5d93ba;
+  --clip-caption: #5dbaa0;
+  --clip-audio: #8f5dba;
+  --overlay: rgba(0, 0, 0, 0.12);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --tip-bg: #1c1c1e;
+  --tip-fg: #ffffff;
+  --vng-primary: var(--accent);
+  --vng-primary-foreground: var(--accent-fg);
+  --vng-radius-md: 6px;
+  --vng-transition-speed: 150ms;
   color-scheme: light;
+}
+
+.dark {
+  --bg: hsl(0 0% 5%);
+  --bg-subtle: hsl(0 0% 8%);
+  --bg-muted: hsl(0 0% 14%);
+  --panel: hsl(0 0% 10%);
+  --viewer-bg: hsl(0 0% 7%);
+  --border: hsl(0 0% 16%);
+  --border-strong: hsl(0 0% 26%);
+  --text: hsl(0 0% 87%);
+  --text-2: hsl(0 0% 62%);
+  --text-3: hsl(0 0% 45%);
+  --accent: #2b95ff;
+  --accent-fg: #ffffff;
+  --hover: rgba(255, 255, 255, 0.06);
+  --press: rgba(255, 255, 255, 0.1);
+  --danger: #ff453a;
+  --playhead: #2b95ff;
+  --clip-video: hsl(0 0% 22%);
+  --overlay: rgba(0, 0, 0, 0.5);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --tip-bg: hsl(0 0% 18%);
+  --tip-fg: hsl(0 0% 95%);
+  color-scheme: dark;
 }
 
 html,
@@ -99,7 +149,7 @@ textarea {
   outline: none;
 }
 *:focus-visible {
-  outline: 2px solid rgba(0, 122, 255, 0.4);
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
   outline-offset: 1px;
 }
 
@@ -110,10 +160,10 @@ textarea {
 }
 
 ::selection {
-  background: rgba(0, 122, 255, 0.25);
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 body.inactive ::selection {
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--press);
 }
 
 /* overlay scrollbars, 6 px, visible only while scrolling */
@@ -132,7 +182,7 @@ body.inactive ::selection {
 }
 .scroll:hover::-webkit-scrollbar-thumb,
 .scroll.scrolling::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--border-strong);
 }
 .scroll::-webkit-scrollbar-corner {
   background: transparent;
@@ -142,8 +192,16 @@ body.inactive ::selection {
   border-color: var(--border);
 }
 
+/* Editor panel chrome: rounded card on the window background */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
 .sidebar-vibrancy {
-  background: rgba(246, 246, 248, 0.72);
+  background: var(--panel);
 }
 
 .icon-btn {
@@ -156,20 +214,53 @@ body.inactive ::selection {
   color: var(--text-2);
   background: transparent;
   border: 0;
-  transition: background-color 120ms ease-out, color 120ms ease-out;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out,
+    transform 120ms ease-out;
 }
 .icon-btn:hover {
-  background: var(--bg-muted);
+  background: var(--hover);
   color: var(--text);
+}
+.icon-btn:active {
+  transform: scale(0.94);
 }
 .icon-btn[data-active='true'],
 .icon-btn[aria-pressed='true'] {
-  background: rgba(0, 122, 255, 0.12);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
 }
 .icon-btn:disabled {
   color: var(--text-3);
   background: transparent;
+}
+
+/* Dock-style control groups (sidebar tabs, transport) */
+.dock {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+}
+.dock > * {
+  transition:
+    transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+.dock > *:hover {
+  transform: translateY(-1px);
+}
+.dock > *:active {
+  transform: translateY(0) scale(0.94);
+}
+
+input.volume {
+  accent-color: var(--accent);
 }
 
 @media (prefers-reduced-motion: reduce) {

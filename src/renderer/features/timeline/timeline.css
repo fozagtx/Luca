@@ -1,19 +1,21 @@
-/* Light-theme overrides for @xzdarcy/react-timeline-editor, using Luca tokens. */
+/* Theme overrides for @xzdarcy/react-timeline-editor, using Luca tokens. */
 .timeline-editor {
-  background-color: var(--color-bg-subtle);
+  background-color: var(--color-panel);
   font-family: inherit;
   font-size: 11px;
   height: 100%;
   width: 100%;
 }
 .timeline-editor-time-area {
+  background-color: var(--color-bg-subtle);
   border-bottom: 1px solid var(--color-border);
 }
 .timeline-editor-time-unit {
-  border-right: 1px solid rgba(0, 0, 0, 0.18);
+  border-right: 1px solid var(--color-border-strong);
 }
 .timeline-editor-time-unit-scale {
   color: var(--color-text-3);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 .timeline-editor-edit-area {
@@ -21,16 +23,18 @@
 }
 .timeline-editor-edit-row {
   background-image:
-    linear-gradient(var(--color-bg-subtle), var(--color-bg-subtle)),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.06) 1px, transparent 0);
+    linear-gradient(var(--color-panel), var(--color-panel)),
+    linear-gradient(90deg, var(--color-border) 1px, transparent 0);
   border-bottom: 1px solid var(--color-border);
 }
 .timeline-editor-edit-area .ReactVirtualized__Grid::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--color-border-strong);
+  border-radius: 4px;
 }
 .timeline-editor-cursor {
   border-left: 1px solid var(--color-playhead);
   border-right: 1px solid var(--color-playhead);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-playhead) 25%, transparent);
 }
 .timeline-editor-cursor-top svg path,
 .timeline-editor-cursor-top svg {
@@ -43,17 +47,32 @@
   background-color: transparent;
   border-radius: 6px;
   overflow: hidden;
+  transition: filter 120ms ease-out;
+}
+.timeline-editor-action:hover {
+  filter: brightness(1.05);
 }
 .timeline-editor-action .timeline-editor-action-left-stretch:after,
 .timeline-editor-action .timeline-editor-action-right-stretch:after {
-  border-top-width: 14px;
-  border-bottom-width: 14px;
+  border: none;
+  top: 25%;
+  bottom: 25%;
+  width: 2px;
+  height: auto;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.55);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
 }
 .timeline-editor-action .timeline-editor-action-left-stretch:after {
-  border-left-color: rgba(0, 0, 0, 0.12);
+  left: 3px;
 }
 .timeline-editor-action .timeline-editor-action-right-stretch:after {
-  border-right-color: rgba(0, 0, 0, 0.12);
+  right: 3px;
+}
+.timeline-editor-action:hover .timeline-editor-action-left-stretch:after,
+.timeline-editor-action:hover .timeline-editor-action-right-stretch:after {
+  opacity: 1;
 }
 
 /* Luca clip renderers */
@@ -62,13 +81,13 @@
   height: 100%;
   width: 100%;
   border-radius: 6px;
-  border: 1px solid transparent;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   overflow: hidden;
-  padding: 0 8px;
+  padding: 0 10px;
   cursor: grab;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 .luca-clip:active {
   cursor: grabbing;
@@ -81,10 +100,11 @@
   gap: 4px;
   font-size: 11px;
   font-weight: 500;
-  color: var(--color-text);
+  color: rgba(255, 255, 255, 0.95);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
 }
 .luca-clip-badge {
   display: inline-flex;
@@ -93,34 +113,31 @@
   width: 14px;
   height: 14px;
   border-radius: 4px;
-  background: var(--color-clip-block-edge);
+  background: rgba(255, 255, 255, 0.25);
   color: white;
   font-size: 9px;
   font-weight: 700;
 }
 .luca-clip-video {
   background: var(--color-clip-video);
-  border-color: var(--color-clip-video-edge);
 }
-.luca-clip-block,
-.luca-clip-component {
+.luca-clip-block {
   background: var(--color-clip-block);
-  border-color: var(--color-clip-block-edge);
+}
+.luca-clip-component {
+  background: var(--color-clip-component);
 }
 .luca-clip-caption {
   background: var(--color-clip-caption);
-  border-color: var(--color-clip-caption-edge);
 }
 .luca-clip-audio {
   background: var(--color-clip-audio);
-  border-color: var(--color-clip-audio-edge);
 }
 .luca-clip-selected {
-  border-color: var(--color-accent);
   box-shadow:
-    inset 0 0 0 2px var(--color-accent),
-    inset 0 0 0 3px white;
-  filter: brightness(1.06);
+    inset 0 0 0 2px var(--color-panel),
+    inset 0 0 0 4px var(--color-accent);
+  filter: brightness(1.08);
 }
 
 .luca-strip {
@@ -129,10 +146,10 @@
   width: 100%;
   overflow: hidden;
   align-items: center;
-  background: #e9e9ec;
-  border-radius: 4px;
+  background: var(--color-bg-muted);
+  border-radius: 6px;
   cursor: default;
 }
 .luca-strip img {
-  border-right: 1px solid rgba(255, 255, 255, 0.6);
+  border-right: 1px solid var(--color-panel);
 }

@@ -183,8 +183,11 @@ export type EnvStatus = {
   chrome: string
 }
 
+export type Theme = 'light' | 'dark'
+
 export type Settings = {
   projectsDir: string
+  theme: Theme
   renderWorkers: number
   defaultAspect: Aspect
   keyterms: string[]

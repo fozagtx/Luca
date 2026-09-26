@@ -34,52 +34,58 @@ export function Transport({ onZoomFit }: { onZoomFit?: () => void }): ReactEleme
   const setGoto = useUi((s) => s.setGoto)
 
   return (
-    <div className="flex h-11 shrink-0 items-center gap-1 border-t border-b border-border bg-bg-subtle px-3">
-      <Tip label="Go to start" shortcut="Home">
-        <Button variant="icon" disabled={!ready} onClick={() => seek(0)} aria-label="Go to start">
-          <ChevronFirst size={16} strokeWidth={1.5} />
-        </Button>
-      </Tip>
-      <Tip label="Previous frame" shortcut="←">
-        <Button
-          variant="icon"
-          disabled={!ready}
-          onClick={() => step(-1)}
-          aria-label="Previous frame"
-        >
-          <SkipBack size={15} strokeWidth={1.5} />
-        </Button>
-      </Tip>
-      <Tip label={playing ? 'Pause' : 'Play'} shortcut="Space">
-        <Button
-          variant="icon"
-          disabled={!ready}
-          onClick={togglePlay}
-          aria-label={playing ? 'Pause' : 'Play'}
-          className="text-text"
-        >
-          {playing ? <Pause size={16} strokeWidth={1.75} /> : <Play size={16} strokeWidth={1.75} />}
-        </Button>
-      </Tip>
-      <Tip label="Next frame" shortcut="→">
-        <Button variant="icon" disabled={!ready} onClick={() => step(1)} aria-label="Next frame">
-          <SkipForward size={15} strokeWidth={1.5} />
-        </Button>
-      </Tip>
-      <Tip label="Go to end" shortcut="End">
-        <Button
-          variant="icon"
-          disabled={!ready}
-          onClick={() => seek(duration)}
-          aria-label="Go to end"
-        >
-          <ChevronLast size={16} strokeWidth={1.5} />
-        </Button>
-      </Tip>
+    <div className="flex h-11 shrink-0 items-center gap-1 border-t border-border bg-panel px-3">
+      <div className="dock">
+        <Tip label="Go to start" shortcut="Home">
+          <Button variant="icon" disabled={!ready} onClick={() => seek(0)} aria-label="Go to start">
+            <ChevronFirst size={16} strokeWidth={1.5} />
+          </Button>
+        </Tip>
+        <Tip label="Previous frame" shortcut="←">
+          <Button
+            variant="icon"
+            disabled={!ready}
+            onClick={() => step(-1)}
+            aria-label="Previous frame"
+          >
+            <SkipBack size={15} strokeWidth={1.5} />
+          </Button>
+        </Tip>
+        <Tip label={playing ? 'Pause' : 'Play'} shortcut="Space">
+          <Button
+            variant="icon"
+            disabled={!ready}
+            onClick={togglePlay}
+            aria-label={playing ? 'Pause' : 'Play'}
+            className="bg-bg text-text shadow-[0_1px_2px_rgba(0,0,0,0.12)]"
+          >
+            {playing ? (
+              <Pause size={16} strokeWidth={1.75} />
+            ) : (
+              <Play size={16} strokeWidth={1.75} />
+            )}
+          </Button>
+        </Tip>
+        <Tip label="Next frame" shortcut="→">
+          <Button variant="icon" disabled={!ready} onClick={() => step(1)} aria-label="Next frame">
+            <SkipForward size={15} strokeWidth={1.5} />
+          </Button>
+        </Tip>
+        <Tip label="Go to end" shortcut="End">
+          <Button
+            variant="icon"
+            disabled={!ready}
+            onClick={() => seek(duration)}
+            aria-label="Go to end"
+          >
+            <ChevronLast size={16} strokeWidth={1.5} />
+          </Button>
+        </Tip>
+      </div>
 
       <button
         type="button"
-        className="timecode ml-3 rounded-[4px] px-1.5 py-0.5 text-text hover:bg-black/[0.05]"
+        className="timecode ml-3 rounded-[4px] px-1.5 py-0.5 text-text hover:bg-hover"
         onClick={() => setGoto(true)}
         title="Go to timecode (⌘G)"
       >

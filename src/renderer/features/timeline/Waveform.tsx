@@ -6,7 +6,7 @@ export function Waveform({
   peaksPerSecond,
   start,
   end,
-  color = '#3FA56A'
+  color = 'rgba(255,255,255,0.75)'
 }: {
   peaks: number[]
   peaksPerSecond: number

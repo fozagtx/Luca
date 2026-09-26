@@ -1,8 +1,8 @@
-# Luca
+<h1><img src="docs/logo.png" alt="" width="40" align="top" /> Luca</h1>
 
 A personal macOS video editor where Claude does the editing and HyperFrames HTML is the timeline.
 
-![Luca with a project loaded](docs/screenshots/preview-chat.png)
+![Luca with a project loaded](docs/screenshots/editor-light.png)
 
 ## What it does
 
@@ -22,13 +22,13 @@ A personal macOS video editor where Claude does the editing and HyperFrames HTML
 
 ## Screenshots
 
-| Empty shell                                      | Timeline                                   |
-| ------------------------------------------------ | ------------------------------------------ |
-| ![Empty shell](docs/screenshots/empty-shell.png) | ![Timeline](docs/screenshots/timeline.png) |
+| Empty state                                      | Dark mode (View → Appearance, or ⌘K)            |
+| ------------------------------------------------ | ----------------------------------------------- |
+| ![Empty state](docs/screenshots/empty-state.png) | ![Editor, dark](docs/screenshots/editor-dark.png) |
 
-| Export sheet                                       | Export finished                                  |
-| -------------------------------------------------- | ------------------------------------------------ |
-| ![Export sheet](docs/screenshots/export-sheet.png) | ![Export done](docs/screenshots/export-done.png) |
+| Chat                                              | Export sheet                                       |
+| ------------------------------------------------- | -------------------------------------------------- |
+| ![Chat](docs/screenshots/chat-generate.png)       | ![Export sheet](docs/screenshots/export-sheet.png) |
 
 ## Download
 

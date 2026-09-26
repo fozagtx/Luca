@@ -1,5 +1,6 @@
 import { Crosshair, MessageSquare, PanelLeft, Upload } from 'lucide-react'
 import type { ReactElement } from 'react'
+import { AnimatedButton } from '../../components/ui/animated-button'
 import { Button } from '../../components/ui/button'
 import { Tip } from '../../components/ui/tooltip'
 import { usePlayer } from '../../stores/player'
@@ -14,7 +15,7 @@ export function Toolbar(): ReactElement {
   const toggleGrab = usePlayer((s) => s.toggleGrab)
 
   return (
-    <header className="drag-region relative flex h-[52px] shrink-0 items-center border-b border-border bg-bg pl-[84px] pr-3">
+    <header className="drag-region relative flex h-[52px] shrink-0 items-center bg-bg pl-[84px] pr-3">
       <div className="flex items-center gap-1">
         <Tip label="Toggle sidebar" shortcut="⇧⌘S">
           <Button
@@ -48,16 +49,15 @@ export function Toolbar(): ReactElement {
           </Button>
         </Tip>
         <HistoryPopover />
-        <Button
-          variant="primary"
+        <AnimatedButton
           size="sm"
-          className="ml-1 px-3"
+          className="ml-1"
           disabled={!project}
           onClick={() => setExport(true)}
         >
           <Upload size={14} strokeWidth={1.75} />
           Export
-        </Button>
+        </AnimatedButton>
         <div className="mx-1 h-4 w-px bg-border" />
         <Tip label="Toggle chat" shortcut="⇧⌘C">
           <Button variant="icon" active={chatOpen} onClick={toggleChat} aria-label="Toggle chat">

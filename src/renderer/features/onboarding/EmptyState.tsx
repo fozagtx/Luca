@@ -1,5 +1,7 @@
-import { Clapperboard, FolderOpen, Plus } from 'lucide-react'
+import { FolderOpen, Plus } from 'lucide-react'
 import { useState, type DragEvent, type ReactElement } from 'react'
+import logo from '../../assets/logo.png'
+import { AnimatedButton } from '../../components/ui/animated-button'
 import { Button } from '../../components/ui/button'
 import { luca } from '../../lib/luca'
 import { cn } from '../../lib/cn'
@@ -44,12 +46,15 @@ export function EmptyState(): ReactElement {
         onDrop={onDrop}
         className={cn(
           'flex w-[440px] flex-col items-center gap-3 rounded-[10px] border border-dashed bg-bg px-8 py-10 text-center transition-colors duration-150',
-          over ? 'border-accent bg-accent/[0.04]' : 'border-black/15'
+          over ? 'border-accent bg-accent/[0.04]' : 'border-border-strong'
         )}
       >
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-bg-muted text-text-2">
-          <Clapperboard size={18} strokeWidth={1.5} />
-        </div>
+        <img
+          src={logo}
+          alt="Luca"
+          draggable={false}
+          className="h-16 w-16 rounded-[14px] shadow-[0_6px_16px_rgba(0,0,0,0.18)]"
+        />
         <div className="text-[20px] font-semibold tracking-[-0.01em] text-text">
           Drop a video to start
         </div>
@@ -57,10 +62,10 @@ export function EmptyState(): ReactElement {
           MP4, MOV, M4V or WebM. Luca keeps the original untouched.
         </div>
         <div className="mt-2 flex gap-2">
-          <Button variant="primary" onClick={pick} disabled={loading}>
+          <AnimatedButton onClick={pick} disabled={loading}>
             <Plus size={14} strokeWidth={1.75} />
             New Project
-          </Button>
+          </AnimatedButton>
           <Button onClick={openDir} disabled={loading}>
             <FolderOpen size={14} strokeWidth={1.5} />
             Open…
@@ -83,7 +88,7 @@ export function EmptyState(): ReactElement {
                 disabled={loading}
                 title={r.dir}
               >
-                <div className="aspect-video w-full overflow-hidden rounded-[6px] bg-black/[0.06] ring-1 ring-black/[0.06] group-hover:ring-accent/60">
+                <div className="aspect-video w-full overflow-hidden rounded-[6px] bg-bg-muted ring-1 ring-border group-hover:ring-accent/60">
                   {r.thumb && <img src={r.thumb} alt="" className="h-full w-full object-cover" />}
                 </div>
                 <div className="mt-1.5 truncate text-[12px] font-medium text-text">{r.name}</div>

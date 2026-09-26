@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from
 import { join } from 'node:path'
 import { Channels } from './ipc'
 import { looksDir } from './looks'
+import { getSettings } from './settings'
 
 function send(cmd: string, arg?: unknown): void {
   const w = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
@@ -66,6 +67,30 @@ export function buildAppMenu(): void {
           click: () => send('toggle-sidebar')
         },
         { label: 'Toggle Chat', accelerator: 'Cmd+Shift+C', click: () => send('toggle-chat') },
+        { type: 'separator' },
+        {
+          label: 'Appearance',
+          submenu: [
+            {
+              label: 'Light',
+              type: 'radio',
+              checked: getSettings().theme !== 'dark',
+              click: () => send('theme', 'light')
+            },
+            {
+              label: 'Dark',
+              type: 'radio',
+              checked: getSettings().theme === 'dark',
+              click: () => send('theme', 'dark')
+            },
+            { type: 'separator' },
+            {
+              label: 'Toggle Dark Mode',
+              accelerator: 'Cmd+Shift+D',
+              click: () => send('theme')
+            }
+          ]
+        },
         { type: 'separator' },
         { label: 'Files', accelerator: 'Cmd+1', click: () => send('tab', 'files') },
         { label: 'Catalog', accelerator: 'Cmd+2', click: () => send('tab', 'catalog') },

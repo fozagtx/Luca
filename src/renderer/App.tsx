@@ -16,13 +16,15 @@ import { luca } from './lib/luca'
 import { useProject } from './stores/project'
 import { useUi } from './stores/ui'
 
-const sep = 'group relative shrink-0 bg-border outline-none'
-const sepV = `${sep} w-px cursor-col-resize before:absolute before:inset-y-0 before:-left-1 before:-right-1 hover:bg-accent/60 data-[resize-handle-active]:bg-accent`
-const sepH = `${sep} h-px cursor-row-resize before:absolute before:inset-x-0 before:-top-1 before:-bottom-1 hover:bg-accent/60 data-[resize-handle-active]:bg-accent`
+const sep =
+  'group relative shrink-0 rounded-full bg-transparent outline-none transition-colors duration-150 hover:bg-accent/50 data-[resize-handle-active]:bg-accent'
+const sepV = `${sep} w-1 cursor-col-resize before:absolute before:inset-y-0 before:-left-1 before:-right-1`
+const sepH = `${sep} h-1 cursor-row-resize before:absolute before:inset-x-0 before:-top-1 before:-bottom-1`
 
 export default function App(): ReactElement {
   const init = useProject((s) => s.init)
   const settings = useProject((s) => s.settings)
+  const setTheme = useUi((s) => s.setTheme)
   const sidebarOpen = useUi((s) => s.sidebarOpen)
   const chatOpen = useUi((s) => s.chatOpen)
   useShortcuts()
@@ -30,6 +32,9 @@ export default function App(): ReactElement {
   useEffect(() => {
     void init()
   }, [init])
+  useEffect(() => {
+    if (settings) setTheme(settings.theme, false)
+  }, [settings, setTheme])
 
   const panes = settings?.panes ?? {}
   const outer = panes.outer ?? []
@@ -43,14 +48,20 @@ export default function App(): ReactElement {
         <Group
           key={`${sidebarOpen}-${chatOpen}`}
           orientation="horizontal"
-          className="min-h-0 flex-1"
+          className="min-h-0 flex-1 px-1.5 pb-1.5"
           onLayoutChanged={(l) =>
             luca.settings.savePanes('outer', [l.sidebar ?? 0, l.center ?? 0, l.chat ?? 0])
           }
         >
           {sidebarOpen && (
             <>
-              <Panel id="sidebar" defaultSize={outer[0] || 248} minSize={200} maxSize={360}>
+              <Panel
+                id="sidebar"
+                defaultSize={outer[0] || 272}
+                minSize={220}
+                maxSize={400}
+                className="panel"
+              >
                 <Sidebar />
               </Panel>
               <Separator className={sepV} />
@@ -64,7 +75,7 @@ export default function App(): ReactElement {
                 luca.settings.savePanes('center', [l.viewer ?? 0, l.timeline ?? 0])
               }
             >
-              <Panel id="viewer" minSize={240}>
+              <Panel id="viewer" minSize={240} className="panel">
                 <div className="flex h-full flex-col">
                   <div className="min-h-0 flex-1">
                     <Viewer />
@@ -73,7 +84,13 @@ export default function App(): ReactElement {
                 </div>
               </Panel>
               <Separator className={sepH} />
-              <Panel id="timeline" defaultSize={center[1] || 280} minSize={180} maxSize={520}>
+              <Panel
+                id="timeline"
+                defaultSize={center[1] || 260}
+                minSize={180}
+                maxSize={520}
+                className="panel"
+              >
                 <Timeline />
               </Panel>
             </Group>
@@ -81,7 +98,13 @@ export default function App(): ReactElement {
           {chatOpen && (
             <>
               <Separator className={sepV} />
-              <Panel id="chat" defaultSize={outer[2] || 380} minSize={320} maxSize={520}>
+              <Panel
+                id="chat"
+                defaultSize={outer[2] || 360}
+                minSize={300}
+                maxSize={520}
+                className="panel"
+              >
                 <Chat />
               </Panel>
             </>

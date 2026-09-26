@@ -1,4 +1,6 @@
+import type { Theme } from '@shared/types'
 import { create } from 'zustand'
+import { luca } from '../lib/luca'
 
 export type SidebarTab = 'files' | 'catalog' | 'transcript' | 'looks'
 
@@ -13,6 +15,9 @@ type UiStore = {
   newProject: { file: string } | null
   gotoOpen: boolean
   windowActive: boolean
+  theme: Theme
+  setTheme: (t: Theme, persist?: boolean) => void
+  toggleTheme: () => void
   toggleSidebar: () => void
   toggleChat: () => void
   setTab: (t: SidebarTab) => void
@@ -25,7 +30,7 @@ type UiStore = {
   setWindowActive: (a: boolean) => void
 }
 
-export const useUi = create<UiStore>((set) => ({
+export const useUi = create<UiStore>((set, get) => ({
   sidebarOpen: true,
   chatOpen: true,
   tab: 'files',
@@ -36,6 +41,13 @@ export const useUi = create<UiStore>((set) => ({
   newProject: null,
   gotoOpen: false,
   windowActive: true,
+  theme: 'light',
+  setTheme: (theme, persist = true) => {
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    set({ theme })
+    if (persist) void luca.settings.update({ theme })
+  },
+  toggleTheme: () => get().setTheme(get().theme === 'dark' ? 'light' : 'dark'),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
   setTab: (tab) => set({ tab, sidebarOpen: true }),

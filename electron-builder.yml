@@ -16,6 +16,7 @@ asarUnpack:
   - node_modules/@hyperframes/**
   - node_modules/@anthropic-ai/claude-agent-sdk/**
 mac:
+  icon: build/icon.icns
   category: public.app-category.video
   target:
     - target: dmg
@@ -32,6 +33,7 @@ mac:
     - NSDocumentsFolderUsageDescription: Luca opens video projects from your folders.
     - NSDownloadsFolderUsageDescription: Luca opens video projects from your folders.
 dmg:
+  icon: build/icon.icns
   artifactName: ${name}-${version}-${arch}.${ext}
 npmRebuild: false
 publish: null

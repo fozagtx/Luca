@@ -4,6 +4,7 @@ import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useTimeline } from '../../stores/timeline'
 import { useUi, type SidebarTab } from '../../stores/ui'
+import type { Theme } from '@shared/types'
 
 const isEditable = (t: EventTarget | null): boolean => {
   const el = t as HTMLElement | null
@@ -131,6 +132,10 @@ export function useShortcuts(): void {
           break
         case 'tab':
           ui.setTab(arg as SidebarTab)
+          break
+        case 'theme':
+          if (arg === 'light' || arg === 'dark') ui.setTheme(arg as Theme)
+          else ui.toggleTheme()
           break
         case 'toggle-grab':
           player.toggleGrab()

@@ -31,7 +31,7 @@ function createWindow(): BrowserWindow {
     minHeight: 760,
     show: false,
     title: 'Luca',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: s.theme === 'dark' ? '#0D0D0D' : '#FFFFFF',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
     vibrancy: 'sidebar',
@@ -92,7 +92,17 @@ app.on('open-file', (e, path) => {
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('ai.luca.app')
-  nativeTheme.themeSource = 'light'
+  nativeTheme.themeSource = getSettings().theme
+  const iconPath = is.dev
+    ? join(__dirname, '../../resources/icon.png')
+    : join(process.resourcesPath, 'app.asar.unpacked/resources/icon.png')
+  if (is.dev) app.dock?.setIcon(iconPath)
+  app.setAboutPanelOptions({
+    applicationName: 'Luca',
+    applicationVersion: app.getVersion(),
+    copyright: 'HyperFrames-native video editor',
+    iconPath
+  })
   await loginShellPath()
   await server.start(is.dev ? DEV_PORT : 0)
   registerHandlers(() => mainWindow, server)
