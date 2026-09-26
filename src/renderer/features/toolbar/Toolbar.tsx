@@ -25,7 +25,7 @@ export function ThemeToggle(): ReactElement {
         aria-pressed={dark}
         className="relative overflow-hidden"
       >
-        <Sun
+        <Moon
           size={16}
           strokeWidth={1.5}
           className={cn(
@@ -33,7 +33,7 @@ export function ThemeToggle(): ReactElement {
             dark ? 'rotate-90 scale-50 opacity-0' : 'rotate-0 scale-100 opacity-100'
           )}
         />
-        <Moon
+        <Sun
           size={16}
           strokeWidth={1.5}
           className={cn(
