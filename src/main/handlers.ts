@@ -61,6 +61,8 @@ import { stopWatching, watchProject } from './watcher'
 
 type WinGetter = () => BrowserWindow | null
 
+const warnCheckpoint = (err: unknown): void => console.warn('[luca] checkpoint failed', err)
+
 const openDialog = (
   win: BrowserWindow | null,
   opts: Electron.OpenDialogOptions
@@ -112,7 +114,9 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   }
   onTurnEnd((p, e) => {
     if (e.isError) return
-    void checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72))
+    checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72)).catch(
+      warnCheckpoint
+    )
     // projects without a source video take their thumbnail from the composition itself
     if (!p.source) void refreshCompositionPoster(p).catch(() => undefined)
   })
@@ -220,13 +224,13 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.timelineEdit, async (edit: TimelineEdit) => {
     const p = requireProject()
     const res = await applyEdit(p.dir, edit)
-    if (res.ok) void checkpoint(p.dir, editLabel(edit))
+    if (res.ok) checkpoint(p.dir, editLabel(edit)).catch(warnCheckpoint)
     return res
   })
   handle(Channels.timelineTransform, async (t: ElementTransform) => {
     const p = requireProject()
     const res = await applyTransform(p.dir, t)
-    if (res.ok) void checkpoint(p.dir, `Edit: move/resize ${t.id}`)
+    if (res.ok) checkpoint(p.dir, `Edit: move/resize ${t.id}`).catch(warnCheckpoint)
     return res
   })
   handle(Channels.timelineThumbs, () => thumbnails(requireProject()))
