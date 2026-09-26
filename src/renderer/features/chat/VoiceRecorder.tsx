@@ -132,7 +132,7 @@ export function VoiceRecorder(): ReactElement | null {
                   type="button"
                   onClick={() => useQueue.getState().approveNext()}
                   aria-label="Send what you said"
-                  className="btn-gradient no-drag flex size-8 items-center justify-center rounded-full"
+                  className="no-drag flex size-8 items-center justify-center rounded-full bg-accent text-accent-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] transition-[filter,transform] duration-150 hover:brightness-110 active:scale-95"
                 >
                   <Check size={16} strokeWidth={2.5} />
                 </button>

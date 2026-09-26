@@ -1,7 +1,6 @@
 import type { ChatMessage } from '@shared/types'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  ArrowUp,
   AudioLines,
   Check,
   Keyboard,
@@ -15,6 +14,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { TextShimmer } from '../../components/ai/text-shimmer'
+import { Button } from '../../components/ui/button'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { useChat } from '../../stores/chat'
@@ -62,23 +62,22 @@ export function QueueTray(): ReactElement | null {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: EASE }}
-      className="queue-tray mx-3 mb-2 overflow-hidden"
+      className="mx-3 mb-2 overflow-hidden rounded-[12px] border border-border bg-bg shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
     >
-      <header className="flex h-8 items-center gap-2 px-3">
-        <span className="queue-orb" aria-hidden />
-        <span className="text-[11.5px] font-semibold tracking-[-0.01em] text-text">Queue</span>
-        <span className="rounded-full bg-bg-muted px-1.5 text-[10.5px] font-medium text-text-2 tabular-nums">
-          {items.length}
-        </span>
+      <header className="flex h-8 items-center gap-1.5 px-3">
+        <span
+          className={cn(
+            'size-1.5 rounded-full transition-colors',
+            working ? 'animate-pulse bg-accent' : paused ? 'bg-warning' : 'bg-text-3'
+          )}
+        />
+        <span className="text-[12px] font-semibold text-text">Queue</span>
+        <span className="text-[11px] text-text-3 tabular-nums">{items.length}</span>
         <span className="ml-auto flex items-center gap-1">
           {paused && lined.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => useQueue.getState().resume()}
-              className="inline-flex h-6 items-center gap-1 rounded-full bg-warning/15 px-2 text-[11px] font-medium text-text transition-colors hover:bg-warning/25"
-            >
+            <Button size="sm" variant="secondary" onClick={() => useQueue.getState().resume()}>
               <Play size={10} fill="currentColor" /> Resume
-            </button>
+            </Button>
           ) : lined.length > 0 ? (
             <Tip label="Hold the queue" side="top">
               <button
@@ -92,13 +91,9 @@ export function QueueTray(): ReactElement | null {
             </Tip>
           ) : null}
           {review.length > 1 ? (
-            <button
-              type="button"
-              onClick={() => useQueue.getState().approveAll()}
-              className="inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-accent transition-colors hover:bg-accent/10"
-            >
-              <Check size={11} strokeWidth={2.5} /> Approve all
-            </button>
+            <Button size="sm" variant="ghost" onClick={() => useQueue.getState().approveAll()}>
+              <Check size={11} /> Send all
+            </Button>
           ) : null}
         </span>
       </header>
@@ -269,81 +264,73 @@ function LinedUp({
   )
 }
 
-/** Heard or dictated, waiting for your OK before Luca sees it. */
+/** Heard or dictated, waiting for your OK before Luca sees it (laid out like the permission card). */
 function Review({ item, busy }: { item: QueueItem; busy: boolean }): ReactElement {
   const [editing, setEditing] = useState(false)
   const { approve, discard, toComposer } = useQueue.getState()
+  const Icon = item.source === 'dictation' ? Mic : item.source === 'voice' ? AudioLines : Keyboard
   return (
-    <div className="queue-review rounded-[12px] p-2.5">
-      <div className="flex items-center gap-1.5 text-[10.5px] font-medium text-text-2">
-        <SourceIcon source={item.source} />
-        {item.source === 'voice' ? 'You said' : item.source === 'dictation' ? 'Dictated' : 'Typed'}
-        {item.open ? (
-          <span className="ml-1 inline-flex items-center gap-1 text-accent">
-            <span className="size-1.5 animate-pulse rounded-full bg-accent" />
-            still listening
-          </span>
-        ) : null}
-        <span className="ml-auto text-text-3">Needs your OK</span>
+    <div className="border-t border-border px-1.5 pt-2.5 pb-1">
+      <div className="flex items-start gap-2.5">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-secondary text-secondary-fg">
+          <Icon size={15} strokeWidth={1.75} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-text">
+            {item.source === 'voice'
+              ? 'You said'
+              : item.source === 'dictation'
+                ? 'You dictated'
+                : 'You typed'}
+            {item.open ? (
+              <span className="inline-flex items-center gap-1 text-[11px] font-normal text-text-3">
+                <span className="size-1.5 animate-pulse rounded-full bg-accent" />
+                still listening
+              </span>
+            ) : null}
+          </div>
+          {editing ? (
+            <div className="mt-1">
+              <InlineEdit item={item} onDone={() => setEditing(false)} />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              title="Click to edit"
+              className="mt-0.5 block w-full text-left text-[12.5px] leading-[1.5] text-text select-text"
+            >
+              {item.text}
+            </button>
+          )}
+          {item.chips.length > 0 ? (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {item.chips.map((c, i) => (
+                <ChipPill key={i} chip={c} />
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
-      {editing ? (
-        <div className="mt-1.5">
-          <InlineEdit item={item} onDone={() => setEditing(false)} />
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          title="Click to edit"
-          className="mt-1 block w-full text-left text-[13px] leading-[1.5] text-text select-text"
-        >
-          {item.text}
-        </button>
-      )}
-      {item.chips.length > 0 ? (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {item.chips.map((c, i) => (
-            <ChipPill key={i} chip={c} />
-          ))}
-        </div>
-      ) : null}
       {!editing ? (
-        <div className="mt-2 flex items-center gap-1">
-          <Tip label="Discard" side="top">
-            <button
-              type="button"
-              aria-label="Discard"
-              onClick={() => discard(item.id)}
-              className="icon-btn size-7"
-            >
-              <X size={13} />
-            </button>
-          </Tip>
-          <Tip label="Rework it in the message box" side="top">
-            <button
-              type="button"
-              aria-label="Move to the message box"
-              onClick={() => toComposer(item.id)}
-              className="icon-btn size-7"
-            >
-              <PenLine size={13} />
-            </button>
-          </Tip>
-          <span className="ml-auto pr-1 text-[10.5px] text-text-3">
-            {item.open ? 'Say “send it” or' : ''} ⌘↩
-          </span>
-          <button
-            type="button"
-            onClick={() => approve(item.id)}
-            className="btn-gradient inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-[11.5px] font-semibold"
-          >
-            {busy ? (
-              <ArrowUp size={12} strokeWidth={2.5} />
-            ) : (
-              <Check size={12} strokeWidth={2.75} />
-            )}
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pl-[38px]">
+          <Button size="sm" variant="primary" onClick={() => approve(item.id)}>
             {busy ? 'Add to queue' : 'Send to Luca'}
-          </button>
+            <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↩</kbd>
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => toComposer(item.id)}
+            title="Rework it in the message box"
+          >
+            Edit
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => discard(item.id)}>
+            Discard
+          </Button>
+          {item.open ? (
+            <span className="ml-auto text-[10.5px] text-text-3">or say “send it”</span>
+          ) : null}
         </div>
       ) : null}
     </div>

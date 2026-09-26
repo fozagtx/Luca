@@ -65,14 +65,12 @@ export function ShortcutsSheet(): ReactElement {
       <div className="grid grid-cols-2 gap-x-6 gap-y-4 pt-1">
         {GROUPS.map((g) => (
           <section key={g.title}>
-            <h3 className="eyebrow mb-1.5 text-[10.5px] tracking-[0.08em] text-text-3 uppercase">
-              {g.title}
-            </h3>
+            <h3 className="mb-1 text-[12px] font-semibold text-text">{g.title}</h3>
             <dl className="flex flex-col">
               {g.rows.map(([keys, what], i) => (
                 <div
                   key={i}
-                  className="flex items-baseline gap-3 border-b border-dashed border-border py-1.5 last:border-0"
+                  className="flex items-baseline gap-3 border-b border-border py-1.5 last:border-0"
                 >
                   <dt className="min-w-0 flex-1 text-[12px] leading-[1.4] text-text-2">{what}</dt>
                   <dd className="shrink-0 font-mono text-[11px] whitespace-pre text-text tabular-nums">
