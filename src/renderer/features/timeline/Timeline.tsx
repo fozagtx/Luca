@@ -442,32 +442,13 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     const clip = clips.get(action.id)
     if (!clip || !m) return <div />
     return (
-      <div
-        className={cn(
-          'luca-clip',
-          `luca-clip-${clip.kind}`,
-          action.selected && 'luca-clip-selected',
-          clip.volume === 0 && 'luca-clip-muted',
-          locked.includes(m.index) && 'luca-clip-locked'
-        )}
-        title={`${clip.label} · ${timecode(clip.start, fps)} – ${timecode(clip.end, fps)}`}
-      >
-        {clip.kind === 'audio' && peaks && peaks.peaks.length > 0 ? (
-          <Waveform
-            peaks={peaks.peaks}
-            peaksPerSecond={peaks.peaksPerSecond}
-            start={clip.start}
-            end={clip.end}
-          />
-        ) : null}
-        <span className="luca-clip-label">
-          {clip.remocn ? <span className="luca-clip-badge">R</span> : null}
-          {clip.volume === 0 ? <VolumeX size={10} strokeWidth={2.2} className="shrink-0" /> : null}
-          <span className="truncate">{clip.label}</span>
-        </span>
-        <span className="luca-clip-handle luca-clip-handle-l" />
-        <span className="luca-clip-handle luca-clip-handle-r" />
-      </div>
+      <ClipFace
+        clip={clip}
+        selected={!!action.selected}
+        locked={locked.includes(m.index)}
+        peaks={peaks}
+        fps={fps}
+      />
     )
   }
 
@@ -532,7 +513,7 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
           dragLine
           style={{ width: '100%', height: '100%' }}
           getActionRender={renderAction}
-          getScaleRender={(s) => <span>{timecode(s, fps).replace(/:\d\d$/, '')}</span>}
+          getScaleRender={(s) => <ScaleLabel seconds={s} fps={fps} />}
           onClickTimeArea={(t) => {
             seek(Math.max(0, Math.min(duration, t)))
             return true
@@ -611,6 +592,62 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     </div>
   )
 }
+
+// The editor re-renders every clip and ruler label on each tick of its cursor (the playhead);
+// memoized, the faces below are only rebuilt when what they show changes.
+
+const ClipFace = memo(function ClipFace({
+  clip,
+  selected,
+  locked,
+  peaks,
+  fps
+}: {
+  clip: Clip
+  selected: boolean
+  locked: boolean
+  peaks: { peaksPerSecond: number; peaks: number[] } | null
+  fps: number
+}): ReactElement {
+  return (
+    <div
+      className={cn(
+        'luca-clip',
+        `luca-clip-${clip.kind}`,
+        selected && 'luca-clip-selected',
+        clip.volume === 0 && 'luca-clip-muted',
+        locked && 'luca-clip-locked'
+      )}
+      title={`${clip.label} · ${timecode(clip.start, fps)} – ${timecode(clip.end, fps)}`}
+    >
+      {clip.kind === 'audio' && peaks && peaks.peaks.length > 0 ? (
+        <Waveform
+          peaks={peaks.peaks}
+          peaksPerSecond={peaks.peaksPerSecond}
+          start={clip.start}
+          end={clip.end}
+        />
+      ) : null}
+      <span className="luca-clip-label">
+        {clip.remocn ? <span className="luca-clip-badge">R</span> : null}
+        {clip.volume === 0 ? <VolumeX size={10} strokeWidth={2.2} className="shrink-0" /> : null}
+        <span className="truncate">{clip.label}</span>
+      </span>
+      <span className="luca-clip-handle luca-clip-handle-l" />
+      <span className="luca-clip-handle luca-clip-handle-r" />
+    </div>
+  )
+})
+
+const ScaleLabel = memo(function ScaleLabel({
+  seconds,
+  fps
+}: {
+  seconds: number
+  fps: number
+}): ReactElement {
+  return <span>{timecode(seconds, fps).replace(/:\d\d$/, '')}</span>
+})
 
 /** One <img> per second of footage; memoized so it only re-renders when zoom or thumbs change. */
 const Strip = memo(function Strip({
