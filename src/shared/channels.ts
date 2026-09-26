@@ -54,6 +54,11 @@ export const Channels = {
   exportReveal: 'export:reveal',
   exportFreeMemory: 'export:free-memory',
   captureFrame: 'capture:frame',
+  voiceMicAccess: 'voice:mic-access',
+  voiceStart: 'voice:start',
+  voiceAudio: 'voice:audio',
+  voiceStop: 'voice:stop',
+  voiceCancel: 'voice:cancel',
   menuPopupClip: 'menu:popup-clip',
   menuPopupLook: 'menu:popup-look',
   projectChanged: 'project:changed',
@@ -66,6 +71,7 @@ export const Channels = {
   historyChanged: 'history:changed',
   exportProgress: 'export:progress',
   menuCommand: 'menu:command',
+  voiceEvent: 'voice:event',
   windowActive: 'window:active'
 } as const
 

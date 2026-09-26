@@ -1,11 +1,13 @@
 import type { ChatContentPart, ChatMessage, Chip } from '@shared/types'
 import {
   AtSign,
+  AudioLines,
   ChevronRight,
   CircleAlert,
   FileCode2,
   Image as ImageIcon,
   LoaderCircle,
+  Mic,
   MousePointer2,
   Package,
   Scissors,
@@ -24,12 +26,16 @@ import {
 } from 'react'
 import { Button } from '../../components/ui/button'
 import { GenerateButton } from '../../components/ui/generate-button'
+import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { catalogChip, hasCatalogDrag, readCatalogDrag } from '../../lib/drag'
 import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
+import { useVoice } from '../../stores/voice'
+import { AssemblyAiKeyCard } from '../onboarding/AssemblyAiKeyCard'
+import { VoiceRecorder } from './VoiceRecorder'
 
 export function Chat(): ReactElement {
   const projectDir = useProject((s) => s.project?.dir ?? null)
@@ -378,8 +384,29 @@ export function ChipPill({ chip, onRemove }: { chip: Chip; onRemove?: () => void
   )
 }
 
+function ErrorNote({ text, onDismiss }: { text: string; onDismiss?: () => void }): ReactElement {
+  return (
+    <div className="mb-2 flex items-start gap-2 rounded-[8px] border border-danger/25 bg-danger/8 px-2.5 py-1.5 text-[11.5px] leading-[1.4] text-danger">
+      <CircleAlert size={13} className="mt-px shrink-0" />
+      <span className="flex-1 select-text">
+        {text.replace(/^Error invoking remote method '[^']+': Error: /, '')}
+      </span>
+      {onDismiss ? (
+        <button type="button" onClick={onDismiss} className="mt-px shrink-0" aria-label="Dismiss">
+          <X size={12} />
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 function Composer({ disabled }: { disabled: boolean }): ReactElement {
   const { draft, setDraft, chips, addChip, removeChip, send, stop, state, error } = useChat()
+  const voiceMode = useVoice((s) => s.mode)
+  const voiceError = useVoice((s) => s.error)
+  const needsKey = useVoice((s) => s.needsKey)
+  const startVoice = useVoice((s) => s.start)
+  const dismissVoice = useVoice((s) => s.dismiss)
   const [over, setOver] = useState(false)
   const currentTime = usePlayer((s) => s.currentTime)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -391,7 +418,7 @@ function Composer({ disabled }: { disabled: boolean }): ReactElement {
     el.style.height = '0px'
     const line = 19
     el.style.height = `${Math.min(Math.max(el.scrollHeight, line), line * 8 + 8)}px`
-  }, [draft])
+  }, [draft, voiceMode])
 
   const submit = (): void => {
     const text = draft.trim()
@@ -424,19 +451,30 @@ function Composer({ disabled }: { disabled: boolean }): ReactElement {
         ref.current?.focus()
       }}
     >
-      {error ? (
-        <div className="mb-2 flex items-start gap-2 rounded-[8px] border border-danger/25 bg-danger/8 px-2.5 py-1.5 text-[11.5px] leading-[1.4] text-danger">
-          <CircleAlert size={13} className="mt-px shrink-0" />
-          <span className="select-text">
-            {error.replace(/^Error invoking remote method '[^']+': Error: /, '')}
-          </span>
-        </div>
+      {error ? <ErrorNote text={error} /> : null}
+      {voiceError ? <ErrorNote text={voiceError} onDismiss={dismissVoice} /> : null}
+      {needsKey ? (
+        <AssemblyAiKeyCard
+          className="mb-2"
+          onDismiss={dismissVoice}
+          onSaved={(ok) => {
+            if (ok) void startVoice(needsKey)
+          }}
+        >
+          Voice input streams your microphone to AssemblyAI’s real-time speech-to-text while you
+          talk. The key is stored in the macOS Keychain (safeStorage).
+        </AssemblyAiKeyCard>
       ) : null}
       <div
         className={cn(
-          'rounded-[10px] border border-border bg-input shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] duration-150',
+          'rounded-[10px] border transition-[border-color,box-shadow] duration-150',
           'focus-within:border-accent focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]',
-          over && 'border-accent bg-accent/5'
+          // cn() doesn't merge, so pick one of each conflicting utility
+          over || voiceMode ? 'border-accent' : 'border-border',
+          over ? 'bg-accent/5' : 'bg-input',
+          voiceMode
+            ? 'shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]'
+            : 'shadow-[0_1px_2px_rgba(0,0,0,0.04)]'
         )}
       >
         <div className="flex flex-wrap items-center gap-1 px-2 pt-2">
@@ -448,39 +486,67 @@ function Composer({ disabled }: { disabled: boolean }): ReactElement {
             {chips.length === 0 ? 'Grab an element or frame, or drop a catalog item' : 'Context'}
           </span>
         </div>
-        <div className="flex items-end gap-2 px-2 pt-1 pb-2">
-          <textarea
-            ref={ref}
-            id="chat-composer"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKey}
-            disabled={disabled}
-            rows={1}
-            placeholder={disabled ? 'Open a project to chat' : 'Ask Claude to edit…'}
-            className="flex-1 resize-none select-text bg-transparent px-1 pb-1.5 text-[13px] leading-[19px] text-text outline-none placeholder:text-text-3"
-          />
-          {working ? (
-            <GenerateButton
-              hue={210}
-              generating
-              label="Send"
-              generatingLabel="Stop"
-              icon={<Square size={10} fill="currentColor" />}
-              onClick={() => void stop()}
-              title="Stop"
+        {voiceMode ? (
+          <VoiceRecorder />
+        ) : (
+          <div className="flex items-end gap-2 px-2 pt-1 pb-2">
+            <textarea
+              ref={ref}
+              id="chat-composer"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onKey}
+              disabled={disabled}
+              rows={1}
+              placeholder={disabled ? 'Open a project to chat' : 'Ask Claude to edit…'}
+              className="flex-1 resize-none select-text bg-transparent px-1 pb-1.5 text-[13px] leading-[19px] text-text outline-none placeholder:text-text-3"
             />
-          ) : (
-            <GenerateButton
-              hue={210}
-              label="Send"
-              generatingLabel="Sending"
-              disabled={disabled || !draft.trim()}
-              onClick={submit}
-              title="Send (↩)"
-            />
-          )}
-        </div>
+            <div className="flex h-8 shrink-0 items-center">
+              <Tip label="Dictate" side="top">
+                <button
+                  type="button"
+                  className="icon-btn"
+                  disabled={disabled}
+                  onClick={() => void startVoice('dictate')}
+                  aria-label="Dictate"
+                >
+                  <Mic size={15} />
+                </button>
+              </Tip>
+              <Tip label="Voice mode: talk with Claude" side="top">
+                <button
+                  type="button"
+                  className="icon-btn"
+                  disabled={disabled}
+                  onClick={() => void startVoice('converse')}
+                  aria-label="Voice mode"
+                >
+                  <AudioLines size={15} />
+                </button>
+              </Tip>
+            </div>
+            {working ? (
+              <GenerateButton
+                hue={210}
+                generating
+                label="Send"
+                generatingLabel="Stop"
+                icon={<Square size={10} fill="currentColor" />}
+                onClick={() => void stop()}
+                title="Stop"
+              />
+            ) : (
+              <GenerateButton
+                hue={210}
+                label="Send"
+                generatingLabel="Sending"
+                disabled={disabled || !draft.trim()}
+                onClick={submit}
+                title="Send (↩)"
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

@@ -105,6 +105,14 @@ const api: LucaApi = {
     freeMemoryMB: () => invoke(C.exportFreeMemory)
   },
   capture: { frame: (rect) => invoke(C.captureFrame, rect) },
+  voice: {
+    micAccess: () => invoke(C.voiceMicAccess),
+    start: (args) => invoke(C.voiceStart, args),
+    audio: (sid, pcm) => ipcRenderer.send(C.voiceAudio, sid, pcm),
+    stop: (sid) => invoke(C.voiceStop, sid),
+    cancel: (sid) => invoke(C.voiceCancel, sid),
+    onEvent: (cb) => on(C.voiceEvent, cb)
+  },
   menu: {
     onCommand: (cb) => on<{ cmd: string; arg?: unknown }>(C.menuCommand, (p) => cb(p.cmd, p.arg)),
     popupClip: (args) => invoke(C.menuPopupClip, args),

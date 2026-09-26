@@ -20,7 +20,8 @@ import type {
   Settings,
   Timeline,
   TimelineEdit,
-  Transcript
+  Transcript,
+  VoiceEvent
 } from './types'
 
 export type Unsubscribe = () => void
@@ -121,6 +122,18 @@ export type LucaApi = {
   }
   capture: {
     frame: (rect: { x: number; y: number; width: number; height: number }) => Promise<string>
+  }
+  voice: {
+    /** macOS microphone permission (prompts the first time). */
+    micAccess: () => Promise<boolean>
+    /** Opens a streaming session; resolves once AssemblyAI has accepted it. */
+    start: (args: { sid: number; sampleRate: number }) => Promise<void>
+    /** 16-bit mono PCM at the session's sample rate, ~50 ms per chunk. */
+    audio: (sid: number, pcm: ArrayBuffer) => void
+    /** Ends the session after the last turn is final; resolves with the whole transcript. */
+    stop: (sid: number) => Promise<string>
+    cancel: (sid: number) => Promise<void>
+    onEvent: (cb: (e: VoiceEvent) => void) => Unsubscribe
   }
   menu: {
     onCommand: (cb: (cmd: string, arg?: unknown) => void) => Unsubscribe
