@@ -321,9 +321,11 @@ export function TransformOverlay({
           ))}
           <div
             className={cn(
-              'absolute left-0 flex items-center gap-1 whitespace-nowrap',
+              'absolute flex items-center gap-1 whitespace-nowrap',
               shown.y > 26 ? '-top-[26px]' : '-bottom-[26px]'
             )}
+            // keep the readout on screen when the element runs past the frame's left edge
+            style={{ left: Math.max(0, -shown.x) }}
           >
             <span className="rounded-[5px] bg-accent px-1.5 py-[3px] font-mono text-[10px] leading-none text-white shadow-sm">
               {readout ?? target.id}
