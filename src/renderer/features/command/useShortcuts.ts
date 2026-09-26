@@ -4,6 +4,7 @@ import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useTimeline } from '../../stores/timeline'
 import { useUi, type SidebarTab } from '../../stores/ui'
+import { goHome } from './go-home'
 import type { Theme } from '@shared/types'
 import {
   clipToChat,
@@ -127,7 +128,7 @@ export function useShortcuts(): void {
           break
         }
         case 'close-project':
-          await proj.close()
+          await goHome()
           break
         case 'export':
           if (proj.project) ui.setExport(true)

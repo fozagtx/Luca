@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CleanResult, CleanStatus, Cut, Edl, Project, Transcript } from '../shared/types'
-import { activeAgent, agentFor, onTurnEnd } from './agent'
+import { activeAgent, agentFor } from './agent'
 import { ffmpegProgress, probeMedia } from './env'
 import { Channels, broadcast } from './ipc'
 import { getSettings } from './settings'
@@ -275,16 +275,6 @@ export async function applyEdl(p: Project, edl: Edl): Promise<CleanResult> {
   return { cuts: cuts.length, cleanFile: cleanRel }
 }
 
-function waitForTurn(dir: string): Promise<{ isError: boolean; error?: string }> {
-  return new Promise((resolve) => {
-    const off = onTurnEnd((p, e) => {
-      if (p.dir !== dir) return
-      off()
-      resolve(e)
-    })
-  })
-}
-
 /** The full pipeline (spec steps 2–10). Step 11 (auto edit) is left to the user's next turn. */
 export async function runCleanEdit(p: Project): Promise<void> {
   if (busy()) throw new Error('A clean edit or transcription is already running')
@@ -303,7 +293,7 @@ export async function runCleanEdit(p: Project): Promise<void> {
     let edl: Edl | null = null
     let feedback = ''
     for (let attempt = 0; attempt < 3 && !edl; attempt++) {
-      await agent.send({
+      const end = await agent.run({
         text:
           attempt === 0
             ? `Review the clean-edit cut list. \`.luca/cut-candidates.json\` holds ${candidates.length} deterministic cut candidates (fillers and long pauses) for \`${p.source}\` (${duration.toFixed(2)}s); \`transcript.json\` has word times. ` +
@@ -316,7 +306,6 @@ export async function runCleanEdit(p: Project): Promise<void> {
         chips: [],
         context: { cleanEdit: true }
       })
-      const end = await waitForTurn(p.dir)
       if (end.isError) throw new Error(end.error ?? 'Claude turn failed')
       const candidate = readEdl(p.dir)
       if (!candidate) {

@@ -8,7 +8,7 @@ import { VIDEO_EXT } from './projects'
 import { DEV_PORT, LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, setCurrentProject } from './state'
-import { loginShellPath } from './env'
+import { loginShellPath, prewarmHyperframes } from './env'
 import { cancelVoice } from './voice'
 import { stopWatching } from './watcher'
 
@@ -111,6 +111,7 @@ app.whenReady().then(async () => {
     iconPath
   })
   await loginShellPath()
+  void prewarmHyperframes()
   await server.start(is.dev ? DEV_PORT : 0)
   registerHandlers(() => mainWindow, server)
   buildAppMenu()

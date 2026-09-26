@@ -135,7 +135,7 @@ export const useStart = create<StartStore>((set, get) => ({
         files: files.map((f) => f.path),
         duration: duration ?? undefined
       })
-      useProject.setState({ project: res.project, version: 0 })
+      useProject.setState({ project: res.project, version: 0, previewVersion: 0 })
       set({ files: [], previews: {} })
       const chat = useChat.getState()
       // a video with nothing asked is a plain new project; everything else starts Luca working

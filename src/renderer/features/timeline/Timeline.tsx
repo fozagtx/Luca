@@ -19,7 +19,15 @@ import {
   Volume2,
   VolumeX
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactElement } from 'react'
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactElement
+} from 'react'
 import type { Clip } from '../../../shared/types'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
@@ -31,6 +39,7 @@ import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useTimeline } from '../../stores/timeline'
 import { useUi } from '../../stores/ui'
+import { PlayheadTimecode } from '../viewer/PlayheadTimecode'
 import {
   clipName,
   clipToChat,
@@ -146,8 +155,12 @@ function TrackHead({
 export function Timeline(): ReactElement {
   const project = useProject((s) => s.project)
   const projectDir = project?.dir ?? null
-  const version = useProject((s) => s.version)
-  const { timeline, load, loadMedia, reset, error } = useTimeline()
+  const version = useProject((s) => s.previewVersion)
+  const timeline = useTimeline((s) => s.timeline)
+  const load = useTimeline((s) => s.load)
+  const loadMedia = useTimeline((s) => s.loadMedia)
+  const reset = useTimeline((s) => s.reset)
+  const error = useTimeline((s) => s.error)
 
   useEffect(() => {
     if (!projectDir) {
@@ -314,7 +327,6 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   const thumbs = useTimeline((s) => s.thumbs)
   const peaks = useTimeline((s) => s.peaks)
   const playerDuration = usePlayer((s) => s.duration)
-  const currentTime = usePlayer((s) => s.currentTime)
   const fps = usePlayer((s) => s.fps)
   const seek = usePlayer((s) => s.seek)
   const ref = useRef<TimelineState>(null)
@@ -337,19 +349,26 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   const { rows, meta, clips } = useMemo(() => toRows(timeline, duration), [timeline, duration])
   const { scale, splits } = rulerStep(zoom)
 
-  // Player → cursor (skip while the user drags the cursor).
+  // Player → cursor (skip while the user drags the cursor), set directly on the editor: as a
+  // render dependency the playhead re-rendered every track, clip and thumbnail on every frame.
   useEffect(() => {
-    if (!dragging.current) ref.current?.setTime(currentTime)
-  }, [currentTime])
+    const follow = (t: number): void => {
+      if (!dragging.current) ref.current?.setTime(t)
+    }
+    follow(usePlayer.getState().currentTime)
+    return usePlayer.subscribe((s, prev) => {
+      if (s.currentTime !== prev.currentTime) follow(s.currentTime)
+    })
+  }, [])
 
   const snapPoints = useMemo(() => {
-    const pts = new Set<number>([0, duration, currentTime])
+    const pts = new Set<number>([0, duration])
     for (const c of clips.values()) {
       pts.add(c.start)
       pts.add(c.end)
     }
     return [...pts]
-  }, [clips, duration, currentTime])
+  }, [clips, duration])
 
   const dropTime = (e: DragEvent<HTMLDivElement>): number => {
     const area = e.currentTarget.querySelector<HTMLElement>('.timeline-editor-edit-area')
@@ -383,14 +402,16 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     const tol = 6 / zoom
     let best = t
     let bestD = tol
-    for (const p of snapPoints) {
-      if (p === self.start || p === self.end) continue
+    const consider = (p: number): void => {
+      if (p === self.start || p === self.end) return
       const d = Math.abs(p - t)
       if (d < bestD) {
         best = p
         bestD = d
       }
     }
+    for (const p of snapPoints) consider(p)
+    consider(usePlayer.getState().currentTime)
     return best
   }
 
@@ -421,32 +442,13 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     const clip = clips.get(action.id)
     if (!clip || !m) return <div />
     return (
-      <div
-        className={cn(
-          'luca-clip',
-          `luca-clip-${clip.kind}`,
-          action.selected && 'luca-clip-selected',
-          clip.volume === 0 && 'luca-clip-muted',
-          locked.includes(m.index) && 'luca-clip-locked'
-        )}
-        title={`${clip.label} · ${timecode(clip.start, fps)} – ${timecode(clip.end, fps)}`}
-      >
-        {clip.kind === 'audio' && peaks && peaks.peaks.length > 0 ? (
-          <Waveform
-            peaks={peaks.peaks}
-            peaksPerSecond={peaks.peaksPerSecond}
-            start={clip.start}
-            end={clip.end}
-          />
-        ) : null}
-        <span className="luca-clip-label">
-          {clip.remocn ? <span className="luca-clip-badge">R</span> : null}
-          {clip.volume === 0 ? <VolumeX size={10} strokeWidth={2.2} className="shrink-0" /> : null}
-          <span className="truncate">{clip.label}</span>
-        </span>
-        <span className="luca-clip-handle luca-clip-handle-l" />
-        <span className="luca-clip-handle luca-clip-handle-r" />
-      </div>
+      <ClipFace
+        clip={clip}
+        selected={!!action.selected}
+        locked={locked.includes(m.index)}
+        peaks={peaks}
+        fps={fps}
+      />
     )
   }
 
@@ -454,7 +456,7 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     <div className="flex min-h-0 flex-1">
       <div className="luca-track-heads shrink-0" style={{ width: LABEL_WIDTH }}>
         <div className="flex h-8 items-end border-b border-border px-3 pb-1 font-mono text-[10.5px] text-text-2 tabular-nums">
-          {timecode(currentTime, fps)}
+          <PlayheadTimecode />
         </div>
         <div style={{ height: 10 }} />
         {rows.map((r) => (
@@ -511,7 +513,7 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
           dragLine
           style={{ width: '100%', height: '100%' }}
           getActionRender={renderAction}
-          getScaleRender={(s) => <span>{timecode(s, fps).replace(/:\d\d$/, '')}</span>}
+          getScaleRender={(s) => <ScaleLabel seconds={s} fps={fps} />}
           onClickTimeArea={(t) => {
             seek(Math.max(0, Math.min(duration, t)))
             return true
@@ -591,7 +593,64 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   )
 }
 
-function Strip({
+// The editor re-renders every clip and ruler label on each tick of its cursor (the playhead);
+// memoized, the faces below are only rebuilt when what they show changes.
+
+const ClipFace = memo(function ClipFace({
+  clip,
+  selected,
+  locked,
+  peaks,
+  fps
+}: {
+  clip: Clip
+  selected: boolean
+  locked: boolean
+  peaks: { peaksPerSecond: number; peaks: number[] } | null
+  fps: number
+}): ReactElement {
+  return (
+    <div
+      className={cn(
+        'luca-clip',
+        `luca-clip-${clip.kind}`,
+        selected && 'luca-clip-selected',
+        clip.volume === 0 && 'luca-clip-muted',
+        locked && 'luca-clip-locked'
+      )}
+      title={`${clip.label} · ${timecode(clip.start, fps)} – ${timecode(clip.end, fps)}`}
+    >
+      {clip.kind === 'audio' && peaks && peaks.peaks.length > 0 ? (
+        <Waveform
+          peaks={peaks.peaks}
+          peaksPerSecond={peaks.peaksPerSecond}
+          start={clip.start}
+          end={clip.end}
+        />
+      ) : null}
+      <span className="luca-clip-label">
+        {clip.remocn ? <span className="luca-clip-badge">R</span> : null}
+        {clip.volume === 0 ? <VolumeX size={10} strokeWidth={2.2} className="shrink-0" /> : null}
+        <span className="truncate">{clip.label}</span>
+      </span>
+      <span className="luca-clip-handle luca-clip-handle-l" />
+      <span className="luca-clip-handle luca-clip-handle-r" />
+    </div>
+  )
+})
+
+const ScaleLabel = memo(function ScaleLabel({
+  seconds,
+  fps
+}: {
+  seconds: number
+  fps: number
+}): ReactElement {
+  return <span>{timecode(seconds, fps).replace(/:\d\d$/, '')}</span>
+})
+
+/** One <img> per second of footage; memoized so it only re-renders when zoom or thumbs change. */
+const Strip = memo(function Strip({
   projectId,
   thumbs,
   zoom
@@ -616,4 +675,4 @@ function Strip({
     )
   }
   return <div className="luca-strip">{imgs}</div>
-}
+})

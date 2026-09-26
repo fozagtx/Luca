@@ -28,6 +28,25 @@ type ChatStore = {
   retry: () => Promise<void>
 }
 
+/** Replace the message with the same id (usually the last one) or add it; others keep identity. */
+function upsert(messages: ChatMessage[], m: ChatMessage): ChatMessage[] {
+  const i = messages.findLastIndex((x) => x.id === m.id)
+  return i < 0 ? [...messages, m] : messages.map((x, j) => (j === i ? m : x))
+}
+
+/** Streamed reply text, appended the way main builds the message it sends at the end. */
+function appendText(messages: ChatMessage[], id: string, text: string): ChatMessage[] {
+  const i = messages.findLastIndex((m) => m.id === id)
+  if (i < 0) return messages
+  const m = messages[i]
+  const parts = [...(m.parts ?? [])]
+  const last = parts[parts.length - 1]
+  if (last?.type === 'text') parts[parts.length - 1] = { ...last, text: last.text + text }
+  else parts.push({ type: 'text', text })
+  const next = { ...m, text: m.text + text, parts }
+  return messages.map((x, j) => (j === i ? next : x))
+}
+
 export const useChat = create<ChatStore>((set, get) => ({
   messages: [],
   state: 'idle',
@@ -39,9 +58,11 @@ export const useChat = create<ChatStore>((set, get) => ({
   bind: () => {
     if (get().bound) return
     set({ bound: true })
-    luca.agent.onHistory((messages) => set({ messages }))
+    luca.agent.onMessage((m) => set((s) => ({ messages: upsert(s.messages, m) })))
     luca.agent.onEvent((e: AgentEvent) => {
       if (e.type === 'status') set({ state: e.state, detail: e.detail })
+      else if (e.type === 'text-delta')
+        set((s) => ({ messages: appendText(s.messages, e.id, e.text) }))
     })
   },
 

@@ -76,7 +76,8 @@ export type Chip =
   | { kind: 'transcript'; text: string; start: number; end: number }
 
 export type AgentEvent =
-  | { type: 'text-delta'; text: string }
+  /** Streamed reply text for the assistant message `id`. */
+  | { type: 'text-delta'; id: string; text: string }
   | {
       type: 'tool'
       id: string
@@ -234,7 +235,12 @@ export type ElementTransform = {
   origin?: [number, number]
 }
 
-export type ProjectChanged = { paths: string[]; version: number }
+export type ProjectChanged = {
+  paths: string[]
+  version: number
+  /** False when only files the preview never loads changed (Luca's state, the cut list…). */
+  composition: boolean
+}
 
 export type CleanStatus = {
   /** `transcribe` stops after the transcript (for captions); `clean` goes on to cut. */

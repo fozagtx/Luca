@@ -22,7 +22,7 @@ import type {
   Project
 } from '../shared/types'
 import { describeActivity } from '../shared/activity'
-import { childEnv, run, which } from './env'
+import { childEnv, HYPERFRAMES, run, which } from './env'
 import { Channels, broadcast } from './ipc'
 import { catalogTitle } from './library'
 import { lucaMcpServer } from './mcp'
@@ -33,8 +33,8 @@ const SYSTEM_RULES = [
   'You are Luca, the editing agent inside Luca, a local video editor built on HyperFrames HTML compositions.',
   '1. The HTML files are the source of truth; never edit anything in media/ or renders/.',
   '2. Before building any visual from scratch (text, titles, captions, lower thirds, overlays, transitions, effects, backgrounds, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
-  '3. Add HyperFrames items with `npx hyperframes add <name> --json`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.',
-  '4. After every edit, run `npx hyperframes lint --json` and fix errors before replying.',
+  `3. Add HyperFrames items with \`npx ${HYPERFRAMES} add <name> --json\`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.`,
+  `4. After every edit, run \`npx ${HYPERFRAMES} lint --json\` and fix errors before replying. Always run the CLI as \`npx ${HYPERFRAMES}\` (this exact version, the one Luca uses), never plain \`npx hyperframes\`.`,
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
   'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a title, caption, scene, animation, effect, transition, background) and use the plain-English title of anything you added, not its id.',
   'Keep replies short: say what you changed and why, no preamble.'
@@ -59,7 +59,15 @@ type Pending = {
   suggestions?: PermissionUpdate[]
 }
 
-type Turn = { text: string; chips: Chip[]; context: unknown }
+type TurnOutcome = { isError: boolean; error?: string }
+
+type Turn = {
+  text: string
+  chips: Chip[]
+  context: unknown
+  /** Called once when this turn ends, is dropped from the queue, or the agent stops. */
+  done?: (outcome: TurnOutcome) => void
+}
 
 type ToolPart = Extract<ChatContentPart, { type: 'tool' }>
 
@@ -125,6 +133,8 @@ export class ProjectAgent {
   private streamedText = ''
   private working = false
   private queued: Turn[] = []
+  /** The turn being answered now. */
+  private active: Turn | null = null
   private abort = new AbortController()
 
   constructor(readonly project: Project) {
@@ -194,8 +204,9 @@ export class ProjectAgent {
     this.stateDetail = detail
     this.emit({ type: 'status', state, detail })
   }
-  private pushHistory(): void {
-    broadcast(Channels.agentHistoryPush, this.messages)
+  /** Send the renderer one message that changed, not the whole (growing) history. */
+  private pushMessage(m: ChatMessage | null): void {
+    if (m) broadcast(Channels.agentMessage, m)
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -246,6 +257,7 @@ export class ProjectAgent {
 
   async stop(): Promise<void> {
     this.closed = true
+    this.abandonTurns('The project was closed')
     this.abort.abort()
     for (const w of this.waiters.splice(0)) w(null)
     for (const p of this.pending.values())
@@ -255,12 +267,27 @@ export class ProjectAgent {
   }
 
   async restart(): Promise<void> {
+    this.abandonTurns('Claude Code restarted')
     this.abort.abort()
     for (const w of this.waiters.splice(0)) w(null)
     this.q = null
     this.closed = false
-    this.working = false
     await this.start()
+  }
+
+  /** Settle every turn still waiting (running or queued) when the session goes away under it. */
+  private abandonTurns(error: string): void {
+    const turns = [...(this.active ? [this.active] : []), ...this.queued]
+    this.active = null
+    this.queued = []
+    this.working = false
+    if (this.current) {
+      this.current.pending = false
+      this.current.isError = true
+      this.current = null
+      this.rewriteHistory()
+    }
+    for (const t of turns) t.done?.({ isError: true, error })
   }
 
   private async *stream(): AsyncGenerator<SDKUserMessage> {
@@ -291,7 +318,7 @@ export class ProjectAgent {
     }
     this.messages.push(user)
     this.rewriteHistory()
-    this.pushHistory()
+    this.pushMessage(user)
     if (this.working) {
       this.queued.push(turn)
       return
@@ -299,7 +326,18 @@ export class ProjectAgent {
     this.dispatch(turn)
   }
 
+  /**
+   * Send a turn and wait for that turn to end: when Luca is busy it is queued, and the turn
+   * running now ends first.
+   */
+  run(turn: Omit<Turn, 'done'>): Promise<TurnOutcome> {
+    return new Promise((resolve, reject) => {
+      this.send({ ...turn, done: resolve }).catch(reject)
+    })
+  }
+
   private dispatch(turn: Turn): void {
+    this.active = turn
     this.working = true
     this.turnStartedAt = Date.now()
     this.streamedText = ''
@@ -313,7 +351,7 @@ export class ProjectAgent {
       pending: true
     }
     this.messages.push(this.current)
-    this.pushHistory()
+    this.pushMessage(this.current)
     this.emit({ type: 'turn-start' })
     this.setState('working')
 
@@ -372,7 +410,7 @@ export class ProjectAgent {
   }
 
   async interrupt(): Promise<void> {
-    this.queued = []
+    for (const t of this.queued.splice(0)) t.done?.({ isError: true, error: 'Stopped' })
     try {
       await this.q?.interrupt()
     } catch {
@@ -405,7 +443,7 @@ export class ProjectAgent {
     const id = randomUUID()
     const part: ChatContentPart = { type: 'permission', id, tool: toolName, input }
     this.current?.parts?.push(part)
-    this.pushHistory()
+    this.pushMessage(this.current)
     this.emit({ type: 'permission', id, tool: toolName, input })
     return new Promise<PermissionResult>((resolvePerm) => {
       this.pending.set(id, { resolve: resolvePerm, tool: key, suggestions })
@@ -422,7 +460,7 @@ export class ProjectAgent {
     )
     if (part) part.resolved = decision
     this.emit({ type: 'permission-resolved', id })
-    this.pushHistory()
+    this.pushMessage(this.current)
     if (decision === 'deny') {
       p.resolve({ behavior: 'deny', message: 'The user denied this action in Luca.' })
       return
@@ -502,7 +540,7 @@ export class ProjectAgent {
             this.tools.set(block.id, part)
             this.current?.parts?.push(part)
             this.emit(part)
-            this.pushHistory()
+            this.pushMessage(this.current)
           }
         }
         return
@@ -531,7 +569,7 @@ export class ProjectAgent {
               part.detail = out.length > 4000 ? out.slice(0, 4000) + '\n…' : out
             }
             this.emit(part)
-            this.pushHistory()
+            this.pushMessage(this.current)
           }
         }
         return
@@ -562,7 +600,7 @@ export class ProjectAgent {
     if (last && last.type === 'text') last.text += text
     else parts.push({ type: 'text', text })
     this.current.text += text
-    this.emit({ type: 'text-delta', text })
+    this.emit({ type: 'text-delta', id: this.current.id, text })
   }
 
   private finishTurn(isError: boolean, error?: string): void {
@@ -577,10 +615,10 @@ export class ProjectAgent {
           this.state === 'needs-login' ? 'Sign in to Claude Code to continue.' : error
         )
       }
+      this.pushMessage(this.current)
       this.current = null
     }
     this.rewriteHistory()
-    this.pushHistory()
     const end: Extract<AgentEvent, { type: 'turn-end' }> = {
       type: 'turn-end',
       sessionId: this.sessionId ?? '',
@@ -590,6 +628,9 @@ export class ProjectAgent {
     }
     this.emit(end)
     for (const cb of turnEndListeners) cb(this.project, end)
+    const turn = this.active
+    this.active = null
+    turn?.done?.({ isError, error })
     if (this.state === 'working') this.setState('ready')
     const next = this.queued.shift()
     if (next && this.q) this.dispatch(next)

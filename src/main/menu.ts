@@ -34,7 +34,11 @@ export function buildAppMenu(): void {
         { label: 'Open Project…', accelerator: 'Cmd+O', click: () => send('open-project') },
         { label: 'Open Recent', submenu: [{ label: 'Clear Menu', enabled: false }] },
         { type: 'separator' },
-        { label: 'Close Project', accelerator: 'Cmd+Shift+W', click: () => send('close-project') },
+        {
+          label: 'Close Project and Go Home',
+          accelerator: 'Cmd+Shift+W',
+          click: () => send('close-project')
+        },
         { type: 'separator' },
         { label: 'Export…', accelerator: 'Cmd+E', click: () => send('export') },
         { label: 'Reveal in Finder', accelerator: 'Cmd+Shift+R', click: () => send('reveal') },

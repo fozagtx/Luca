@@ -45,7 +45,9 @@ import {
   listFiles,
   openProject,
   recentProjects,
-  refreshCompositionPoster,
+  cancelPosterRefresh,
+  flushPosterRefresh,
+  schedulePosterRefresh,
   safeJoin,
   startProject,
   VIDEO_EXT
@@ -60,6 +62,8 @@ import { cancelVoice, micAccess, pushVoiceAudio, startVoice, stopVoice } from '.
 import { stopWatching, watchProject } from './watcher'
 
 type WinGetter = () => BrowserWindow | null
+
+const warnCheckpoint = (err: unknown): void => console.warn('[luca] checkpoint failed', err)
 
 const openDialog = (
   win: BrowserWindow | null,
@@ -101,6 +105,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   // project
   const activate = async (dir: string): Promise<ReturnType<typeof openProject>> => {
     stopWatching()
+    flushPosterRefresh()
     const p = openProject(dir)
     await ensureRepo(p.dir)
     setCurrentProject(p)
@@ -112,21 +117,26 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   }
   onTurnEnd((p, e) => {
     if (e.isError) return
-    void checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72))
+    checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72)).catch(
+      warnCheckpoint
+    )
     // projects without a source video take their thumbnail from the composition itself
-    if (!p.source) void refreshCompositionPoster(p).catch(() => undefined)
+    schedulePosterRefresh(p)
   })
   const start = async (args: StartArgs): Promise<Awaited<ReturnType<typeof startProject>>> => {
     const report = (p: CreateProgress): void => broadcast(Channels.projectCreateProgress, p)
     try {
       const res = await startProject(args, report)
-      report({ stage: 'starting', message: 'Opening the project' })
-      let opened = await activate(res.project.dir)
+      // the Look goes in before the project opens, so it opens (repo, watcher, Claude) only once;
+      // a Look that only partly applied still opens the project, then reports what failed
+      let lookError: unknown = null
       if (args.look) {
         report({ stage: 'starting', message: 'Applying your Look' })
-        await applyLook(opened, args.look)
-        opened = await activate(res.project.dir)
+        await applyLook(res.project, args.look).catch((err) => (lookError = err))
       }
+      report({ stage: 'starting', message: 'Opening the project' })
+      const opened = await activate(res.project.dir)
+      if (lookError) throw lookError
       report({ stage: 'done' })
       return { ...res, project: opened }
     } catch (err) {
@@ -171,6 +181,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     broadcast(Channels.projectRecentChanged, null)
   })
   handle(Channels.projectTrash, async (dir: string) => {
+    cancelPosterRefresh(dir)
     if (currentProject()?.dir === dir) {
       stopWatching()
       await closeAgent()
@@ -187,6 +198,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     await closeAgent()
     setCurrentProject(null)
     broadcast(Channels.projectOpened, null)
+    flushPosterRefresh()
   })
   handle(Channels.projectCurrent, currentProject)
   handle(Channels.projectRecent, recentProjects)
@@ -220,13 +232,13 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.timelineEdit, async (edit: TimelineEdit) => {
     const p = requireProject()
     const res = await applyEdit(p.dir, edit)
-    if (res.ok) void checkpoint(p.dir, editLabel(edit))
+    if (res.ok) checkpoint(p.dir, editLabel(edit)).catch(warnCheckpoint)
     return res
   })
   handle(Channels.timelineTransform, async (t: ElementTransform) => {
     const p = requireProject()
     const res = await applyTransform(p.dir, t)
-    if (res.ok) void checkpoint(p.dir, `Edit: move/resize ${t.id}`)
+    if (res.ok) checkpoint(p.dir, `Edit: move/resize ${t.id}`).catch(warnCheckpoint)
     return res
   })
   handle(Channels.timelineThumbs, () => thumbnails(requireProject()))

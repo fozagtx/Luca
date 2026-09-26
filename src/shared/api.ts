@@ -100,7 +100,8 @@ export type LucaApi = {
     state: () => Promise<{ state: string; detail?: string }>
     restart: () => Promise<void>
     onEvent: (cb: (e: AgentEvent) => void) => Unsubscribe
-    onHistory: (cb: (msgs: ChatMessage[]) => void) => Unsubscribe
+    /** A message that was added or changed (new tool step, permission, end of turn). */
+    onMessage: (cb: (m: ChatMessage) => void) => Unsubscribe
   }
   catalog: {
     list: (args?: { refresh?: boolean }) => Promise<CatalogItem[]>
