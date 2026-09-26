@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { GrabOverlay } from './GrabOverlay'
+import { TransformOverlay } from './TransformOverlay'
 
 declare module 'react' {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -138,6 +139,7 @@ export function Player(): ReactElement | null {
           assets-loading-ui="none"
           className="block rounded-[4px] bg-black shadow-[0_0_0_1px_rgba(0,122,255,0.55),0_8px_24px_rgba(0,0,0,0.08)]"
         />
+        <TransformOverlay player={el} />
         <GrabOverlay player={el} />
       </div>
     </div>

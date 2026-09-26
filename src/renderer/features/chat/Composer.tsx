@@ -1,10 +1,20 @@
-import { ArrowUp, AudioLines, CircleAlert, Crosshair, Mic, Square, X } from 'lucide-react'
-import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
+import { ArrowUp, AudioLines, CircleAlert, Crosshair, Mic, Sparkles, Square, X } from 'lucide-react'
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactElement
+} from 'react'
+import { Thumb } from '../../components/ui/thumb'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { catalogChip, hasCatalogDrag, readCatalogDrag } from '../../lib/drag'
 import { useChat } from '../../stores/chat'
+import { luca } from '../../lib/luca'
 import { usePlayer } from '../../stores/player'
+import { useStart } from '../../stores/start'
 import { useVoice } from '../../stores/voice'
 import { AssemblyAiKeyCard } from '../onboarding/AssemblyAiKeyCard'
 import { ChipPill } from './Message'
@@ -16,8 +26,11 @@ const MAX_LINES = 8
 /**
  * The message box (prompt-kit PromptInput): grows with the text, Enter sends, Shift+Enter adds a
  * line. Focus is shown by a firmer edge and a soft lift rather than a coloured ring.
+ *
+ * With no project open it still works: the message is the idea for a new video (and media
+ * dropped on it is what the video starts from).
  */
-export function Composer({ disabled }: { disabled: boolean }): ReactElement {
+export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const { draft, setDraft, chips, addChip, removeChip, send, stop, state, error } = useChat()
   const voiceMode = useVoice((s) => s.mode)
   const voiceError = useVoice((s) => s.error)
@@ -31,6 +44,11 @@ export function Composer({ disabled }: { disabled: boolean }): ReactElement {
   const ref = useRef<HTMLTextAreaElement>(null)
   const working = state === 'working'
   const hasText = draft.trim().length > 0
+  const startFiles = useStart((s) => s.files)
+  const startPreviews = useStart((s) => s.previews)
+  const starting = useStart((s) => s.busy)
+  const disabled = starting
+  const canSend = hasText || (noProject && startFiles.length > 0)
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -41,9 +59,20 @@ export function Composer({ disabled }: { disabled: boolean }): ReactElement {
 
   const submit = (): void => {
     const text = draft.trim()
-    if (!text || disabled) return
+    if (!canSend || disabled) return
     void send(text, { time: currentTime })
   }
+  /** Anywhere on the box (not a button) puts the caret in the text, at the end. */
+  const focusText = (e: MouseEvent): void => {
+    const el = ref.current
+    if (!el || disabled || e.target === el) return
+    if ((e.target as HTMLElement).closest('button, a, input, textarea, [role=button]')) return
+    e.preventDefault()
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  }
+  const fileDrop = (dt: DataTransfer): boolean =>
+    noProject && Array.from(dt.types).includes('Files')
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
@@ -55,7 +84,7 @@ export function Composer({ disabled }: { disabled: boolean }): ReactElement {
     <div
       className="shrink-0 px-3 pt-1 pb-3"
       onDragOver={(e) => {
-        if (!hasCatalogDrag(e.dataTransfer)) return
+        if (!hasCatalogDrag(e.dataTransfer) && !fileDrop(e.dataTransfer)) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
         if (!over) setOver(true)
@@ -63,6 +92,13 @@ export function Composer({ disabled }: { disabled: boolean }): ReactElement {
       onDragLeave={() => setOver(false)}
       onDrop={(e) => {
         setOver(false)
+        if (fileDrop(e.dataTransfer)) {
+          e.preventDefault()
+          const paths = [...e.dataTransfer.files].map((f) => luca.project.pathForFile(f))
+          useStart.getState().addFiles(paths.filter(Boolean))
+          ref.current?.focus()
+          return
+        }
         const d = readCatalogDrag(e.dataTransfer)
         if (!d) return
         e.preventDefault()
@@ -84,8 +120,14 @@ export function Composer({ disabled }: { disabled: boolean }): ReactElement {
           talk. The key is stored in the macOS Keychain (safeStorage).
         </AssemblyAiKeyCard>
       ) : null}
+      {noProject && !voiceMode ? (
+        <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] text-text-3">
+          <Sparkles size={11} className="shrink-0 text-accent" />
+          No project open: describe a video and Luca starts it from scratch.
+        </div>
+      ) : null}
       <div
-        onClick={() => !disabled && ref.current?.focus()}
+        onMouseDown={focusText}
         className={cn(
           'relative cursor-text rounded-[16px] border transition-[border-color,box-shadow,background-color] duration-200 ease-out',
           // cn() doesn't merge classes, so each state picks its own border, background and shadow
@@ -101,7 +143,28 @@ export function Composer({ disabled }: { disabled: boolean }): ReactElement {
       >
         {over ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[16px] text-[12px] font-medium text-accent">
-            Drop to show it to Luca
+            {noProject ? 'Drop to start your video from it' : 'Drop to show it to Luca'}
+          </div>
+        ) : null}
+        {noProject && startFiles.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+            {startFiles.map((f) => (
+              <span key={f.path} className="pop-in group relative">
+                <Thumb
+                  src={startPreviews[f.path] ?? null}
+                  lazy={false}
+                  className="size-10 rounded-[7px] ring-1 ring-border"
+                />
+                <button
+                  type="button"
+                  aria-label={`Remove ${f.name}`}
+                  onClick={() => useStart.getState().removeFile(f.path)}
+                  className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full border border-border bg-bg text-text-2 opacity-0 group-hover:opacity-100"
+                >
+                  <X size={9} />
+                </button>
+              </span>
+            ))}
           </div>
         ) : null}
         {chips.length > 0 ? (
@@ -123,9 +186,15 @@ export function Composer({ disabled }: { disabled: boolean }): ReactElement {
               onKeyDown={onKey}
               disabled={disabled}
               rows={1}
-              placeholder={disabled ? 'Open a project to start' : 'Ask Luca to edit your video…'}
+              placeholder={
+                noProject
+                  ? startFiles.length
+                    ? 'What should Luca make from this? (optional)'
+                    : 'Describe a video to make from scratch…'
+                  : 'Ask Luca to edit your video…'
+              }
               className={cn(
-                'block w-full resize-none bg-transparent px-3.5 pt-2.5 text-[13px] leading-[20px] text-text placeholder:text-text-3 select-text',
+                'block w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13px] leading-[20px] text-text placeholder:text-text-3 select-text',
                 over && 'opacity-0'
               )}
             />
@@ -133,7 +202,7 @@ export function Composer({ disabled }: { disabled: boolean }): ReactElement {
               <Tip label="Point at something in the preview" shortcut="G" side="top">
                 <button
                   type="button"
-                  disabled={disabled}
+                  disabled={disabled || noProject}
                   aria-pressed={grab}
                   onClick={(e) => {
                     e.stopPropagation()
@@ -151,7 +220,15 @@ export function Composer({ disabled }: { disabled: boolean }): ReactElement {
                 </button>
               </Tip>
               <span className="ml-auto min-w-0 truncate pr-1 text-[10.5px] text-text-3">
-                {working && hasText ? 'Luca will read this next' : hasText ? '↩ to send' : ''}
+                {starting
+                  ? 'Starting your video…'
+                  : working && hasText
+                    ? 'Luca will read this next'
+                    : canSend
+                      ? noProject
+                        ? '↩ to start'
+                        : '↩ to send'
+                      : ''}
               </span>
               <Tip label="Dictate" side="top">
                 <button
@@ -197,18 +274,18 @@ export function Composer({ disabled }: { disabled: boolean }): ReactElement {
                   </button>
                 </Tip>
               ) : (
-                <Tip label="Send" shortcut="↩" side="top">
+                <Tip label={noProject ? 'Start the video' : 'Send'} shortcut="↩" side="top">
                   <button
                     type="button"
-                    aria-label="Send"
-                    disabled={disabled || !hasText}
+                    aria-label={noProject ? 'Start the video' : 'Send'}
+                    disabled={disabled || !canSend}
                     onClick={(e) => {
                       e.stopPropagation()
                       submit()
                     }}
                     className={cn(
                       'flex size-8 items-center justify-center rounded-full transition-[background-color,color,transform,box-shadow] duration-200 ease-out active:scale-90',
-                      hasText && !disabled
+                      canSend && !disabled
                         ? 'bg-accent text-accent-fg shadow-[0_2px_8px_-2px_color-mix(in_srgb,var(--accent)_60%,transparent)]'
                         : 'bg-bg-muted text-text-3'
                     )}
@@ -226,7 +303,7 @@ export function Composer({ disabled }: { disabled: boolean }): ReactElement {
 }
 
 const ROUND_ICON =
-  'flex size-8 shrink-0 items-center justify-center rounded-full text-text-2 transition-colors hover:bg-hover hover:text-text disabled:pointer-events-none disabled:opacity-40'
+  'flex size-8 shrink-0 items-center justify-center rounded-full text-text-2 transition-[background-color,color,transform] duration-150 hover:bg-hover hover:text-text active:scale-90 disabled:pointer-events-none disabled:opacity-45'
 
 function Notice({ text, onDismiss }: { text: string; onDismiss: () => void }): ReactElement {
   return (

@@ -13,6 +13,7 @@ import type { RemocnItem } from '../shared/types'
 import bundled from './catalog/remocn.json'
 import { childEnv, run, which } from './env'
 import { readTimeline } from './hyperframes'
+import { insertIntoRoot } from './html'
 import { appDataDir } from './settings'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -377,21 +378,4 @@ function overlayTrack(tl: { tracks: { index: number; kind: string }[] }): number
   let i = base
   while (used.has(i) && tl.tracks.find((t) => t.index === i)?.kind === 'audio') i++
   return i
-}
-
-/** Append `fragment` as the last child of the root composition element. */
-function insertIntoRoot(html: string, fragment: string): string | null {
-  const open = /<(div|section|main)\b[^>]*data-composition-id="[^"]+"[^>]*>/i.exec(html)
-  if (!open) return null
-  const tagName = open[1].toLowerCase()
-  const re = new RegExp(`<${tagName}\\b[^>]*>|</${tagName}>`, 'gi')
-  re.lastIndex = open.index + open[0].length
-  let depth = 1
-  let m: RegExpExecArray | null
-  while ((m = re.exec(html))) {
-    if (m[0].startsWith('</')) depth--
-    else if (!m[0].endsWith('/>')) depth++
-    if (depth === 0) return html.slice(0, m.index) + fragment + html.slice(m.index)
-  }
-  return null
 }

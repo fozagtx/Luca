@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactElement } from 'react'
+import { useUi } from '../../stores/ui'
 
 /** Draws cached peaks for [start, end) seconds of the source onto a canvas sized to its box. */
 export function Waveform({
@@ -15,6 +16,8 @@ export function Waveform({
   color?: string
 }): ReactElement {
   const ref = useRef<HTMLCanvasElement>(null)
+  // the ink comes from CSS, so a theme switch needs a redraw
+  const theme = useUi((s) => s.theme)
 
   useEffect(() => {
     const canvas = ref.current
@@ -52,7 +55,7 @@ export function Waveform({
     const ro = new ResizeObserver(draw)
     if (canvas.parentElement) ro.observe(canvas.parentElement)
     return () => ro.disconnect()
-  }, [peaks, peaksPerSecond, start, end, color])
+  }, [peaks, peaksPerSecond, start, end, color, theme])
 
   return (
     <canvas

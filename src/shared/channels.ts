@@ -19,10 +19,16 @@ export const Channels = {
   projectFiles: 'project:files',
   projectReadFile: 'project:read-file',
   projectReveal: 'project:reveal',
+  projectStart: 'project:start',
+  projectPickMedia: 'project:pick-media',
+  projectMediaPreview: 'project:media-preview',
+  projectForget: 'project:forget',
+  projectTrash: 'project:trash',
   timelineGet: 'timeline:get',
   timelineEdit: 'timeline:edit',
   timelineThumbs: 'timeline:thumbs',
   timelinePeaks: 'timeline:peaks',
+  timelineTransform: 'timeline:transform',
   agentSend: 'agent:send',
   agentInterrupt: 'agent:interrupt',
   agentPermission: 'agent:permission',
@@ -40,6 +46,12 @@ export const Channels = {
   cleanStatus: 'clean:status',
   cleanTranscript: 'clean:transcript',
   cleanEdl: 'clean:edl',
+  cleanTranscribe: 'clean:transcribe',
+  captionsState: 'captions:state',
+  captionsWords: 'captions:words',
+  captionsApply: 'captions:apply',
+  captionsRemove: 'captions:remove',
+  fontsAdd: 'fonts:add',
   looksList: 'looks:list',
   looksSave: 'looks:save',
   looksUpdate: 'looks:update',
@@ -65,6 +77,7 @@ export const Channels = {
   projectOpened: 'project:opened',
   projectRecentChanged: 'project:recent-changed',
   projectDropFile: 'project:drop-file',
+  projectCreateProgress: 'project:create-progress',
   agentEvent: 'agent:event',
   agentHistoryPush: 'agent:history-push',
   cleanStatusPush: 'clean:status-push',
@@ -72,7 +85,8 @@ export const Channels = {
   exportProgress: 'export:progress',
   menuCommand: 'menu:command',
   voiceEvent: 'voice:event',
-  windowActive: 'window:active'
+  windowActive: 'window:active',
+  windowFullscreen: 'window:fullscreen'
 } as const
 
 export type Channel = (typeof Channels)[keyof typeof Channels]

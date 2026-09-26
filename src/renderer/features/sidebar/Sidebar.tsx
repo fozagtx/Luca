@@ -1,6 +1,7 @@
-import { Captions, LayoutGrid, Lightbulb, Palette } from 'lucide-react'
+import { Captions, LayoutGrid, Lightbulb, Palette, PanelLeftClose } from 'lucide-react'
 import type { ReactElement, ReactNode } from 'react'
 import { Segmented, type SegmentedItem } from '../../components/ui/segmented'
+import { Tip } from '../../components/ui/tooltip'
 import { useUi, type SidebarTab } from '../../stores/ui'
 import { CatalogTab } from './catalog/CatalogTab'
 import { InspirationTab } from './inspiration/InspirationTab'
@@ -57,10 +58,21 @@ export function PaneHead({
 export function Sidebar(): ReactElement {
   const tab = useUi((s) => s.tab)
   const setTab = useUi((s) => s.setTab)
+  const setSidebar = useUi((s) => s.setSidebar)
   return (
     <aside className="sidebar-vibrancy flex h-full min-w-0 flex-col">
-      <div className="flex h-11 shrink-0 items-center px-2">
+      <div className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-3">
         <Segmented items={tabs} value={tab} onChange={setTab} icons ariaLabel="Sidebar" />
+        <Tip label="Hide sidebar" shortcut="⇧⌘S">
+          <button
+            type="button"
+            aria-label="Hide sidebar"
+            onClick={() => setSidebar(false)}
+            className="icon-btn ml-auto"
+          >
+            <PanelLeftClose size={15} strokeWidth={1.6} />
+          </button>
+        </Tip>
       </div>
       <div className="min-h-0 flex-1 border-t border-border">
         {tab === 'inspiration' && <InspirationTab />}

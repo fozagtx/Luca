@@ -38,7 +38,7 @@ export function Chat(): ReactElement {
           ) : null
         }
       />
-      <Composer disabled={!projectDir} />
+      <Composer noProject={!projectDir} />
     </section>
   )
 }
@@ -94,13 +94,13 @@ function Messages({
       <div ref={scrollRef} className="scroll h-full">
         <div
           ref={contentRef}
-          className={cn('flex min-h-full flex-col px-3.5 pb-4', empty && 'justify-center')}
+          className={cn('flex min-h-full flex-col px-3 pb-4', empty && 'justify-center')}
         >
           <LucaProfile compact={!empty} live={working} />
           {onboarding}
           {empty ? (
             <div className="mx-auto w-full max-w-[340px] pt-1">
-              <Suggestions disabled={disabled} />
+              <Suggestions start={disabled} />
             </div>
           ) : (
             <div className="flex flex-col gap-4">

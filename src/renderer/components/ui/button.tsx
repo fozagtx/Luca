@@ -7,7 +7,7 @@ type Size = 'sm' | 'md' | 'lg'
 const base =
   'inline-flex items-center justify-center gap-1.5 whitespace-nowrap select-none rounded-[6px] text-[12px] font-medium leading-none no-drag ' +
   'transition-[background-color,color,transform,box-shadow,border-color,opacity] duration-150 ease-out active:scale-[0.97] ' +
-  'disabled:opacity-40 disabled:pointer-events-none [&_svg]:shrink-0 [&_svg]:pointer-events-none'
+  'disabled:opacity-45 disabled:pointer-events-none [&_svg]:shrink-0 [&_svg]:pointer-events-none'
 
 const variants: Record<Variant, string> = {
   default: 'bg-text text-bg hover:bg-text/90',
@@ -32,10 +32,22 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: Variant
   size?: Size
   active?: boolean
+  /** Busy: a spinner leads the label and the button ignores clicks until it settles. */
+  loading?: boolean
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, variant = 'outline', size = 'md', active, type = 'button', ...props },
+  {
+    className,
+    variant = 'outline',
+    size = 'md',
+    active,
+    loading,
+    disabled,
+    type = 'button',
+    children,
+    ...props
+  },
   ref
 ) {
   return (
@@ -43,13 +55,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type={type}
       data-active={active ? 'true' : undefined}
+      aria-busy={loading || undefined}
+      disabled={disabled || loading}
       className={cn(
         base,
         variants[variant],
         variant === 'icon' ? 'h-7 w-7 px-0' : sizes[size],
+        loading && 'disabled:opacity-80 [&>svg]:hidden',
         className
       )}
       {...props}
-    />
+    >
+      {loading ? <span className="btn-spinner" aria-hidden /> : null}
+      {children}
+    </button>
   )
 })

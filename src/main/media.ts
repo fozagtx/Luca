@@ -7,9 +7,10 @@ import {
   statSync,
   writeFileSync
 } from 'node:fs'
-import { join } from 'node:path'
-import type { Project, TimelineEdit } from '../shared/types'
+import { join, relative, resolve } from 'node:path'
+import type { ElementTransform, Project, TimelineEdit } from '../shared/types'
 import { parseJsonOutput, run, runHyperframes, which } from './env'
+import { findTagById, replaceTag, setAttrs, withStyle } from './html'
 
 const THUMB_INTERVAL = 1
 const PEAKS_PER_SECOND = 100
@@ -199,6 +200,15 @@ export async function applyEdit(
   dir: string,
   edit: TimelineEdit
 ): Promise<{ ok: boolean; error?: string }> {
+  if (edit.op === 'mute') return muteClips(dir, edit.refs, edit.muted)
+  if (edit.op === 'delete' && edit.with?.length) {
+    // a video and its own audio go together, in one checkpoint
+    for (const ref of [edit.ref, ...edit.with]) {
+      const res = await applyEdit(dir, { op: 'delete', ref })
+      if (!res.ok) return res
+    }
+    return { ok: true }
+  }
   const args: string[] = ['timeline']
   switch (edit.op) {
     case 'move':
@@ -232,7 +242,70 @@ export async function applyEdit(
   return { ok: true }
 }
 
+/**
+ * Track mute: `data-volume="0"` on each clip in index.html, remembering the previous level in
+ * `data-luca-volume` so unmuting restores it exactly.
+ */
+function muteClips(dir: string, refs: string[], muted: boolean): { ok: boolean; error?: string } {
+  const file = join(dir, 'index.html')
+  let html = readFileSync(file, 'utf8')
+  for (const ref of refs) {
+    const tag = findTagById(html, ref.replace(/^#/, ''))
+    if (!tag) continue
+    const prev = tag.attrs['data-volume']
+    const raw = muted
+      ? setAttrs(tag, {
+          'data-volume': '0',
+          'data-luca-volume':
+            prev !== undefined && prev !== '0' ? prev : (tag.attrs['data-luca-volume'] ?? null)
+        })
+      : setAttrs(tag, {
+          'data-volume': tag.attrs['data-luca-volume'] ?? '1',
+          'data-luca-volume': null
+        })
+    html = replaceTag(html, tag, raw)
+  }
+  writeFileSync(file, html)
+  return { ok: true }
+}
+
+const num = (n: number, digits: number): string =>
+  String(Math.round(n * 10 ** digits) / 10 ** digits)
+
+/**
+ * Move/resize an element on the canvas by writing CSS `translate`, `scale` and
+ * `transform-origin` on its tag. Those compose with GSAP's `transform`, so animations keep
+ * working on top of the new position and size.
+ */
+export async function applyTransform(
+  dir: string,
+  t: ElementTransform
+): Promise<{ ok: boolean; error?: string }> {
+  if (!/\.html$/i.test(t.file) || /^(media|renders)\//.test(t.file))
+    return { ok: false, error: 'Only composition files can be edited' }
+  const abs = resolve(dir, t.file)
+  const rel = relative(resolve(dir), abs)
+  if (!rel || rel.startsWith('..'))
+    return { ok: false, error: 'That element is outside the project' }
+  if (!existsSync(abs)) return { ok: false, error: `${t.file} was not found` }
+  const html = readFileSync(abs, 'utf8')
+  const tag = findTagById(html, t.id)
+  if (!tag) return { ok: false, error: `Couldn't find #${t.id} in ${t.file}` }
+  const [x, y] = t.translate
+  const moved = Math.abs(x) >= 0.5 || Math.abs(y) >= 0.5
+  const scaled = Math.abs(t.scale - 1) >= 0.002
+  const raw = withStyle(tag, {
+    translate: moved ? `${num(x, 1)}px ${num(y, 1)}px` : null,
+    scale: scaled ? num(t.scale, 3) : null,
+    'transform-origin':
+      scaled && t.origin ? `${num(t.origin[0], 1)}px ${num(t.origin[1], 1)}px` : null
+  })
+  writeFileSync(abs, replaceTag(html, tag, raw))
+  return { ok: true }
+}
+
 export function editLabel(edit: TimelineEdit): string {
+  if (edit.op === 'mute') return edit.muted ? 'Edit: mute track' : 'Edit: unmute track'
   const name = edit.ref.replace(/^#/, '')
   switch (edit.op) {
     case 'move':
@@ -242,6 +315,6 @@ export function editLabel(edit: TimelineEdit): string {
     case 'split':
       return `Edit: split ${name}`
     case 'delete':
-      return `Edit: delete ${name}`
+      return edit.with?.length ? `Edit: delete ${name} and its audio` : `Edit: delete ${name}`
   }
 }

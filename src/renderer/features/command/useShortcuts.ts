@@ -5,6 +5,14 @@ import { useProject } from '../../stores/project'
 import { useTimeline } from '../../stores/timeline'
 import { useUi, type SidebarTab } from '../../stores/ui'
 import type { Theme } from '@shared/types'
+import {
+  clipToChat,
+  deleteClip,
+  findClip,
+  splitClip,
+  targetClip,
+  trimToPlayhead
+} from '../timeline/clip-actions'
 
 const isEditable = (t: EventTarget | null): boolean => {
   const el = t as HTMLElement | null
@@ -42,17 +50,23 @@ export function useShortcuts(): void {
         return
       }
 
+      const selected = findClip(tl.selected)
       switch (e.key) {
         case 's':
-          if (tl.selected) void tl.edit({ op: 'split', ref: tl.selected, time: player.currentTime })
+          if (selected) void splitClip(selected, player.currentTime)
           break
         case 'Delete':
         case 'Backspace':
-          if (tl.selected) {
+          if (selected) {
             e.preventDefault()
-            void tl.edit({ op: 'delete', ref: tl.selected })
-            tl.select(null)
+            void deleteClip(selected)
           }
+          break
+        case '[':
+          if (selected) void trimToPlayhead(selected, 'start')
+          break
+        case ']':
+          if (selected) void trimToPlayhead(selected, 'end')
           break
         case ' ':
           e.preventDefault()
@@ -125,11 +139,32 @@ export function useShortcuts(): void {
           if (proj.project) await luca.history.undo()
           break
         case 'toggle-sidebar':
-          ui.toggleSidebar()
+          ui.setSidebar(!ui.sidebarOpen)
           break
         case 'toggle-chat':
-          ui.toggleChat()
+          ui.setChat(!ui.chatOpen)
           break
+        case 'split': {
+          const c = targetClip(arg)
+          if (c) void splitClip(c)
+          break
+        }
+        case 'trim-start':
+        case 'trim-end': {
+          const c = targetClip(arg)
+          if (c) void trimToPlayhead(c, cmd === 'trim-start' ? 'start' : 'end')
+          break
+        }
+        case 'delete-clip': {
+          const c = targetClip(arg)
+          if (c) void deleteClip(c)
+          break
+        }
+        case 'chip-clip': {
+          const c = targetClip(arg)
+          if (c) clipToChat(c)
+          break
+        }
         case 'tab':
           ui.setTab(arg as SidebarTab)
           break
@@ -188,6 +223,9 @@ export function useShortcuts(): void {
         case 'clean-edit':
           ui.setTab('transcript')
           break
+        case 'captions':
+          if (proj.project) ui.setCaptions(true)
+          break
         case 'claude-login':
           await luca.env.openClaudeLogin()
           break
@@ -201,12 +239,14 @@ export function useShortcuts(): void {
       useUi.getState().setWindowActive(active)
       document.body.classList.toggle('inactive', !active)
     })
+    const offFullscreen = luca.window.onFullscreen((f) => useUi.getState().setFullscreen(f))
 
     return () => {
       window.removeEventListener('keydown', onKey)
       off()
       offDrop()
       offActive()
+      offFullscreen()
     }
   }, [])
 }

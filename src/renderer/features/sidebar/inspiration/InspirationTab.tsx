@@ -154,7 +154,7 @@ export function InspirationTab(): ReactElement {
   return (
     <div className="flex h-full flex-col">
       <PaneHead title="Inspiration" />
-      <div className="scroll min-h-0 flex-1 px-2.5 pt-2.5 pb-3">
+      <div className="scroll min-h-0 flex-1 px-3 pt-3 pb-3">
         {!project ? <RecentProjects /> : null}
         <p className="px-0.5 pb-3 text-[12px] leading-[1.5] text-text-2">
           {project
