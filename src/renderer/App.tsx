@@ -5,6 +5,7 @@ import { Chat } from './features/chat/Chat'
 import { CommandPalette } from './features/command/CommandPalette'
 import { GotoSheet } from './features/command/GotoSheet'
 import { useShortcuts } from './features/command/useShortcuts'
+import { ExportBar, ExportSheet } from './features/export/ExportSheet'
 import { NewProjectSheet } from './features/onboarding/NewProjectSheet'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Timeline } from './features/timeline/Timeline'
@@ -38,6 +39,7 @@ export default function App(): ReactElement {
     <TooltipProvider>
       <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg text-text">
         <Toolbar />
+        <ExportBar />
         <Group
           key={`${sidebarOpen}-${chatOpen}`}
           orientation="horizontal"
@@ -88,6 +90,7 @@ export default function App(): ReactElement {
       </div>
       <CommandPalette />
       <NewProjectSheet />
+      <ExportSheet />
       <GotoSheet />
     </TooltipProvider>
   )

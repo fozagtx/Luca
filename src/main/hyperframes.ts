@@ -176,7 +176,8 @@ export async function catalog(opts: { refresh?: boolean; cwd: string }): Promise
     if (existsSync(cacheFile)) return JSON.parse(readFileSync(cacheFile, 'utf8')) as CatalogItem[]
     throw new Error(`hyperframes catalog failed: ${(res.stderr || res.stdout).slice(-400)}`)
   }
-  const data = parseJsonOutput<HfCatalog>(res.stdout)
+  const raw = parseJsonOutput<HfCatalog | HfCatalogEntry[]>(res.stdout)
+  const data: HfCatalog = Array.isArray(raw) ? { items: raw } : raw
   const map = (e: HfCatalogEntry, fallback: 'block' | 'component'): CatalogItem => ({
     name: e.name,
     type: e.type?.includes('component')

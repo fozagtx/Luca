@@ -1,5 +1,6 @@
-import type { Aspect } from '@shared/types'
-import { useState, type ReactElement } from 'react'
+import type { Aspect, Look } from '@shared/types'
+import { useEffect, useState, type ReactElement } from 'react'
+import { luca } from '../../lib/luca'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Sheet } from '../../components/ui/sheet'
@@ -55,16 +56,29 @@ function NewProjectForm({
   defaultAspect: Aspect
   loading: boolean
   onCancel: () => void
-  onCreate: (args: { file: string; name?: string; aspect: Aspect }) => Promise<void>
+  onCreate: (args: {
+    file: string
+    name?: string
+    aspect: Aspect
+    look?: string | null
+  }) => Promise<void>
 }): ReactElement {
   const [name, setName] = useState(() => (file.split('/').pop() ?? '').replace(/\.[^.]+$/, ''))
   const [aspect, setAspect] = useState<Aspect>(defaultAspect)
+  const [looks, setLooks] = useState<Look[]>([])
+  const [look, setLook] = useState<string>('')
+  useEffect(() => {
+    void luca.looks
+      .list()
+      .then(setLooks)
+      .catch(() => undefined)
+  }, [])
   const [error, setError] = useState<string | null>(null)
 
   const submit = async (): Promise<void> => {
     if (!file) return
     try {
-      await onCreate({ file, name: name.trim() || undefined, aspect })
+      await onCreate({ file, name: name.trim() || undefined, aspect, look: look || null })
     } catch (err) {
       setError(errorMessage(err))
     }
@@ -121,6 +135,24 @@ function NewProjectForm({
             ))}
           </div>
         </div>
+        {looks.length > 0 && (
+          <label className="flex flex-col gap-1">
+            <span className="text-[12px] font-medium text-text-2">Look</span>
+            <select
+              value={look}
+              disabled={loading}
+              onChange={(e) => setLook(e.target.value)}
+              className="h-7 rounded-[6px] border border-border bg-bg px-2 text-[12px] text-text"
+            >
+              <option value="">None</option>
+              {looks.map((l) => (
+                <option key={l.slug} value={l.slug}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {loading && (
           <div className="text-[12px] text-text-2">
             Running <span className="font-mono">hyperframes init</span>… copying the video and

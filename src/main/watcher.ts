@@ -9,7 +9,7 @@ let pending = new Set<string>()
 let timer: NodeJS.Timeout | null = null
 let listeners: ((e: ProjectChanged) => void)[] = []
 
-const IGNORED_TOP = new Set(['media', 'renders', '.git', 'node_modules'])
+const IGNORED_TOP = new Set(['.hyperframes', 'media', 'renders', '.git', 'node_modules'])
 
 export function onProjectChanged(cb: (e: ProjectChanged) => void): () => void {
   listeners.push(cb)

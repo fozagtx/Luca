@@ -1,0 +1,138 @@
+/* Light-theme overrides for @xzdarcy/react-timeline-editor, using Luca tokens. */
+.timeline-editor {
+  background-color: var(--color-bg-subtle);
+  font-family: inherit;
+  font-size: 11px;
+  height: 100%;
+  width: 100%;
+}
+.timeline-editor-time-area {
+  border-bottom: 1px solid var(--color-border);
+}
+.timeline-editor-time-unit {
+  border-right: 1px solid rgba(0, 0, 0, 0.18);
+}
+.timeline-editor-time-unit-scale {
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.timeline-editor-edit-area {
+  margin-top: 10px;
+}
+.timeline-editor-edit-row {
+  background-image:
+    linear-gradient(var(--color-bg-subtle), var(--color-bg-subtle)),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.06) 1px, transparent 0);
+  border-bottom: 1px solid var(--color-border);
+}
+.timeline-editor-edit-area .ReactVirtualized__Grid::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+}
+.timeline-editor-cursor {
+  border-left: 1px solid var(--color-playhead);
+  border-right: 1px solid var(--color-playhead);
+}
+.timeline-editor-cursor-top svg path,
+.timeline-editor-cursor-top svg {
+  fill: var(--color-playhead);
+}
+.timeline-editor-drag-line {
+  border-left: 1px dashed var(--color-accent);
+}
+.timeline-editor-action {
+  background-color: transparent;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.timeline-editor-action .timeline-editor-action-left-stretch:after,
+.timeline-editor-action .timeline-editor-action-right-stretch:after {
+  border-top-width: 14px;
+  border-bottom-width: 14px;
+}
+.timeline-editor-action .timeline-editor-action-left-stretch:after {
+  border-left-color: rgba(0, 0, 0, 0.12);
+}
+.timeline-editor-action .timeline-editor-action-right-stretch:after {
+  border-right-color: rgba(0, 0, 0, 0.12);
+}
+
+/* Luca clip renderers */
+.luca-clip {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 8px;
+  cursor: grab;
+}
+.luca-clip:active {
+  cursor: grabbing;
+}
+.luca-clip-label {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.luca-clip-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--color-clip-block-edge);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+}
+.luca-clip-video {
+  background: var(--color-clip-video);
+  border-color: var(--color-clip-video-edge);
+}
+.luca-clip-block,
+.luca-clip-component {
+  background: var(--color-clip-block);
+  border-color: var(--color-clip-block-edge);
+}
+.luca-clip-caption {
+  background: var(--color-clip-caption);
+  border-color: var(--color-clip-caption-edge);
+}
+.luca-clip-audio {
+  background: var(--color-clip-audio);
+  border-color: var(--color-clip-audio-edge);
+}
+.luca-clip-selected {
+  border-color: var(--color-accent);
+  box-shadow:
+    inset 0 0 0 2px var(--color-accent),
+    inset 0 0 0 3px white;
+  filter: brightness(1.06);
+}
+
+.luca-strip {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  align-items: center;
+  background: #e9e9ec;
+  border-radius: 4px;
+  cursor: default;
+}
+.luca-strip img {
+  border-right: 1px solid rgba(255, 255, 255, 0.6);
+}

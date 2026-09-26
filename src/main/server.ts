@@ -1,8 +1,37 @@
 import { randomBytes } from 'node:crypto'
-import { createReadStream, statSync } from 'node:fs'
+import { createReadStream, readFileSync, statSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
 import { extname, join, normalize, resolve, sep } from 'node:path'
+
+const RUNTIME_PATH = '/hf/runtime.js'
+let runtimeFile: string | null = null
+function hyperframesRuntime(): string | null {
+  if (runtimeFile) return runtimeFile
+  try {
+    runtimeFile = require.resolve('@hyperframes/core/dist/hyperframe.runtime.iife.js')
+  } catch {
+    runtimeFile = null
+  }
+  return runtimeFile
+}
+
+/** Mirror what HyperFrames Studio does for preview: make sure the runtime and the
+ *  `window.__timelines` registry exist before the composition's own scripts run. */
+export function prepareCompositionHtml(html: string): string {
+  let out = html
+  if (!/hyperframe\.runtime|hyperframes-preview-runtime/.test(out)) {
+    const tag = `<script data-hyperframes-preview-runtime="1" src="${RUNTIME_PATH}"></script>`
+    out = /<head\b[^>]*>/i.test(out)
+      ? out.replace(/<head\b[^>]*>/i, (m) => `${m}\n${tag}`)
+      : `${tag}\n${out}`
+  }
+  const init = '<script>window.__timelines=window.__timelines||{};</script>'
+  out = /<body\b[^>]*>/i.test(out)
+    ? out.replace(/<body\b[^>]*>/i, (m) => `${m}\n${init}`)
+    : `${init}\n${out}`
+  return out
+}
 
 export const DEV_PORT = Number(process.env.LUCA_DEV_PORT ?? 41733)
 
@@ -111,6 +140,16 @@ export class LucaServer {
       return
     }
 
+    if (url.pathname === RUNTIME_PATH) {
+      const file = hyperframesRuntime()
+      if (!file) {
+        res.writeHead(404).end('HyperFrames runtime not found')
+        return
+      }
+      this.sendFile(req, res, resolve(file, '..'), 'hyperframe.runtime.iife.js', {})
+      return
+    }
+
     if (url.pathname.startsWith('/p/')) {
       const [, , id, ...rest] = url.pathname.split('/')
       const dir = id ? this.resolveProject(decodeURIComponent(id)) : null
@@ -119,6 +158,10 @@ export class LucaServer {
         return
       }
       const rel = rest.map(decodeURIComponent).join('/') || 'index.html'
+      if (rel.toLowerCase().endsWith('.html')) {
+        this.sendHtml(res, dir, rel)
+        return
+      }
       this.sendFile(req, res, dir, rel, { noStore: true })
       return
     }
@@ -131,6 +174,29 @@ export class LucaServer {
     }
 
     res.writeHead(404).end('Not found')
+  }
+
+  private sendHtml(res: ServerResponse, root: string, rel: string): void {
+    const rootAbs = resolve(root)
+    const abs = normalize(join(rootAbs, rel))
+    if (!abs.startsWith(rootAbs + sep)) {
+      res.writeHead(403).end('Forbidden')
+      return
+    }
+    let html: string
+    try {
+      html = readFileSync(abs, 'utf8')
+    } catch {
+      res.writeHead(404).end('Not found')
+      return
+    }
+    const body = prepareCompositionHtml(html)
+    res.writeHead(200, {
+      'content-type': MIME['.html'],
+      'cache-control': 'no-store',
+      'content-length': String(Buffer.byteLength(body))
+    })
+    res.end(body)
   }
 
   private sendFile(

@@ -1,8 +1,9 @@
 import '@hyperframes/player'
 import type { HyperframesPlayer } from '@hyperframes/player'
-import { useEffect, useRef, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
+import { GrabOverlay } from './GrabOverlay'
 
 declare module 'react' {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -33,11 +34,13 @@ export function Player(): ReactElement | null {
   const ref = useRef<HyperframesPlayer | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const restore = useRef<{ time: number; playing: boolean } | null>(null)
+  const [el, setEl] = useState<HyperframesPlayer | null>(null)
   const { setHandle, setReady, setPlaying, setTime, setDuration } = usePlayer.getState()
 
   // register the imperative handle once the element exists
   useEffect(() => {
     const el = ref.current
+    setEl(el)
     if (!el) return
     setHandle({
       play: () => el.play(),
@@ -127,13 +130,16 @@ export function Player(): ReactElement | null {
 
   return (
     <div ref={hostRef} className="flex h-full w-full items-center justify-center overflow-hidden">
-      <hyperframes-player
-        ref={ref}
-        id="luca-player"
-        disable-click-to-play="true"
-        assets-loading-ui="none"
-        className="block rounded-[4px] bg-black shadow-[0_0_0_1px_rgba(0,122,255,0.55),0_8px_24px_rgba(0,0,0,0.08)]"
-      />
+      <div className="relative inline-flex">
+        <hyperframes-player
+          ref={ref}
+          id="luca-player"
+          disable-click-to-play="true"
+          assets-loading-ui="none"
+          className="block rounded-[4px] bg-black shadow-[0_0_0_1px_rgba(0,122,255,0.55),0_8px_24px_rgba(0,0,0,0.08)]"
+        />
+        <GrabOverlay player={el} />
+      </div>
     </div>
   )
 }

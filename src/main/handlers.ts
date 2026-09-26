@@ -1,17 +1,31 @@
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Aspect, Settings } from '../shared/types'
+import type {
+  Aspect,
+  Chip,
+  Edl,
+  ExportOptions,
+  PermissionDecision,
+  Settings,
+  TimelineEdit
+} from '../shared/types'
+import { activeAgent, agentFor, closeAgent, onTurnEnd } from './agent'
+import { applyEdl, cleanStatus, readEdl, readTranscript, runCleanEdit } from './clean'
+import { cancelExport, startExport } from './export'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
+import { remocnCatalog, setupStudio, studioStatus } from './remocn'
 import { Channels, broadcast, handle } from './ipc'
+import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { popupClipMenu, popupLookMenu } from './menu'
 import { createProject, listFiles, openProject, recentProjects, safeJoin } from './projects'
 import { hasSecret, setSecret } from './secrets'
 import type { LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, requireProject, setCurrentProject } from './state'
-import { ensureRepo, history, restore, undo } from './versions'
+import { applyEdit, editLabel, peaks, thumbnails } from './media'
+import { checkpoint, ensureRepo, history, restore, undo } from './versions'
 import { stopWatching, watchProject } from './watcher'
 
 type WinGetter = () => BrowserWindow | null
@@ -21,10 +35,6 @@ const openDialog = (
   opts: Electron.OpenDialogOptions
 ): Promise<Electron.OpenDialogReturnValue> =>
   win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts)
-
-const notReady = (feature: string) => (): never => {
-  throw new Error(`${feature} is not available yet`)
-}
 
 export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.serverBaseUrl, () => server.baseUrl)
@@ -59,18 +69,29 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     watchProject(p.dir)
     broadcast(Channels.projectOpened, p)
     app.addRecentDocument(p.dir)
+    void agentFor(p).start()
     return p
   }
+  onTurnEnd((p, e) => {
+    if (e.isError) return
+    void checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72))
+  })
   handle(
     Channels.projectCreate,
     async (args: { file: string; name?: string; aspect: Aspect; look?: string | null }) => {
       const p = await createProject(args)
-      return activate(p.dir)
+      const opened = await activate(p.dir)
+      if (args.look) {
+        await applyLook(opened, args.look)
+        return activate(p.dir)
+      }
+      return opened
     }
   )
   handle(Channels.projectOpen, (dir: string) => activate(dir))
-  handle(Channels.projectClose, () => {
+  handle(Channels.projectClose, async () => {
     stopWatching()
+    await closeAgent()
     setCurrentProject(null)
     broadcast(Channels.projectOpened, null)
   })
@@ -103,41 +124,55 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
 
   // timeline
   handle(Channels.timelineGet, () => readTimeline(requireProject().dir))
-  handle(Channels.timelineEdit, notReady('Timeline editing'))
-  handle(Channels.timelineThumbs, notReady('Thumbnails'))
-  handle(Channels.timelinePeaks, notReady('Waveform'))
+  handle(Channels.timelineEdit, async (edit: TimelineEdit) => {
+    const p = requireProject()
+    const res = await applyEdit(p.dir, edit)
+    if (res.ok) void checkpoint(p.dir, editLabel(edit))
+    return res
+  })
+  handle(Channels.timelineThumbs, () => thumbnails(requireProject()))
+  handle(Channels.timelinePeaks, () => peaks(requireProject()))
 
   // agent
-  handle(Channels.agentSend, notReady('Chat'))
-  handle(Channels.agentInterrupt, () => undefined)
-  handle(Channels.agentPermission, () => undefined)
-  handle(Channels.agentHistory, () => [])
-  handle(Channels.agentState, () => ({ state: 'idle' }))
-  handle(Channels.agentRestart, () => undefined)
+  handle(Channels.agentSend, (args: { text: string; chips: Chip[]; context: unknown }) =>
+    agentFor(requireProject()).send(args)
+  )
+  handle(Channels.agentInterrupt, () => activeAgent()?.interrupt())
+  handle(Channels.agentPermission, (args: { id: string; decision: PermissionDecision }) =>
+    activeAgent()?.decide(args.id, args.decision)
+  )
+  handle(Channels.agentHistory, () => activeAgent()?.history() ?? [])
+  handle(Channels.agentState, () => activeAgent()?.status() ?? { state: 'idle' })
+  handle(Channels.agentRestart, () => agentFor(requireProject()).restart())
 
   // catalog
   handle(Channels.catalogList, (args?: { refresh?: boolean }) =>
     catalog({ refresh: args?.refresh, cwd: currentProject()?.dir ?? app.getPath('userData') })
   )
   handle(Channels.catalogAdd, (name: string) => addCatalogItem(requireProject().dir, name))
-  handle(Channels.catalogRemocn, () => [])
+  handle(Channels.catalogRemocn, (args?: { refresh?: boolean }) => remocnCatalog(args?.refresh))
   handle(Channels.catalogRemocnPreview, () => null)
-  handle(Channels.catalogRemocnStudioStatus, () => ({ ready: false, step: 'not set up' }))
-  handle(Channels.catalogRemocnSetup, notReady('Remocn'))
+  handle(Channels.catalogRemocnStudioStatus, () => studioStatus())
+  handle(Channels.catalogRemocnSetup, () => setupStudio())
 
   // clean
-  handle(Channels.cleanRun, notReady('Clean edit'))
-  handle(Channels.cleanApplyEdl, notReady('Clean edit'))
-  handle(Channels.cleanStatus, () => ({ stage: 'idle' }))
-  handle(Channels.cleanTranscript, () => null)
-  handle(Channels.cleanEdl, () => null)
+  handle(Channels.cleanRun, () => runCleanEdit(requireProject()))
+  handle(Channels.cleanApplyEdl, (edl: Edl) => applyEdl(requireProject(), edl))
+  handle(Channels.cleanStatus, cleanStatus)
+  handle(Channels.cleanTranscript, () => readTranscript(requireProject().dir))
+  handle(Channels.cleanEdl, () => readEdl(requireProject().dir))
 
   // looks
-  handle(Channels.looksList, () => [])
-  handle(Channels.looksSave, notReady('Looks'))
-  handle(Channels.looksUpdate, notReady('Looks'))
-  handle(Channels.looksApply, notReady('Looks'))
-  handle(Channels.looksRemove, notReady('Looks'))
+  handle(Channels.looksList, () => listLooks())
+  handle(Channels.looksSave, (name: string) => saveLook(requireProject(), name))
+  handle(Channels.looksUpdate, (slug: string) => updateLook(requireProject(), slug))
+  handle(Channels.looksApply, async (slug: string) => {
+    const p = requireProject()
+    await applyLook(p, slug)
+    setCurrentProject(openProject(p.dir))
+    await checkpoint(p.dir, `Apply Look: ${lookName(slug)}`)
+  })
+  handle(Channels.looksRemove, (slug: string) => removeLook(slug))
   handle(Channels.looksActive, () => currentProject()?.look ?? null)
 
   // history
@@ -146,8 +181,8 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.historyUndo, () => undo(requireProject().dir))
 
   // export
-  handle(Channels.exportStart, notReady('Export'))
-  handle(Channels.exportCancel, () => undefined)
+  handle(Channels.exportStart, (opts: ExportOptions) => startExport(requireProject(), opts))
+  handle(Channels.exportCancel, () => cancelExport())
   handle(Channels.exportReveal, (p: string) => shell.showItemInFolder(p))
   handle(Channels.exportFreeMemory, () => Math.round(process.getSystemMemoryInfo().free / 1024))
 

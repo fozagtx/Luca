@@ -11,7 +11,7 @@ export function handle<A extends unknown[]>(channel: Channel, fn: (...args: A) =
 }
 
 export function broadcast(channel: Channel, payload?: unknown): void {
-  for (const w of BrowserWindow.getAllWindows()) {
+  for (const w of BrowserWindow?.getAllWindows?.() ?? []) {
     if (!w.isDestroyed()) w.webContents.send(channel, payload)
   }
 }
