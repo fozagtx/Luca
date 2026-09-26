@@ -38,6 +38,18 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     ]
   },
   {
+    title: 'Projects',
+    rows: [
+      ['⌘N', 'New project from a video'],
+      ['⌘O', 'Open a project'],
+      ['⇧⌘W', 'Home: close the project'],
+      ['⇧⌘R', 'Show the project in Finder'],
+      ['⇧⌘E', 'Clean edit'],
+      ['⌘Y', 'Versions'],
+      ['⌘,', 'Settings']
+    ]
+  },
+  {
     title: 'Everywhere',
     rows: [
       ['⌘K', 'Search commands'],

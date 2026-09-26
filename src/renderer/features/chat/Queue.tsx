@@ -43,7 +43,8 @@ export function QueueTray(): ReactElement | null {
     if (review.length === 0) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing) return
-      if ((e.target as HTMLElement | null)?.dataset.queueEdit) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return
       // an open "Luca needs your OK" card takes ⌘↩ first
       if (waitingOnPermission(useChat.getState().messages)) return
       e.preventDefault()

@@ -195,7 +195,8 @@ export const useQueue = create<QueueStore>((set, get) => ({
 
   toComposer: (id) => {
     const item = get().items.find((i) => i.id === id)
-    if (!item || item.status === 'sending') return
+    // the message box can't carry a hidden note (a timeline drop's details): edit those in place
+    if (!item || item.status === 'sending' || item.note) return
     get().discard(id)
     const chat = useChat.getState()
     chat.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${item.text}` : item.text)

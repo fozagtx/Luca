@@ -28,10 +28,12 @@ function stamp(): string {
 
 /**
  * Parallel frame workers: the setting is the floor, and bigger Macs use more of the machine
- * (half the cores, about 4 GB of memory per worker, at most 6).
+ * (half the cores, about 4 GB of memory per worker after 4 GB of headroom, at most 6).
  */
 function renderWorkers(): number {
-  const fit = Math.min(Math.floor(cpus().length / 2), Math.floor(totalmem() / 2 ** 32), 6)
+  // about 4 GB each, after leaving 4 GB for macOS and everything else that is running
+  const spare = Math.max(0, totalmem() - 4 * 2 ** 30)
+  const fit = Math.min(Math.floor(cpus().length / 2), Math.floor(spare / 2 ** 32), 6)
   return Math.max(1, Math.min(8, Math.max(getSettings().renderWorkers || 2, fit)))
 }
 

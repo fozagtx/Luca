@@ -320,6 +320,9 @@ function PermissionCard({
     if (part.resolved) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing) return
+      // typing a message: ⌘↩ sends it rather than allowing the step
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return
       e.preventDefault()
       e.stopImmediatePropagation()
       void decide(part.id, e.shiftKey && scope ? 'allow-always' : 'allow')

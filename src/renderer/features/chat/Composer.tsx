@@ -70,7 +70,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
     if (!canSend || disabled) return
     // Luca is busy: line it up in the queue instead of dropping it into the conversation
     if (!noProject && (working || useQueue.getState().items.some((i) => i.status !== 'review'))) {
-      useQueue.getState().enqueue(text, chips, 'typed')
+      useQueue.getState().enqueue(text, chips, 'typed', { time: usePlayer.getState().currentTime })
       useChat.setState({ draft: '', chips: [] })
       return
     }

@@ -188,8 +188,8 @@ export function TranscriptTab(): ReactElement {
       <div className="flex flex-col gap-3 border-b border-border p-3">
         {hasKey === false ? (
           <AssemblyAiKeyCard onSaved={setHasKey}>
-            Luca sends only the audio for transcription and deletes the transcript from AssemblyAI
-            afterwards. Your key stays in the macOS Keychain.
+            Luca sends the audio (not the video) and any key terms you added to AssemblyAI for
+            transcription, then deletes the transcript there. Your key stays in the macOS Keychain.
           </AssemblyAiKeyCard>
         ) : null}
         {noAudio ? (

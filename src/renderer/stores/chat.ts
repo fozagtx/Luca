@@ -111,7 +111,8 @@ export const useChat = create<ChatStore>((set, get) => ({
     // with nothing open, a message is an idea for a new video: start one from it
     if (!useProject.getState().project) {
       if (!opts?.keepDraft) set({ draft: '', error: null })
-      const ok = await useStart.getState().create(text)
+      const spoken = !!(context as { voice?: boolean } | null)?.voice
+      const ok = await useStart.getState().create(text, { spoken })
       if (!ok)
         set({ error: useStart.getState().error, ...(opts?.keepDraft ? {} : { draft: text }) })
       return ok

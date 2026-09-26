@@ -53,7 +53,13 @@ export function VoiceRecorder(): ReactElement | null {
         e.preventDefault()
         e.stopPropagation()
         cancel()
-      } else if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.isComposing) {
+      } else if (
+        e.key === 'Enter' &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.isComposing &&
+        !t?.closest('button, a, [role="button"]')
+      ) {
         e.preventDefault()
         e.stopPropagation()
         if (mode === 'dictate') void finish()
