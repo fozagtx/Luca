@@ -124,13 +124,16 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     const report = (p: CreateProgress): void => broadcast(Channels.projectCreateProgress, p)
     try {
       const res = await startProject(args, report)
-      report({ stage: 'starting', message: 'Opening the project' })
-      let opened = await activate(res.project.dir)
+      // the Look goes in before the project opens, so it opens (repo, watcher, Claude) only once;
+      // a Look that only partly applied still opens the project, then reports what failed
+      let lookError: unknown = null
       if (args.look) {
         report({ stage: 'starting', message: 'Applying your Look' })
-        await applyLook(opened, args.look)
-        opened = await activate(res.project.dir)
+        await applyLook(res.project, args.look).catch((err) => (lookError = err))
       }
+      report({ stage: 'starting', message: 'Opening the project' })
+      const opened = await activate(res.project.dir)
+      if (lookError) throw lookError
       report({ stage: 'done' })
       return { ...res, project: opened }
     } catch (err) {
