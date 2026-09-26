@@ -276,6 +276,19 @@ function PermissionCard({
   const activity = describeActivity(part.tool, input)
   const exact = part.tool === 'Bash' ? String(input.command ?? '') : JSON.stringify(input, null, 2)
 
+  // ⌘↩ allows once, ⌘⇧↩ always: Luca is blocked until you answer, so this comes before the queue
+  useEffect(() => {
+    if (part.resolved) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      void decide(part.id, e.shiftKey ? 'allow-always' : 'allow')
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [part.id, part.resolved, decide])
+
   if (part.resolved) {
     const denied = part.resolved === 'deny'
     return (
@@ -325,10 +338,10 @@ function PermissionCard({
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5 pl-[38px]">
         <Button size="sm" variant="primary" onClick={() => void decide(part.id, 'allow')}>
-          Allow once
+          Allow once <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↩</kbd>
         </Button>
         <Button size="sm" onClick={() => void decide(part.id, 'allow-always')}>
-          Always allow
+          Always allow <kbd className="ml-0.5 font-mono text-[10px] opacity-60">⇧⌘↩</kbd>
         </Button>
         <Button size="sm" variant="ghost" onClick={() => void decide(part.id, 'deny')}>
           Don&apos;t allow

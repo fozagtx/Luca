@@ -18,6 +18,7 @@ type UiStore = {
   /** macOS fullscreen: the traffic lights are gone, so the toolbar drops its inset. */
   fullscreen: boolean
   captionsOpen: boolean
+  shortcutsOpen: boolean
   theme: Theme
   setTheme: (t: Theme, persist?: boolean) => void
   toggleTheme: () => void
@@ -27,6 +28,7 @@ type UiStore = {
   setChat: (open: boolean) => void
   setFullscreen: (fullscreen: boolean) => void
   setCaptions: (open: boolean) => void
+  setShortcuts: (open: boolean) => void
   setTab: (t: SidebarTab) => void
   setPalette: (open: boolean) => void
   setHistory: (open: boolean) => void
@@ -50,6 +52,7 @@ export const useUi = create<UiStore>((set, get) => ({
   windowActive: true,
   fullscreen: false,
   captionsOpen: false,
+  shortcutsOpen: false,
   theme: 'light',
   setTheme: (theme, persist = true) => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
@@ -63,6 +66,7 @@ export const useUi = create<UiStore>((set, get) => ({
   setChat: (chatOpen) => set({ chatOpen }),
   setFullscreen: (fullscreen) => set({ fullscreen }),
   setCaptions: (captionsOpen) => set({ captionsOpen }),
+  setShortcuts: (shortcutsOpen) => set({ shortcutsOpen }),
   setTab: (tab) => set({ tab, sidebarOpen: true }),
   setPalette: (paletteOpen) => set({ paletteOpen }),
   setHistory: (historyOpen) => set({ historyOpen }),

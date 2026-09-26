@@ -1,10 +1,12 @@
 import { utilityProcess, type UtilityProcess } from 'electron'
 import { mkdirSync } from 'node:fs'
+import { cpus, totalmem } from 'node:os'
 import { join } from 'node:path'
 import type { ExportOptions, ExportProgress, Project } from '../shared/types'
 import { childEnv } from './env'
 import { Channels, broadcast } from './ipc'
 import type { WorkerIn, WorkerOut } from './render-worker'
+import { getSettings } from './settings'
 
 let child: UtilityProcess | null = null
 let last: ExportProgress = { progress: 0, stage: '', status: 'done' }
@@ -24,7 +26,16 @@ function stamp(): string {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
 }
 
-/** Renders index.html with @hyperframes/producer in a utilityProcess (2 workers, GPU). */
+/**
+ * Parallel frame workers: the setting is the floor, and bigger Macs use more of the machine
+ * (half the cores, about 4 GB of memory per worker, at most 6).
+ */
+function renderWorkers(): number {
+  const fit = Math.min(Math.floor(cpus().length / 2), Math.floor(totalmem() / 2 ** 32), 6)
+  return Math.max(1, Math.min(8, Math.max(getSettings().renderWorkers || 2, fit)))
+}
+
+/** Renders index.html with @hyperframes/producer in a utilityProcess (parallel workers, GPU). */
 export async function startExport(p: Project, opts: ExportOptions): Promise<void> {
   if (child) throw new Error('An export is already running')
   mkdirSync(join(p.dir, 'renders'), { recursive: true })
@@ -81,7 +92,8 @@ export async function startExport(p: Project, opts: ExportOptions): Promise<void
     type: 'start',
     projectDir: p.dir,
     outputPath,
-    quality: opts.quality === 'draft' ? 'draft' : 'high'
+    quality: opts.quality === 'draft' ? 'draft' : 'high',
+    workers: renderWorkers()
   }
   proc.postMessage(start)
 }

@@ -44,6 +44,8 @@ export function QueueTray(): ReactElement | null {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing) return
       if ((e.target as HTMLElement | null)?.dataset.queueEdit) return
+      // an open "Luca needs your OK" card takes ⌘↩ first
+      if (waitingOnPermission(useChat.getState().messages)) return
       e.preventDefault()
       e.stopPropagation()
       useQueue.getState().approveNext()
@@ -159,6 +161,11 @@ function NowRow(): ReactElement {
       </Tip>
     </div>
   )
+}
+
+function waitingOnPermission(messages: ChatMessage[]): boolean {
+  const m = messages[messages.length - 1]
+  return !!m?.pending && !!m.parts?.some((p) => p.type === 'permission' && !p.resolved)
 }
 
 function nowOf(messages: ChatMessage[]): { asked: string; doing: string } {

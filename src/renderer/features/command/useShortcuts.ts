@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { luca } from '../../lib/luca'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
+import { stopLuca } from '../../stores/queue'
 import { useTimeline } from '../../stores/timeline'
 import { useUi, type SidebarTab } from '../../stores/ui'
 import { goHome } from './go-home'
@@ -22,6 +23,13 @@ const isEditable = (t: EventTarget | null): boolean => {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
 }
 
+/** Open the chat if it's hidden and put the caret in the message box. */
+function focusChat(): void {
+  const ui = useUi.getState()
+  if (!ui.chatOpen) ui.setChat(true)
+  requestAnimationFrame(() => document.getElementById('chat-composer')?.focus())
+}
+
 /** Keyboard shortcuts and native menu commands. Menu items without accelerators are handled here. */
 export function useShortcuts(): void {
   useEffect(() => {
@@ -33,6 +41,11 @@ export function useShortcuts(): void {
       if (meta && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         ui.setPalette(!ui.paletteOpen)
+        return
+      }
+      if (meta && e.key === '.') {
+        e.preventDefault()
+        void stopLuca()
         return
       }
       if (isEditable(e.target)) return
@@ -103,6 +116,14 @@ export function useShortcuts(): void {
           break
         case 'g':
           if (useProject.getState().project) player.toggleGrab()
+          break
+        case '/':
+          e.preventDefault()
+          focusChat()
+          break
+        case '?':
+          e.preventDefault()
+          ui.setShortcuts(true)
           break
         case 'Escape':
           if (player.grab) player.toggleGrab(false)
@@ -229,6 +250,9 @@ export function useShortcuts(): void {
           break
         case 'claude-login':
           await luca.env.openClaudeLogin()
+          break
+        case 'shortcuts':
+          ui.setShortcuts(!ui.shortcutsOpen)
           break
       }
     })
