@@ -11,6 +11,7 @@ node_modules/
 .luca/audio.flac
 .luca/chat.jsonl
 .luca/session.json
+.luca/project.json
 *.mp4
 *.mov
 *.m4v
@@ -40,15 +41,10 @@ export async function ensureRepo(dir: string): Promise<void> {
   if (!existsSync(join(dir, '.git'))) await g.init()
   const gi = join(dir, '.gitignore')
   if (!existsSync(gi)) writeFileSync(gi, GITIGNORE)
-  const status = await g.status()
-  if (
-    status.files.length > 0 ||
-    (await g.raw(['rev-list', '--count', 'HEAD']).catch(() => '0')).trim() === '0'
-  ) {
-    await g.add(['-A'])
-    const st = await g.status()
-    if (st.files.length > 0) await g.commit('Import')
-  }
+  const fresh = (await g.raw(['rev-list', '--count', 'HEAD']).catch(() => '0')).trim() === '0'
+  await g.add(['-A'])
+  const st = await g.status()
+  if (st.files.length > 0) await g.commit(fresh ? 'Import' : 'Edit: changes made outside Luca')
 }
 
 /** Commit only when something changed. Returns the new sha or null. */
@@ -65,16 +61,24 @@ export async function checkpoint(dir: string, message: string): Promise<string |
 export async function history(dir: string, limit = 60): Promise<Checkpoint[]> {
   const g = git(dir)
   if (!existsSync(join(dir, '.git'))) return []
-  const log = await g.log({ maxCount: limit, '--shortstat': null })
   const head = (await g.revparse(['HEAD']).catch(() => '')).trim()
-  return log.all.map((c) => ({
-    sha: c.hash,
-    shortSha: c.hash.slice(0, 7),
-    message: c.message,
-    date: c.date,
-    files: c.diff?.files.length ?? c.diff?.changed ?? 0,
-    isHead: c.hash === head
-  }))
+  if (!head) return []
+  const raw = await g.raw([
+    'log',
+    `-${limit}`,
+    '--format=%x1e%H%x1f%s%x1f%cI',
+    '--name-only',
+    '--root'
+  ])
+  return raw
+    .split('\x1e')
+    .filter((s) => s.trim())
+    .map((chunk) => {
+      const [header, ...rest] = chunk.split('\n')
+      const [sha, message, date] = header.split('\x1f')
+      const files = rest.filter((l) => l.trim()).length
+      return { sha, shortSha: sha.slice(0, 7), message, date, files, isHead: sha === head }
+    })
 }
 
 /** Check out a checkpoint's files on top of HEAD and commit; history is never rewritten. */

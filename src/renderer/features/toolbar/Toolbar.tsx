@@ -1,15 +1,15 @@
-import { Crosshair, History, MessageSquare, PanelLeft, Upload } from 'lucide-react'
+import { Crosshair, MessageSquare, PanelLeft, Upload } from 'lucide-react'
 import type { ReactElement } from 'react'
 import { Button } from '../../components/ui/button'
 import { Tip } from '../../components/ui/tooltip'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
+import { HistoryPopover } from '../history/HistoryPopover'
 
 export function Toolbar(): ReactElement {
   const project = useProject((s) => s.project)
-  const { sidebarOpen, chatOpen, toggleSidebar, toggleChat, setHistory, setExport, historyOpen } =
-    useUi()
+  const { sidebarOpen, chatOpen, toggleSidebar, toggleChat, setExport } = useUi()
   const grab = usePlayer((s) => s.grab)
   const toggleGrab = usePlayer((s) => s.toggleGrab)
 
@@ -47,17 +47,7 @@ export function Toolbar(): ReactElement {
             <Crosshair size={16} strokeWidth={1.5} />
           </Button>
         </Tip>
-        <Tip label="History" shortcut="⌘Y">
-          <Button
-            variant="icon"
-            active={historyOpen}
-            disabled={!project}
-            onClick={() => setHistory(!historyOpen)}
-            aria-label="History"
-          >
-            <History size={16} strokeWidth={1.5} />
-          </Button>
-        </Tip>
+        <HistoryPopover />
         <Button
           variant="primary"
           size="sm"
