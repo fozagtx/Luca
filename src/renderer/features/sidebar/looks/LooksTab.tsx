@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react'
 import { Button } from '../../../components/ui/button'
 import { GenerateButton } from '../../../components/ui/generate-button'
 import { Input } from '../../../components/ui/input'
+import { Thumb } from '../../../components/ui/thumb'
 import { cn } from '../../../lib/cn'
 import { luca } from '../../../lib/luca'
 import { errorMessage, useProject } from '../../../stores/project'
@@ -120,7 +121,7 @@ export function LooksTab(): ReactElement {
         )}
         {saving ? (
           <p className="mt-1.5 text-[10.5px] leading-[1.45] text-text-3">
-            Claude is writing LOOK.md, then components and a thumbnail are captured…
+            Luca is capturing this project&apos;s style: fonts, colors, captions and pacing…
           </p>
         ) : null}
         {error ? (
@@ -149,21 +150,13 @@ export function LooksTab(): ReactElement {
                 void luca.menu.popupLook(l.slug)
               }}
             >
-              <div className="relative aspect-video overflow-hidden rounded-[5px] bg-bg-muted">
-                {l.thumb ? (
-                  <img
-                    src={l.thumb}
-                    alt=""
-                    draggable={false}
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
+              <Thumb src={l.thumb} lazy={false} className="aspect-video rounded-[5px]">
                 {active === l.slug ? (
                   <span className="absolute top-1.5 left-1.5 inline-flex items-center gap-1 rounded-[4px] bg-accent px-1.5 py-px text-[9.5px] font-medium text-accent-fg">
                     <Check size={10} strokeWidth={2.5} /> Active
                   </span>
                 ) : null}
-              </div>
+              </Thumb>
               <div className="flex items-center gap-1 px-1 pt-1.5 pb-1">
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[11.5px] font-medium text-text">{l.name}</div>

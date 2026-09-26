@@ -9,7 +9,7 @@ import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { catalogChip, hasCatalogDrag, readCatalogDrag, type CatalogDrag } from '../../lib/drag'
 import { luca } from '../../lib/luca'
-import { timecode } from '../../lib/timecode'
+import { clock, timecode } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
@@ -204,12 +204,13 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     const chat = useChat.getState()
     chat.addChip(catalogChip(d))
     const tc = timecode(at, fps)
-    const text =
+    // what people see in the chat stays plain; the technical part rides along as hidden context
+    const note =
       d.source === 'remocn'
         ? `Place remocn \`${d.name}\` at ${tc}.`
         : `Insert \`${d.name}\` at ${tc} on a new track. It is installed; the \`add\` snippet was:\n\n\`\`\`html\n${(res.snippet ?? '').trim()}\n\`\`\``
     if (!useUi.getState().chatOpen) useUi.getState().toggleChat()
-    await chat.send(text, { time: at })
+    await chat.send(`Add ${d.title || d.name} at ${clock(at)}`, { time: at, note })
   }
 
   const snap = (t: number, self: Clip): number => {

@@ -13,6 +13,8 @@ type ChatStore = {
   bind: () => void
   load: () => Promise<void>
   send: (text: string, context: unknown) => Promise<void>
+  /** Send again without touching the draft or attached chips (Try again). */
+  resend: (text: string) => Promise<void>
   stop: () => Promise<void>
   decide: (id: string, decision: PermissionDecision) => Promise<void>
   addChip: (c: Chip) => void
@@ -58,6 +60,14 @@ export const useChat = create<ChatStore>((set, get) => ({
       await luca.agent.send({ text, chips, context })
     } catch (err) {
       set({ error: String(err instanceof Error ? err.message : err), draft: text, chips })
+    }
+  },
+  resend: async (text) => {
+    set({ error: null })
+    try {
+      await luca.agent.send({ text, chips: [], context: {} })
+    } catch (err) {
+      set({ error: String(err instanceof Error ? err.message : err) })
     }
   },
   stop: () => luca.agent.interrupt(),

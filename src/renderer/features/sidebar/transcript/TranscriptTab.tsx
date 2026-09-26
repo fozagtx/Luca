@@ -19,8 +19,8 @@ const STAGE_LABEL: Record<CleanStatus['stage'], string> = {
   uploading: 'Uploading audio to AssemblyAI…',
   transcribing: 'Transcribing…',
   candidates: 'Finding fillers and pauses…',
-  reviewing: 'Claude is reviewing the cut list…',
-  applying: 'Cutting with ffmpeg…',
+  reviewing: 'Luca is reviewing the cut list…',
+  applying: 'Cutting the video…',
   relinking: 'Relinking the timeline…',
   done: 'Clean edit done',
   error: 'Clean edit failed'
@@ -222,7 +222,7 @@ export function TranscriptTab(): ReactElement {
       {!transcript ? (
         <EmptyPane
           title="No transcript yet"
-          hint="Clean edit transcribes the video with AssemblyAI (fillers kept), proposes cuts, lets Claude judge retakes and produces a clean master clip."
+          hint="Clean edit transcribes the video with AssemblyAI (fillers kept), proposes cuts, lets Luca judge retakes and produces a clean master clip."
         />
       ) : (
         <>
