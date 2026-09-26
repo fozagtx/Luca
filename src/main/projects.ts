@@ -439,7 +439,8 @@ function touchRecent(p: Project, duration?: number): void {
     aspect: p.aspect,
     lastOpenedAt: p.lastOpenedAt,
     duration: duration ?? prev?.duration ?? durationFor(p.dir),
-    thumb: thumbFor(p.dir)
+    // read from the project's cache when listed; kept out of settings.json, which is rewritten often
+    thumb: null
   }
   const rest = s.recentProjects.filter((r) => r.dir !== p.dir)
   updateSettings({ recentProjects: [entry, ...rest].slice(0, 12) })
@@ -456,10 +457,23 @@ function durationFor(dir: string): number | null {
   }
 }
 
+const thumbCache = new Map<string, { mtimeMs: number; url: string }>()
+
+/** The poster as a data URL, re-read only when the file changes (Recent is listed often). */
 function thumbFor(dir: string): string | null {
   const t = join(dir, '.luca', 'cache', 'poster.jpg')
-  if (!existsSync(t)) return null
-  return `data:image/jpeg;base64,${readFileSync(t).toString('base64')}`
+  let mtimeMs: number
+  try {
+    mtimeMs = statSync(t).mtimeMs
+  } catch {
+    thumbCache.delete(t)
+    return null
+  }
+  const hit = thumbCache.get(t)
+  if (hit?.mtimeMs === mtimeMs) return hit.url
+  const url = `data:image/jpeg;base64,${readFileSync(t).toString('base64')}`
+  thumbCache.set(t, { mtimeMs, url })
+  return url
 }
 
 const posterQueued = new Set<string>()
