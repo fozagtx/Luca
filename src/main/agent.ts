@@ -36,6 +36,7 @@ const SYSTEM_RULES = [
   '3. Add HyperFrames items with `npx hyperframes add <name> --json`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.',
   '4. After every edit, run `npx hyperframes lint --json` and fix errors before replying.',
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
+  'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a title, caption, scene, animation, effect, transition, background) and use the plain-English title of anything you added, not its id.',
   'Keep replies short: say what you changed and why, no preamble.'
 ].join('\n')
 
@@ -80,7 +81,7 @@ function summarize(name: string, input: Record<string, unknown>): string {
     case 'Bash': {
       const cmd = String(input.command ?? '')
       const m = /npx\s+hyperframes(?:@[\w.-]+)?\s+(\w+)/.exec(cmd)
-      if (m) return `Ran hyperframes ${m[1]}`
+      if (m) return `Ran ${m[1]}`
       return `Ran ${cmd.split('\n')[0].slice(0, 80)}`
     }
     default:

@@ -13,7 +13,7 @@ import { useUi } from '../../stores/ui'
 
 const qualities: { id: ExportOptions['quality']; label: string; hint: string }[] = [
   { id: 'draft', label: 'Draft', hint: 'Fast, for review' },
-  { id: 'looks', label: 'Final', hint: 'HyperFrames default, CRF 16' }
+  { id: 'looks', label: 'Final', hint: 'Best quality, for sharing' }
 ]
 
 export function ExportSheet(): ReactElement {

@@ -37,8 +37,8 @@ type Source = LibrarySource | 'all'
 
 const sources = [
   { id: 'all', label: 'All' },
-  { id: 'hyperframes', label: 'HyperFrames' },
-  { id: 'remocn', label: 'Remocn' }
+  { id: 'hyperframes', label: 'Built-in' },
+  { id: 'remocn', label: 'Extras' }
 ] as const satisfies readonly { id: Source; label: string }[]
 
 type Studio = { ready: boolean; step?: string; error?: string }
@@ -452,7 +452,7 @@ function Card({ item, onRemocnUse }: { item: LibraryItem; onRemocnUse: () => voi
     >
       <ItemPreview item={item} hover={hover} className="rounded-[6px]">
         <span className="absolute top-1 left-1 rounded-[4px] bg-black/45 px-1 py-px text-[9px] font-medium tracking-[0.02em] text-white backdrop-blur-sm">
-          {item.source === 'remocn' ? 'Remocn' : item.type === 'block' ? 'Block' : 'Component'}
+          {item.source === 'remocn' ? 'Extra' : item.type === 'block' ? 'Block' : 'Component'}
         </span>
         <span className="absolute top-1 right-1 flex size-6 scale-90 items-center justify-center rounded-full bg-white/90 text-[#111] opacity-0 shadow-sm transition-[opacity,transform] duration-150 group-hover:scale-100 group-hover:opacity-100">
           <Plus size={13} strokeWidth={2.25} />
@@ -511,9 +511,9 @@ function RemocnSetup({
 
   return (
     <div className="card mx-3 mb-2 p-3 text-[11.5px] text-text-2">
-      <div className="font-medium text-text">Remocn needs a one-time setup</div>
+      <div className="font-medium text-text">Extras need a one-time setup</div>
       <p className="mt-0.5 leading-[1.45]">
-        Luca prepares a small animation workspace so Remocn components can play in your video. It
+        Luca prepares a small animation workspace so the extra animations can play in your video. It
         takes about two minutes.
       </p>
       {err ? (
@@ -521,7 +521,7 @@ function RemocnSetup({
       ) : null}
       <div className="mt-2 flex items-center gap-2">
         <Button size="sm" variant="primary" disabled={settingUp} onClick={() => void setup()}>
-          {settingUp ? 'Setting up…' : 'Set up Remocn'}
+          {settingUp ? 'Setting up…' : 'Set up extras'}
         </Button>
         {settingUp && studio.step ? (
           <span className="shimmer-text text-[11px]">{studio.step}</span>

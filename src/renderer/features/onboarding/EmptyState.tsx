@@ -139,8 +139,8 @@ function StartCard(): ReactElement {
           What are we making today?
         </h1>
         <p className="max-w-[460px] text-[13px] leading-relaxed text-text-2">
-          Start from a video, one photo, a handful of images or just an idea. Luca builds it with
-          HyperFrames: scenes, components, keyframes and motion.
+          Start from a video, one photo, a handful of images or just an idea. Luca builds the
+          scenes, titles, effects and motion for you.
         </p>
       </div>
 

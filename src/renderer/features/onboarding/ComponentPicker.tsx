@@ -118,7 +118,7 @@ export function ComponentPicker({ disabled }: { disabled?: boolean }): ReactElem
                         </span>
                         <span className="block truncate text-[11px] text-text-3">
                           {categoryLabel(i.category)}
-                          {i.source === 'remocn' ? ' · Remocn' : ''}
+                          {i.source === 'remocn' ? ' · Extra' : ''}
                         </span>
                       </span>
                       <span
