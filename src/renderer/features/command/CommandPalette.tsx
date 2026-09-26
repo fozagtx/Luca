@@ -83,14 +83,14 @@ export function CommandPalette(): ReactElement {
     },
     {
       id: 'dictate',
-      label: 'Dictate to Claude',
+      label: 'Dictate a message',
       icon: <Mic size={14} strokeWidth={1.5} />,
       run: () => void useVoice.getState().start('dictate'),
       needsProject: true
     },
     {
       id: 'voice',
-      label: 'Voice mode: talk with Claude',
+      label: 'Voice mode: talk with Luca',
       icon: <AudioLines size={14} strokeWidth={1.5} />,
       run: () => void useVoice.getState().start('converse'),
       needsProject: true

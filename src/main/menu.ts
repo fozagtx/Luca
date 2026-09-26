@@ -92,7 +92,7 @@ export function buildAppMenu(): void {
           ]
         },
         { type: 'separator' },
-        { label: 'Files', accelerator: 'Cmd+1', click: () => send('tab', 'files') },
+        { label: 'Inspiration', accelerator: 'Cmd+1', click: () => send('tab', 'inspiration') },
         { label: 'Catalog', accelerator: 'Cmd+2', click: () => send('tab', 'catalog') },
         { label: 'Transcript', accelerator: 'Cmd+3', click: () => send('tab', 'transcript') },
         { label: 'Looks', accelerator: 'Cmd+4', click: () => send('tab', 'looks') },

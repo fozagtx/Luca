@@ -1,3 +1,5 @@
+import type { Activity } from './activity'
+
 export type Aspect = 'landscape' | 'portrait' | 'square'
 
 export type Project = {
@@ -80,6 +82,7 @@ export type AgentEvent =
       summary: string
       status: 'running' | 'done' | 'error'
       detail?: string
+      activity?: Activity
     }
   | { type: 'permission'; id: string; tool: string; input: unknown }
   | { type: 'permission-resolved'; id: string }
@@ -101,6 +104,8 @@ export type ChatContentPart =
       summary: string
       status: 'running' | 'done' | 'error'
       detail?: string
+      /** Plain-language description (older history may not have it). */
+      activity?: Activity
     }
   | { type: 'permission'; id: string; tool: string; input: unknown; resolved?: PermissionDecision }
 
@@ -113,6 +118,8 @@ export type ChatMessage = {
   parts?: ChatContentPart[]
   pending?: boolean
   isError?: boolean
+  /** How long the assistant turn took, set when it ends. */
+  durationMs?: number
 }
 
 export type CutReason = 'filler' | 'pause' | 'retake' | 'false_start' | 'manual'
@@ -150,6 +157,9 @@ export type RemocnItem = {
   avoidFor: string
   naturalLength: string
   docs: string
+  title?: string
+  description?: string
+  vibe?: string
 }
 
 export type Checkpoint = {

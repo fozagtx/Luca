@@ -3,6 +3,7 @@ import { useState, type DragEvent, type ReactElement } from 'react'
 import logo from '../../assets/logo.png'
 import { AnimatedButton } from '../../components/ui/animated-button'
 import { Button } from '../../components/ui/button'
+import { Thumb } from '../../components/ui/thumb'
 import { luca } from '../../lib/luca'
 import { cn } from '../../lib/cn'
 import { formatDuration, relativeDate } from '../../lib/format'
@@ -99,25 +100,23 @@ export function EmptyState(): ReactElement {
                 disabled={loading}
                 title={r.dir}
               >
-                <div className="relative aspect-video w-full overflow-hidden rounded-[6px] bg-bg-muted">
-                  {r.thumb ? (
-                    <img
-                      src={r.thumb}
-                      alt=""
-                      draggable={false}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                    />
-                  ) : (
+                <Thumb
+                  src={r.thumb}
+                  lazy={false}
+                  className="aspect-video w-full rounded-[6px]"
+                  imgClassName="transition-[opacity,transform] duration-300 group-hover:scale-[1.03]"
+                  fallback={
                     <div className="flex h-full w-full items-center justify-center text-text-3">
                       <Film size={18} strokeWidth={1.5} />
                     </div>
-                  )}
+                  }
+                >
                   {r.duration ? (
                     <span className="absolute right-1.5 bottom-1.5 rounded-[4px] bg-black/70 px-1.5 py-[2px] font-mono text-[10px] tabular-nums text-white">
                       {formatDuration(r.duration)}
                     </span>
                   ) : null}
-                </div>
+                </Thumb>
                 <div className="px-1 pt-2 pb-0.5">
                   <div className="truncate text-[12px] font-medium text-text">{r.name}</div>
                   <div className="mt-px text-[11px] text-text-3">

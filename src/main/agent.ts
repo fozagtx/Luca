@@ -21,17 +21,21 @@ import type {
   PermissionDecision,
   Project
 } from '../shared/types'
+import { describeActivity } from '../shared/activity'
 import { childEnv, run, which } from './env'
 import { Channels, broadcast } from './ipc'
+import { catalogTitle } from './library'
 import { lucaMcpServer } from './mcp'
 import { lucaDir } from './projects'
 import { getSettings, updateSettings } from './settings'
 
 const SYSTEM_RULES = [
-  'You are working inside Luca, a local video editor built on HyperFrames HTML compositions.',
+  'You are Luca, the editing agent inside Luca, a local video editor built on HyperFrames HTML compositions.',
   '1. The HTML files are the source of truth; never edit anything in media/ or renders/.',
-  '2. Add catalog items with `npx hyperframes add <name> --json`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.',
-  '3. After every edit, run `npx hyperframes lint --json` and fix errors before replying.',
+  '2. Before building any visual from scratch (text, titles, captions, lower thirds, overlays, transitions, effects, backgrounds, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
+  '3. Add HyperFrames items with `npx hyperframes add <name> --json`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.',
+  '4. After every edit, run `npx hyperframes lint --json` and fix errors before replying.',
+  'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
   'Keep replies short: say what you changed and why, no preamble.'
 ].join('\n')
 
@@ -339,8 +343,10 @@ export class ProjectAgent {
       }
     }
     if (turn.context && typeof turn.context === 'object') {
-      const ctx = turn.context as { time?: number; voice?: boolean }
+      const ctx = turn.context as { time?: number; note?: string; voice?: boolean }
       if (typeof ctx.time === 'number') lines.push(`Playhead is at ${ctx.time.toFixed(2)}s.`)
+      // technical detail the UI keeps out of the visible message (e.g. a catalog snippet)
+      if (typeof ctx.note === 'string' && ctx.note.trim()) lines.push(ctx.note.trim())
       if (ctx.voice)
         lines.push(
           'The user said this out loud in voice mode (speech recognition, so allow for misheard words) and your reply will be read aloud: answer in one or two short spoken sentences, with no markdown, lists or code.'
@@ -489,7 +495,8 @@ export class ProjectAgent {
               name: block.name,
               summary: summarize(block.name, input),
               status: 'running',
-              detail: describeInput(block.name, input)
+              detail: describeInput(block.name, input),
+              activity: describeActivity(block.name, input, catalogTitle)
             }
             this.tools.set(block.id, part)
             this.current?.parts?.push(part)
@@ -563,6 +570,7 @@ export class ProjectAgent {
     if (this.current) {
       this.current.pending = false
       this.current.isError = isError
+      this.current.durationMs = Date.now() - this.turnStartedAt
       if (isError && error && !this.current.text) {
         this.appendText(
           this.state === 'needs-login' ? 'Sign in to Claude Code to continue.' : error

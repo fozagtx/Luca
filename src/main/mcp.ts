@@ -1,22 +1,81 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
+import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
+import { library } from './library'
 import { installComponent, placeComponent, studioStatus } from './remocn'
 
 const text = (data: unknown): { content: { type: 'text'; text: string }[] } => ({
   content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data) }]
 })
 
-/** Luca's in-process MCP server: the remocn tools described in the spec. */
+const categoryIds = CATEGORIES.map((c) => c.id) as [
+  LibraryItem['category'],
+  ...LibraryItem['category'][]
+]
+
+function describe(i: LibraryItem): Record<string, unknown> {
+  const base = {
+    name: i.name,
+    source: i.source,
+    kind: i.type,
+    title: i.title,
+    category: categoryLabel(i.category),
+    description: i.description.length > 240 ? `${i.description.slice(0, 240)}…` : i.description
+  }
+  if (i.source === 'hyperframes')
+    return {
+      ...base,
+      ...(i.duration ? { durationSeconds: Math.round(i.duration * 10) / 10 } : {}),
+      add: `npx hyperframes add ${i.name} --json`
+    }
+  return {
+    ...base,
+    useFor: i.remocn?.useFor,
+    avoidFor: i.remocn?.avoidFor,
+    length: i.remocn?.naturalLength,
+    docs: i.remocn?.docs,
+    add: `remocn_install {"name":"${i.name}"}, write remocn/<clipId>.tsx, then remocn_place`
+  }
+}
+
+/** Luca's in-process MCP server: catalog search plus the remocn tools described in the spec. */
 export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMcpServer> {
   return createSdkMcpServer({
     name: 'luca',
     version: '1.0.0',
     instructions:
+      'catalog_search finds ready-made HyperFrames blocks/components and Remocn components by ' +
+      'plain words ("lower third", "text reveal", "captions", "logo intro", "bar chart"). Use it ' +
+      'before building any visual from scratch; never grep or script the catalog yourself. ' +
       'Remocn components are React/Remotion. Never put React in the HyperFrames HTML. ' +
       'Install with remocn_install, read the returned docs URL, write remocn/<clipId>.tsx in the ' +
       'project (default export rendering the component with props, plus `export const durationInFrames`), ' +
       'then call remocn_place. Re-run remocn_place with the same clipId after editing the wrapper.',
     tools: [
+      tool(
+        'catalog_search',
+        'Search every ready-made HyperFrames block/component and Remocn component by what it looks like or does. Returns the best matches with what each is for and how to add it.',
+        {
+          query: z
+            .string()
+            .describe('plain words, e.g. "lower third", "kinetic text", "captions", "logo intro"'),
+          source: z.enum(['all', 'hyperframes', 'remocn']).optional().describe('default all'),
+          category: z
+            .enum(categoryIds)
+            .optional()
+            .describe(`narrow to one group: ${CATEGORIES.map((c) => c.id).join(', ')}`),
+          limit: z.number().int().min(1).max(40).optional().describe('default 12')
+        },
+        async ({ query, source, category, limit }) => {
+          const items = await library(projectDir)
+          const hits = searchLibrary(items, query, { source: source ?? 'all', category })
+          return text({
+            query,
+            total: hits.length,
+            results: hits.slice(0, limit ?? 12).map(describe)
+          })
+        }
+      ),
       tool(
         'remocn_install',
         'Install a remocn component into the shared Remotion studio (once per component). Returns the import path and docs URL.',

@@ -154,9 +154,8 @@ function NewProjectForm({
           </label>
         )}
         {loading && (
-          <div className="text-[12px] text-text-2">
-            Running <span className="font-mono">hyperframes init</span>… copying the video and
-            writing index.html.
+          <div className="shimmer-text text-[12px] font-medium">
+            Setting up your project… copying the video and preparing the timeline.
           </div>
         )}
         {error && (

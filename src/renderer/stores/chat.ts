@@ -14,6 +14,8 @@ type ChatStore = {
   load: () => Promise<void>
   /** `keepDraft` leaves the composer text alone (voice turns); chips are always consumed. */
   send: (text: string, context: unknown, opts?: { keepDraft?: boolean }) => Promise<void>
+  /** Send again without touching the draft or attached chips (Try again). */
+  resend: (text: string) => Promise<void>
   stop: () => Promise<void>
   decide: (id: string, decision: PermissionDecision) => Promise<void>
   addChip: (c: Chip) => void
@@ -64,6 +66,14 @@ export const useChat = create<ChatStore>((set, get) => ({
         chips,
         ...(restore ? { draft: text } : {})
       })
+    }
+  },
+  resend: async (text) => {
+    set({ error: null })
+    try {
+      await luca.agent.send({ text, chips: [], context: {} })
+    } catch (err) {
+      set({ error: String(err instanceof Error ? err.message : err) })
     }
   },
   stop: () => luca.agent.interrupt(),

@@ -10,6 +10,7 @@ import {
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { RemocnItem } from '../shared/types'
+import bundled from './catalog/remocn.json'
 import { childEnv, run, which } from './env'
 import { readTimeline } from './hyperframes'
 import { appDataDir } from './settings'
@@ -122,24 +123,48 @@ export function setupStudio(): Promise<{ ok: boolean; error?: string }> {
 // ---------------------------------------------------------------------------------------------
 // Catalog
 
+/** Copy of the index bundled with Luca (built from the remocn docs), with titles and descriptions. */
+const bundledRemocn = bundled as RemocnItem[]
+const bundledByName = new Map(bundledRemocn.map((i) => [i.name, i]))
+
+/** Index rows carry no titles or descriptions; take them from the bundled copy. */
+function enrich(items: RemocnItem[]): RemocnItem[] {
+  return items.map((i) => {
+    const b = bundledByName.get(i.name)
+    return b && !i.description
+      ? { ...i, title: b.title, description: b.description, vibe: b.vibe }
+      : i
+  })
+}
+
+function readRemocnCache(file: string): RemocnItem[] | null {
+  try {
+    const items = JSON.parse(readFileSync(file, 'utf8')) as RemocnItem[]
+    return Array.isArray(items) && items.length > 0 ? enrich(items) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The remocn component index: the daily cache, else remocn.dev, else the last cache, else the
+ * bundled copy, so remocn components are always listed even offline.
+ */
 export async function remocnCatalog(refresh = false): Promise<RemocnItem[]> {
   const cacheFile = join(appDataDir(), 'remocn-catalog.json')
   if (!refresh && existsSync(cacheFile) && Date.now() - statSync(cacheFile).mtimeMs < DAY) {
-    try {
-      return JSON.parse(readFileSync(cacheFile, 'utf8')) as RemocnItem[]
-    } catch {
-      // refetch
-    }
+    const cached = readRemocnCache(cacheFile)
+    if (cached) return cached
   }
   try {
-    const res = await fetch(INDEX_URL)
+    const res = await fetch(INDEX_URL, { signal: AbortSignal.timeout(15_000) })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const items = parseIndex(await res.text())
+    const items = enrich(parseIndex(await res.text()))
+    if (items.length === 0) throw new Error('empty index')
     writeFileSync(cacheFile, JSON.stringify(items))
     return items
-  } catch (err) {
-    if (existsSync(cacheFile)) return JSON.parse(readFileSync(cacheFile, 'utf8')) as RemocnItem[]
-    throw new Error(`Could not load the remocn index: ${String(err)}`)
+  } catch {
+    return (existsSync(cacheFile) && readRemocnCache(cacheFile)) || bundledRemocn
   }
 }
 

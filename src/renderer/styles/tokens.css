@@ -188,11 +188,14 @@ textarea {
 *:focus {
   outline: none;
 }
+/* Keyboard focus on controls only; text fields show focus through their own border. */
 *:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
   outline-offset: 1px;
 }
+input:focus-visible,
 textarea:focus-visible,
+select:focus-visible,
 .no-ring:focus-visible {
   outline: none;
 }
@@ -417,13 +420,245 @@ body.inactive ::selection {
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, var(--hover), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--bg) 70%, transparent),
+    transparent
+  );
   animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+.dark .skeleton::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
 }
 @keyframes skeleton-sweep {
   to {
     transform: translateX(100%);
   }
+}
+
+/* ---------------------------------------------------------------- AI chat (after prompt-kit) */
+
+/* TextShimmer: a light band travelling through muted text, for "Luca is …" states */
+.shimmer-text {
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    var(--text-3) 0%,
+    var(--text-3) 35%,
+    var(--text) 50%,
+    var(--text-3) 65%,
+    var(--text-3) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: text-shimmer 2.4s linear infinite;
+}
+@keyframes text-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+/* Typing dots loader */
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.typing-dots > span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.35;
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+.typing-dots > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dots > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* Message entrance */
+.msg-in {
+  animation: msg-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.fade-in {
+  animation: fade-in 220ms ease-out both;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Streaming reply: a soft pulsing dot after the last word */
+.stream-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  vertical-align: 1px;
+  animation: stream-dot 1s ease-in-out infinite;
+}
+@keyframes stream-dot {
+  50% {
+    opacity: 0.3;
+    transform: scale(0.7);
+  }
+}
+
+/* Spinning ring for the active step */
+.step-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Avatar ring pulses while Luca works */
+.avatar-live {
+  position: relative;
+}
+.avatar-live::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 1.5px solid var(--accent);
+  opacity: 0;
+  animation: avatar-pulse 1.8s ease-out infinite;
+}
+@keyframes avatar-pulse {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+}
+
+/* Reply typography */
+.prose-chat {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.prose-chat > * + * {
+  margin-top: 8px;
+}
+.prose-chat ul,
+.prose-chat ol {
+  padding-left: 18px;
+}
+.prose-chat ul {
+  list-style: disc;
+}
+.prose-chat ol {
+  list-style: decimal;
+}
+.prose-chat li + li {
+  margin-top: 3px;
+}
+.prose-chat li::marker {
+  color: var(--text-3);
+}
+.prose-chat strong {
+  font-weight: 600;
+}
+.prose-chat code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--bg-muted);
+}
+.prose-chat h4 {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Horizontal chip rail with faded edges */
+.chip-rail {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 18px), transparent);
+}
+.chip-rail::-webkit-scrollbar {
+  display: none;
+}
+.chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    border-color 150ms ease-out,
+    transform 150ms ease-out;
+}
+.chip:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.chip:active {
+  transform: scale(0.97);
+}
+.chip[data-active='true'] {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
 }
 
 /* Vengeance-style glow border card */

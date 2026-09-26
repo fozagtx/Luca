@@ -16,13 +16,13 @@ function hint(mode: VoiceMode, phase: VoicePhase): string {
     case 'finishing':
       return 'Finishing the transcript…'
     case 'thinking':
-      return 'Claude is working on it. Keep talking to add more.'
+      return 'Luca is working on it. Keep talking to add more.'
     case 'speaking':
-      return 'Claude is answering…'
+      return 'Luca is answering…'
     default:
       return mode === 'dictate'
         ? 'Listening… speak and your words appear here.'
-        : 'Listening… ask Claude to change your video.'
+        : 'Listening… ask Luca to change your video.'
   }
 }
 
@@ -30,7 +30,7 @@ function hint(mode: VoiceMode, phase: VoicePhase): string {
 export function VoiceRecorder(): ReactElement | null {
   const { mode, phase, finals, partial, startedAt, finish, cancel, skipSpeech } = useVoice()
   const working = useChat((s) => s.state === 'working')
-  const stopClaude = useChat((s) => s.stop)
+  const stopLuca = useChat((s) => s.stop)
   const scroll = useRef<HTMLDivElement>(null)
   const heard = finals.join(' ')
 
@@ -66,11 +66,10 @@ export function VoiceRecorder(): ReactElement | null {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
-      className="px-2 pt-1 pb-2"
     >
       <div
         ref={scroll}
-        className="scroll max-h-[152px] min-h-[38px] px-1 pb-1.5 text-[13px] leading-[19px] text-text select-text"
+        className="scroll max-h-[170px] min-h-[50px] px-3.5 pt-2.5 text-[13px] leading-[20px] text-text select-text"
       >
         {heard || partial ? (
           <>
@@ -82,7 +81,7 @@ export function VoiceRecorder(): ReactElement | null {
           <span className="text-text-3">{hint(mode, phase)}</span>
         )}
       </div>
-      <div className="flex h-8 items-center gap-2.5">
+      <div className="flex items-center gap-2 pt-0.5 pr-2 pb-2 pl-3.5">
         <Status mode={mode} phase={phase} startedAt={startedAt} />
         <VoiceBars
           state={bars}
@@ -121,12 +120,12 @@ export function VoiceRecorder(): ReactElement | null {
               </Tip>
             ) : null}
             {working ? (
-              <Tip label="Stop Claude" side="top">
+              <Tip label="Stop" side="top">
                 <button
                   type="button"
                   className="icon-btn"
-                  onClick={() => void stopClaude()}
-                  aria-label="Stop Claude"
+                  onClick={() => void stopLuca()}
+                  aria-label="Stop"
                 >
                   <Square size={11} fill="currentColor" />
                 </button>

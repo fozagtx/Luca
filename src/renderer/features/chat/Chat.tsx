@@ -1,41 +1,14 @@
-import type { ChatContentPart, ChatMessage, Chip } from '@shared/types'
-import {
-  AtSign,
-  AudioLines,
-  ChevronRight,
-  CircleAlert,
-  FileCode2,
-  Image as ImageIcon,
-  LoaderCircle,
-  Mic,
-  MousePointer2,
-  Package,
-  Scissors,
-  Sparkles,
-  Square,
-  Type,
-  X
-} from 'lucide-react'
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactElement
-} from 'react'
+import type { ChatMessage } from '@shared/types'
+import { ArrowDown, Check, ChevronRight, Copy, LogIn, RotateCcw } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useStickToBottom } from '../../components/ai/use-stick-to-bottom'
 import { Button } from '../../components/ui/button'
-import { GenerateButton } from '../../components/ui/generate-button'
-import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
-import { catalogChip, hasCatalogDrag, readCatalogDrag } from '../../lib/drag'
-import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
-import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
-import { useVoice } from '../../stores/voice'
-import { AssemblyAiKeyCard } from '../onboarding/AssemblyAiKeyCard'
-import { VoiceRecorder } from './VoiceRecorder'
+import { Composer } from './Composer'
+import { AssistantMessage, UserMessage } from './Message'
+import { LucaAvatar, LucaProfile, Suggestions } from './Profile'
 
 export function Chat(): ReactElement {
   const projectDir = useProject((s) => s.project?.dir ?? null)
@@ -53,500 +26,212 @@ export function Chat(): ReactElement {
       <header className="panel-head shrink-0">
         <span className="panel-title">Chat</span>
         <div className="ml-auto">
-          <StatusDot />
+          <Status />
         </div>
       </header>
-      {state === 'needs-login' || state === 'missing-claude' ? (
-        <Onboarding state={state} detail={detail} />
-      ) : null}
-      <Messages messages={messages} />
+      <Messages
+        messages={messages}
+        disabled={!projectDir}
+        onboarding={
+          state === 'needs-login' || state === 'missing-claude' ? (
+            <Onboarding state={state} detail={detail} />
+          ) : null
+        }
+      />
       <Composer disabled={!projectDir} />
     </section>
   )
 }
 
-function StatusDot(): ReactElement {
+const STATUS: Record<string, { label: string; dot: string }> = {
+  idle: { label: 'Ready', dot: 'bg-text-3' },
+  ready: { label: 'Ready', dot: 'bg-success' },
+  starting: { label: 'Waking up…', dot: 'bg-accent animate-pulse' },
+  working: { label: 'Working…', dot: 'bg-accent animate-pulse' },
+  'needs-login': { label: 'Sign in needed', dot: 'bg-warning' },
+  'missing-claude': { label: 'Setup needed', dot: 'bg-warning' },
+  error: { label: 'Something went wrong', dot: 'bg-danger' }
+}
+
+function Status(): ReactElement {
   const state = useChat((s) => s.state)
-  const label: Record<string, string> = {
-    idle: 'Idle',
-    starting: 'Starting Claude…',
-    ready: 'Claude ready',
-    working: 'Working…',
-    'needs-login': 'Sign in required',
-    'missing-claude': 'Claude Code not installed',
-    error: 'Error'
-  }
-  const color =
-    state === 'ready'
-      ? 'bg-[#34C759]'
-      : state === 'working' || state === 'starting'
-        ? 'bg-accent animate-pulse'
-        : state === 'idle'
-          ? 'bg-text-3'
-          : 'bg-[#FF9500]'
+  const s = STATUS[state] ?? { label: state, dot: 'bg-text-3' }
   return (
-    <span className="flex items-center gap-1.5 text-[11px] font-normal text-text-3">
-      <span className={cn('size-1.5 rounded-full', color)} />
-      {label[state] ?? state}
+    <span className="flex items-center gap-1.5 text-[11px] text-text-3">
+      <span className={cn('size-1.5 rounded-full transition-colors', s.dot)} />
+      {s.label}
     </span>
+  )
+}
+
+function Messages({
+  messages,
+  disabled,
+  onboarding
+}: {
+  messages: ChatMessage[]
+  disabled: boolean
+  onboarding: ReactElement | null
+}): ReactElement {
+  const working = useChat((s) => s.state === 'working')
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom()
+  // only messages that arrive while the chat is open animate in, not a reloaded history
+  const [mountedAt] = useState(() => Date.now())
+  const empty = messages.length === 0
+  // for Try again: the request each assistant message answered
+  const askedBefore = useMemo(() => {
+    const out = new Map<string, string>()
+    let asked: string | undefined
+    for (const m of messages) {
+      if (m.role === 'user') asked = m.text
+      else if (asked) out.set(m.id, asked)
+    }
+    return out
+  }, [messages])
+
+  return (
+    <div className="relative min-h-0 flex-1">
+      <div ref={scrollRef} className="scroll h-full">
+        <div
+          ref={contentRef}
+          className={cn('flex min-h-full flex-col px-3.5 pb-4', empty && 'justify-center')}
+        >
+          <LucaProfile compact={!empty} live={working} />
+          {onboarding}
+          {empty ? (
+            <div className="mx-auto w-full max-w-[340px] pt-1">
+              <Suggestions disabled={disabled} />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-2 text-[10.5px] font-medium text-text-3">
+                <span className="h-px flex-1 bg-border" />
+                Conversation
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              {messages.map((m) => {
+                const animate = new Date(m.createdAt).getTime() > mountedAt - 500
+                return m.role === 'user' ? (
+                  <UserMessage key={m.id} m={m} animate={animate} />
+                ) : (
+                  <AssistantMessage
+                    key={m.id}
+                    m={m}
+                    animate={animate}
+                    lastUserText={askedBefore.get(m.id)}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+      <button
+        type="button"
+        aria-label="Scroll to the latest message"
+        onClick={() => scrollToBottom()}
+        className={cn(
+          'absolute bottom-2 left-1/2 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-bg text-text-2 shadow-popover transition-[opacity,transform] duration-200 ease-out hover:text-text',
+          isAtBottom || empty
+            ? 'pointer-events-none translate-y-3 scale-90 opacity-0'
+            : 'translate-y-0 scale-100 opacity-100'
+        )}
+      >
+        <ArrowDown size={14} />
+      </button>
+    </div>
   )
 }
 
 function Onboarding({ state, detail }: { state: string; detail?: string }): ReactElement {
   const { signIn, retry } = useChat()
   const [cmd, setCmd] = useState('npm install -g @anthropic-ai/claude-code')
+  const [copied, setCopied] = useState(false)
+  const [showDetail, setShowDetail] = useState(false)
+  const [checking, setChecking] = useState(false)
   useEffect(() => {
     void window.luca.env.installClaudeCommand().then(setCmd)
   }, [])
-  return (
-    <div className="glow-card m-3">
-      <div className="rounded-[11px] bg-bg p-3.5 text-[12px] leading-[1.5] text-text">
-        {state === 'missing-claude' ? (
-          <>
-            <div className="flex items-center gap-2 text-[13px] font-semibold">
-              <span className="flex size-6 items-center justify-center rounded-[6px] bg-secondary text-secondary-fg">
-                <Sparkles size={13} />
-              </span>
-              Install Claude Code
-            </div>
-            <p className="mt-1 text-text-2">
-              Luca drives your own Claude Code binary. Install it, then retry.
-            </p>
-            <code className="mt-2 block select-text rounded-[6px] bg-bg px-2 py-1 font-mono text-[11px]">
-              {cmd}
-            </code>
-            <div className="mt-3 flex gap-2">
-              <Button variant="primary" onClick={() => void retry()}>
-                Retry
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="flex items-center gap-2 text-[13px] font-semibold">
-              <span className="flex size-6 items-center justify-center rounded-[6px] bg-secondary text-secondary-fg">
-                <Sparkles size={13} />
-              </span>
-              Sign in to Claude Code
-            </div>
-            <p className="mt-1 text-text-2">
-              Luca uses your Claude account through the stock{' '}
-              <code className="font-mono">claude</code> binary. Sign in opens Terminal running{' '}
-              <code className="font-mono">claude /login</code>; Luca never sees your credentials.
-            </p>
-            {detail ? (
-              <div className="mt-2.5 flex items-start gap-2 rounded-[8px] border border-danger/25 bg-danger/8 px-2.5 py-2 text-danger">
-                <CircleAlert size={13} className="mt-px shrink-0" />
-                <pre className="max-h-16 min-w-0 flex-1 select-text overflow-auto whitespace-pre-wrap font-mono text-[10.5px] leading-[1.45]">
-                  {detail}
-                </pre>
-              </div>
-            ) : null}
-            <div className="mt-3 flex gap-2">
-              <Button variant="primary" onClick={() => void signIn()}>
-                Sign in
-              </Button>
-              <Button variant="outline" onClick={() => void retry()}>
-                I signed in, retry
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
 
-function Messages({ messages }: { messages: ChatMessage[] }): ReactElement {
-  const ref = useRef<HTMLDivElement>(null)
-  const pinned = useRef(true)
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (el && pinned.current) el.scrollTop = el.scrollHeight
-  }, [messages])
-  const onScroll = (): void => {
-    const el = ref.current
-    if (!el) return
-    pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-  }
-  if (messages.length === 0) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-        <span className="flex size-9 items-center justify-center rounded-[10px] bg-secondary text-secondary-fg">
-          <Sparkles size={16} />
-        </span>
-        <div>
-          <div className="text-[13px] font-medium text-text">Ask Claude to edit your video</div>
-          <div className="mt-1 text-[11.5px] leading-[1.5] text-text-3">
-            “Add a title that says Hello” · “Make the captions bigger” · “Cut the first 2 seconds”
-          </div>
-        </div>
-      </div>
-    )
-  }
-  return (
-    <div ref={ref} onScroll={onScroll} className="flex-1 overflow-y-auto px-3 py-3">
-      <div className="flex flex-col gap-3">
-        {messages.map((m) =>
-          m.role === 'user' ? <UserBubble key={m.id} m={m} /> : <Assistant key={m.id} m={m} />
-        )}
-      </div>
-    </div>
-  )
-}
-
-function UserBubble({ m }: { m: ChatMessage }): ReactElement {
-  return (
-    <div className="ml-6 rounded-[10px] bg-bg-muted px-3 py-2 text-[13px] leading-[1.55] text-text">
-      {m.chips && m.chips.length > 0 ? (
-        <div className="mb-1.5 flex flex-wrap gap-1">
-          {m.chips.map((c, i) => (
-            <ChipPill key={i} chip={c} />
-          ))}
-        </div>
-      ) : null}
-      <div className="select-text whitespace-pre-wrap">{m.text}</div>
-    </div>
-  )
-}
-
-function Assistant({ m }: { m: ChatMessage }): ReactElement {
-  const parts =
-    m.parts && m.parts.length > 0
-      ? m.parts
-      : m.text
-        ? [{ type: 'text', text: m.text } as const]
-        : []
-  return (
-    <div className="flex flex-col gap-1.5">
-      {parts.map((p, i) => (
-        <Part key={i} part={p} />
-      ))}
-      {m.pending && parts.length === 0 ? (
-        <div className="flex items-center gap-1.5 text-[12px] text-text-3">
-          <LoaderCircle size={12} className="animate-spin" /> Thinking…
-        </div>
-      ) : null}
-      {m.isError && !m.pending ? (
-        <div className="flex items-center gap-1.5 text-[11px] text-danger">
-          <CircleAlert size={12} /> The turn ended with an error.
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function Part({ part }: { part: ChatContentPart }): ReactElement {
-  if (part.type === 'text') {
-    return (
-      <div className="select-text whitespace-pre-wrap text-[13px] leading-[1.55] text-text">
-        {part.text}
-      </div>
-    )
-  }
-  if (part.type === 'tool') return <ToolRow part={part} />
-  return <PermissionCard part={part} />
-}
-
-function ToolRow({ part }: { part: Extract<ChatContentPart, { type: 'tool' }> }): ReactElement {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="text-[12px]">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className={cn(
-          'inline-flex max-w-full items-center gap-1.5 rounded-[6px] border border-border bg-bg-subtle py-[3px] pr-2 pl-1.5 text-left font-mono text-[11px] text-text-2 transition-colors hover:bg-hover',
-          open && 'rounded-b-none'
-        )}
-      >
-        <span
-          className={cn(
-            'size-1.5 shrink-0 rounded-full',
-            part.status === 'running'
-              ? 'animate-pulse bg-accent'
-              : part.status === 'error'
-                ? 'bg-danger'
-                : 'bg-success'
-          )}
-        />
-        <span className="shrink-0 font-medium text-text-2">{part.name}</span>
-        <span className="truncate text-text-3">{part.summary}</span>
-        {part.detail ? (
-          <ChevronRight
-            size={11}
-            className={cn('shrink-0 text-text-3 transition-transform', open && 'rotate-90')}
-          />
-        ) : null}
-      </button>
-      {open && part.detail ? (
-        <pre className="max-h-60 select-text overflow-auto whitespace-pre-wrap rounded-[6px] rounded-tl-none border border-border bg-bg-subtle p-2 font-mono text-[11px] leading-[1.45] text-text-2">
-          {part.detail}
-        </pre>
-      ) : null}
-    </div>
-  )
-}
-
-function PermissionCard({
-  part
-}: {
-  part: Extract<ChatContentPart, { type: 'permission' }>
-}): ReactElement {
-  const decide = useChat((s) => s.decide)
-  const input = part.input as Record<string, unknown>
-  const detail = part.tool === 'Bash' ? String(input.command ?? '') : JSON.stringify(input, null, 2)
-  return (
-    <div className="rounded-[10px] border border-border bg-bg-muted p-2.5 text-[12px]">
-      <div className="mb-1 font-medium text-text">Claude wants to run {part.tool}</div>
-      <pre className="max-h-40 select-text overflow-auto whitespace-pre-wrap rounded-[6px] bg-bg p-2 font-mono text-[11px] leading-[1.45] text-text-2">
-        {detail}
-      </pre>
-      {part.resolved ? (
-        <div className="mt-1.5 text-[11px] text-text-3">
-          {part.resolved === 'deny'
-            ? 'Denied'
-            : part.resolved === 'allow-always'
-              ? 'Always allowed in this project'
-              : 'Allowed once'}
-        </div>
-      ) : (
-        <div className="mt-2 flex gap-1.5">
-          <Button size="sm" variant="primary" onClick={() => void decide(part.id, 'allow')}>
-            Allow once
-          </Button>
-          <Button size="sm" onClick={() => void decide(part.id, 'allow-always')}>
-            Always allow in this project
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => void decide(part.id, 'deny')}>
-            Deny
-          </Button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function chipIcon(chip: Chip): ReactElement {
-  switch (chip.kind) {
-    case 'element':
-      return <MousePointer2 size={12} />
-    case 'frame':
-      return <ImageIcon size={12} />
-    case 'catalog':
-      return <Package size={12} />
-    case 'clip':
-      return <Scissors size={12} />
-    case 'transcript':
-      return <Type size={12} />
-    default:
-      return <FileCode2 size={12} />
-  }
-}
-
-function chipLabel(chip: Chip): string {
-  switch (chip.kind) {
-    case 'element':
-      return chip.selector
-    case 'frame':
-      return `Frame ${clock(chip.time)}`
-    case 'catalog':
-      return chip.title || chip.name
-    case 'clip':
-      return chip.clipId
-    case 'transcript':
-      return `“${chip.text.slice(0, 24)}${chip.text.length > 24 ? '…' : ''}”`
-  }
-}
-
-export function ChipPill({ chip, onRemove }: { chip: Chip; onRemove?: () => void }): ReactElement {
-  return (
-    <span className="group relative inline-flex h-[22px] items-center gap-1 rounded-full border border-border bg-bg px-2 text-[11px] text-text-2">
-      {chipIcon(chip)}
-      <span className="max-w-40 truncate">{chipLabel(chip)}</span>
-      {onRemove ? (
-        <button
-          type="button"
-          onClick={onRemove}
-          className="ml-0.5 rounded-full text-text-3 hover:text-text"
-        >
-          <X size={11} />
-        </button>
-      ) : null}
-      {chip.kind === 'frame' ? (
-        <img
-          src={`data:image/png;base64,${chip.png}`}
-          alt=""
-          className="pointer-events-none absolute bottom-7 left-0 hidden w-40 rounded-[6px] border border-border shadow-md group-hover:block"
-        />
-      ) : null}
-    </span>
-  )
-}
-
-function ErrorNote({ text, onDismiss }: { text: string; onDismiss?: () => void }): ReactElement {
-  return (
-    <div className="mb-2 flex items-start gap-2 rounded-[8px] border border-danger/25 bg-danger/8 px-2.5 py-1.5 text-[11.5px] leading-[1.4] text-danger">
-      <CircleAlert size={13} className="mt-px shrink-0" />
-      <span className="flex-1 select-text">
-        {text.replace(/^Error invoking remote method '[^']+': Error: /, '')}
-      </span>
-      {onDismiss ? (
-        <button type="button" onClick={onDismiss} className="mt-px shrink-0" aria-label="Dismiss">
-          <X size={12} />
-        </button>
-      ) : null}
-    </div>
-  )
-}
-
-function Composer({ disabled }: { disabled: boolean }): ReactElement {
-  const { draft, setDraft, chips, addChip, removeChip, send, stop, state, error } = useChat()
-  const voiceMode = useVoice((s) => s.mode)
-  const voiceError = useVoice((s) => s.error)
-  const needsKey = useVoice((s) => s.needsKey)
-  const startVoice = useVoice((s) => s.start)
-  const dismissVoice = useVoice((s) => s.dismiss)
-  const [over, setOver] = useState(false)
-  const currentTime = usePlayer((s) => s.currentTime)
-  const ref = useRef<HTMLTextAreaElement>(null)
-  const working = state === 'working'
-
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = '0px'
-    const line = 19
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, line), line * 8 + 8)}px`
-  }, [draft, voiceMode])
-
-  const submit = (): void => {
-    const text = draft.trim()
-    if (!text || disabled) return
-    void send(text, { time: currentTime })
-  }
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      submit()
+  const check = async (): Promise<void> => {
+    setChecking(true)
+    try {
+      await retry()
+    } finally {
+      setChecking(false)
     }
   }
 
+  const missing = state === 'missing-claude'
   return (
-    <div
-      className="shrink-0 border-t border-border p-2.5"
-      onDragOver={(e) => {
-        if (!hasCatalogDrag(e.dataTransfer)) return
-        e.preventDefault()
-        e.dataTransfer.dropEffect = 'copy'
-        if (!over) setOver(true)
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        setOver(false)
-        const d = readCatalogDrag(e.dataTransfer)
-        if (!d) return
-        e.preventDefault()
-        addChip(catalogChip(d))
-        ref.current?.focus()
-      }}
-    >
-      {error ? <ErrorNote text={error} /> : null}
-      {voiceError ? <ErrorNote text={voiceError} onDismiss={dismissVoice} /> : null}
-      {needsKey ? (
-        <AssemblyAiKeyCard
-          className="mb-2"
-          onDismiss={dismissVoice}
-          onSaved={(ok) => {
-            if (ok) void startVoice(needsKey)
-          }}
-        >
-          Voice input streams your microphone to AssemblyAI’s real-time speech-to-text while you
-          talk. The key is stored in the macOS Keychain (safeStorage).
-        </AssemblyAiKeyCard>
-      ) : null}
-      <div
-        className={cn(
-          'rounded-[10px] border transition-[border-color,box-shadow] duration-150',
-          'focus-within:border-accent focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]',
-          // cn() doesn't merge, so pick one of each conflicting utility
-          over || voiceMode ? 'border-accent' : 'border-border',
-          over ? 'bg-accent/5' : 'bg-input',
-          voiceMode
-            ? 'shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]'
-            : 'shadow-[0_1px_2px_rgba(0,0,0,0.04)]'
-        )}
-      >
-        <div className="flex flex-wrap items-center gap-1 px-2 pt-2">
-          {chips.map((c, i) => (
-            <ChipPill key={i} chip={c} onRemove={() => removeChip(i)} />
-          ))}
-          <span className="inline-flex h-[22px] items-center gap-1 rounded-full px-1.5 text-[10.5px] text-text-3">
-            <AtSign size={11} />
-            {chips.length === 0 ? 'Grab an element or frame, or drop a catalog item' : 'Context'}
-          </span>
-        </div>
-        {voiceMode ? (
-          <VoiceRecorder />
-        ) : (
-          <div className="flex items-end gap-2 px-2 pt-1 pb-2">
-            <textarea
-              ref={ref}
-              id="chat-composer"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={onKey}
-              disabled={disabled}
-              rows={1}
-              placeholder={disabled ? 'Open a project to chat' : 'Ask Claude to edit…'}
-              className="flex-1 resize-none select-text bg-transparent px-1 pb-1.5 text-[13px] leading-[19px] text-text outline-none placeholder:text-text-3"
-            />
-            <div className="flex h-8 shrink-0 items-center">
-              <Tip label="Dictate" side="top">
-                <button
-                  type="button"
-                  className="icon-btn"
-                  disabled={disabled}
-                  onClick={() => void startVoice('dictate')}
-                  aria-label="Dictate"
-                >
-                  <Mic size={15} />
-                </button>
-              </Tip>
-              <Tip label="Voice mode: talk with Claude" side="top">
-                <button
-                  type="button"
-                  className="icon-btn"
-                  disabled={disabled}
-                  onClick={() => void startVoice('converse')}
-                  aria-label="Voice mode"
-                >
-                  <AudioLines size={15} />
-                </button>
-              </Tip>
-            </div>
-            {working ? (
-              <GenerateButton
-                hue={210}
-                generating
-                label="Send"
-                generatingLabel="Stop"
-                icon={<Square size={10} fill="currentColor" />}
-                onClick={() => void stop()}
-                title="Stop"
-              />
-            ) : (
-              <GenerateButton
-                hue={210}
-                label="Send"
-                generatingLabel="Sending"
-                disabled={disabled || !draft.trim()}
-                onClick={submit}
-                title="Send (↩)"
-              />
-            )}
+    <div className="glow-card msg-in mb-4">
+      <div className="rounded-[11px] bg-bg p-3.5">
+        <div className="flex items-center gap-2.5">
+          <LucaAvatar size={28} />
+          <div className="text-[13px] font-semibold text-text">
+            {missing ? 'One quick install' : 'Connect your Claude account'}
           </div>
-        )}
+        </div>
+        <p className="mt-2 text-[12px] leading-[1.5] text-text-2">
+          {missing
+            ? 'Luca edits with Claude Code. Install it once with the command below (paste it into Terminal), then come back.'
+            : 'Luca works with your own Claude subscription. Sign in once in the window that opens; Luca never sees your password.'}
+        </p>
+        {missing ? (
+          <div className="mt-2.5 flex items-center gap-1.5 rounded-[8px] bg-bg-muted py-1 pr-1 pl-2.5">
+            <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-text select-text">
+              {cmd}
+            </code>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                void navigator.clipboard.writeText(cmd).then(() => {
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1400)
+                })
+              }
+            >
+              {copied ? <Check size={11} /> : <Copy size={11} />}
+              {copied ? 'Copied' : 'Copy'}
+            </Button>
+          </div>
+        ) : null}
+        {detail && !missing ? (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setShowDetail((d) => !d)}
+              className="inline-flex items-center gap-0.5 text-[11px] text-text-3 hover:text-text"
+            >
+              <ChevronRight
+                size={11}
+                className={cn('transition-transform', showDetail && 'rotate-90')}
+              />
+              What Claude said
+            </button>
+            {showDetail ? (
+              <pre className="fade-in mt-1 max-h-16 overflow-auto rounded-[6px] bg-bg-muted p-2 font-mono text-[10.5px] leading-[1.45] whitespace-pre-wrap text-text-2 select-text">
+                {detail}
+              </pre>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="mt-3 flex gap-2">
+          {missing ? null : (
+            <Button variant="primary" onClick={() => void signIn()}>
+              <LogIn size={12} /> Sign in
+            </Button>
+          )}
+          <Button
+            variant={missing ? 'primary' : 'outline'}
+            disabled={checking}
+            onClick={() => void check()}
+          >
+            <RotateCcw size={12} className={checking ? 'animate-spin' : ''} />
+            {checking ? 'Checking…' : missing ? "I've installed it" : "I've signed in"}
+          </Button>
+        </div>
       </div>
     </div>
   )
