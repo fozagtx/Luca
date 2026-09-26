@@ -1,5 +1,6 @@
 import { Captions, LayoutGrid, Lightbulb, Palette } from 'lucide-react'
 import type { ReactElement, ReactNode } from 'react'
+import { ErrorBoundary } from '../../components/ui/error-boundary'
 import { Segmented, type SegmentedItem } from '../../components/ui/segmented'
 import { useUi, type SidebarTab } from '../../stores/ui'
 import { CatalogTab } from './catalog/CatalogTab'
@@ -63,10 +64,12 @@ export function Sidebar(): ReactElement {
         <Segmented items={tabs} value={tab} onChange={setTab} icons ariaLabel="Sidebar" />
       </div>
       <div className="min-h-0 flex-1 border-t border-border">
-        {tab === 'inspiration' && <InspirationTab />}
-        {tab === 'catalog' && <CatalogTab />}
-        {tab === 'transcript' && <TranscriptTab />}
-        {tab === 'looks' && <LooksTab />}
+        <ErrorBoundary key={tab} label={`the ${tab} tab`}>
+          {tab === 'inspiration' && <InspirationTab />}
+          {tab === 'catalog' && <CatalogTab />}
+          {tab === 'transcript' && <TranscriptTab />}
+          {tab === 'looks' && <LooksTab />}
+        </ErrorBoundary>
       </div>
     </aside>
   )

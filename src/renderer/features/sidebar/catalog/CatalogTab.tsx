@@ -1,6 +1,5 @@
 import { ArrowRight, Plus, RefreshCw, Search, X } from 'lucide-react'
 import {
-  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -16,10 +15,8 @@ import {
   searchLibrary,
   toLibrary,
   type LibraryCategory,
-  type LibraryItem,
-  type LibrarySource
+  type LibraryItem
 } from '../../../../shared/catalog'
-import type { CatalogItem, RemocnItem } from '../../../../shared/types'
 import { Button } from '../../../components/ui/button'
 import { Segmented } from '../../../components/ui/segmented'
 import { Thumb } from '../../../components/ui/thumb'
@@ -27,54 +24,26 @@ import { Tip } from '../../../components/ui/tooltip'
 import { cn } from '../../../lib/cn'
 import { setCatalogDrag } from '../../../lib/drag'
 import { luca } from '../../../lib/luca'
+import { useCatalog, type CatalogSource, type StudioStatus } from '../../../stores/catalog'
+import { useProject } from '../../../stores/project'
 import { useUi } from '../../../stores/ui'
 import { EmptyPane } from '../EmptyPane'
 import { PaneHead } from '../Sidebar'
 import { ItemCover } from './ItemCover'
 import { askLuca, dragOf } from './library-actions'
 
-type Source = LibrarySource | 'all'
-
 const sources = [
   { id: 'all', label: 'All' },
   { id: 'hyperframes', label: 'HyperFrames' },
   { id: 'remocn', label: 'Remocn' }
-] as const satisfies readonly { id: Source; label: string }[]
-
-type Studio = { ready: boolean; step?: string; error?: string }
+] as const satisfies readonly { id: CatalogSource; label: string }[]
 
 export function CatalogTab(): ReactElement {
-  const [hf, setHf] = useState<CatalogItem[] | null>(null)
-  const [rc, setRc] = useState<RemocnItem[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [query, setQuery] = useState('')
-  const [source, setSource] = useState<Source>('all')
-  const [category, setCategory] = useState<LibraryCategory | 'all'>('all')
-  const [studio, setStudio] = useState<Studio | null>(null)
-  const [wantsRemocn, setWantsRemocn] = useState(false)
+  const { hf, rc, error, busy, studio, query, source, category, wantsRemocn } = useCatalog()
+  const { load, refreshStudio, setQuery, setSource, setCategory } = useCatalog.getState()
+  const hasProject = useProject((s) => !!s.project)
   const deferredQuery = useDeferredValue(query)
   const listRef = useRef<HTMLDivElement>(null)
-
-  const load = useCallback(async (refresh = false): Promise<void> => {
-    setBusy(true)
-    setError(null)
-    const [a, b] = await Promise.allSettled([
-      luca.catalog.list({ refresh }),
-      luca.catalog.remocn({ refresh })
-    ])
-    if (a.status === 'fulfilled') setHf(a.value)
-    else setHf((prev) => prev ?? [])
-    if (b.status === 'fulfilled') setRc(b.value)
-    else setRc((prev) => prev ?? [])
-    if (a.status === 'rejected' && b.status === 'rejected')
-      setError(a.reason instanceof Error ? a.reason.message : String(a.reason))
-    setBusy(false)
-  }, [])
-
-  const refreshStudio = useCallback(async (): Promise<void> => {
-    setStudio(await luca.catalog.remocnStudioStatus().catch(() => ({ ready: false })))
-  }, [])
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -110,10 +79,6 @@ export function CatalogTab(): ReactElement {
   useEffect(() => {
     listRef.current?.scrollTo({ top: 0 })
   }, [deferredQuery, source, activeCategory])
-
-  const onRemocnUse = (): void => {
-    if (studio && !studio.ready) setWantsRemocn(true)
-  }
 
   return (
     <div className="flex h-full flex-col">
@@ -172,7 +137,7 @@ export function CatalogTab(): ReactElement {
       ) : (
         <div ref={listRef} className="scroll min-h-0 flex-1 px-2.5 pb-3">
           {browsing ? (
-            <Sections items={results} onSeeAll={setCategory} onRemocnUse={onRemocnUse} />
+            <Sections items={results} onSeeAll={setCategory} disabled={!hasProject} />
           ) : (
             <>
               <div className="flex items-baseline justify-between px-0.5 pt-1 pb-2">
@@ -182,9 +147,10 @@ export function CatalogTab(): ReactElement {
                 <span className="text-[11px] text-text-3 tabular-nums">{results.length}</span>
               </div>
               <Grid
-                key={`${deferredQuery}|${source}|${activeCategory}`}
+                key={`${source}|${activeCategory}`}
+                resetKey={deferredQuery}
                 items={results}
-                onRemocnUse={onRemocnUse}
+                disabled={!hasProject}
               />
             </>
           )}
@@ -193,7 +159,9 @@ export function CatalogTab(): ReactElement {
 
       {library ? (
         <div className="truncate border-t border-border px-3 py-1.5 text-[10.5px] text-text-3">
-          Click to ask Luca · drag onto the timeline
+          {hasProject
+            ? 'Click to ask Luca · drag onto the timeline'
+            : 'Open a project to use these'}
         </div>
       ) : null}
     </div>
@@ -294,11 +262,11 @@ function CategoryRail({
 function Sections({
   items,
   onSeeAll,
-  onRemocnUse
+  disabled
 }: {
   items: LibraryItem[]
   onSeeAll: (c: LibraryCategory) => void
-  onRemocnUse: () => void
+  disabled: boolean
 }): ReactElement {
   const groups = useMemo(() => {
     const m = new Map<LibraryCategory, LibraryItem[]>()
@@ -331,7 +299,7 @@ function Sections({
               />
             </button>
           </div>
-          <Grid items={g.items.slice(0, 4)} onRemocnUse={onRemocnUse} />
+          <Grid items={g.items.slice(0, 4)} disabled={disabled} />
         </section>
       ))}
     </div>
@@ -342,12 +310,20 @@ const PAGE = 60
 
 function Grid({
   items,
-  onRemocnUse
+  disabled,
+  resetKey = ''
 }: {
   items: LibraryItem[]
-  onRemocnUse: () => void
+  disabled: boolean
+  /** Changing it (a new search) starts paging from the top again without remounting cards. */
+  resetKey?: string
 }): ReactElement {
   const [limit, setLimit] = useState(PAGE)
+  const [pagedFor, setPagedFor] = useState(resetKey)
+  if (pagedFor !== resetKey) {
+    setPagedFor(resetKey)
+    setLimit(PAGE)
+  }
   const sentinel = useRef<HTMLDivElement>(null)
   const shown = items.slice(0, limit)
 
@@ -369,7 +345,7 @@ function Grid({
     <>
       <div className="grid grid-cols-2 gap-2.5">
         {shown.map((i) => (
-          <Card key={i.id} item={i} onRemocnUse={onRemocnUse} />
+          <Card key={i.id} item={i} disabled={disabled} />
         ))}
       </div>
       {limit < items.length ? <div ref={sentinel} className="h-8" /> : null}
@@ -421,11 +397,12 @@ export function ItemPreview({
   )
 }
 
-function Card({ item, onRemocnUse }: { item: LibraryItem; onRemocnUse: () => void }): ReactElement {
+function Card({ item, disabled }: { item: LibraryItem; disabled: boolean }): ReactElement {
   const [hover, setHover] = useState(false)
 
   const use = (): void => {
-    if (item.source === 'remocn') onRemocnUse()
+    if (disabled) return
+    if (item.source === 'remocn') useCatalog.getState().noteRemocnUse()
     askLuca(item)
   }
 
@@ -433,10 +410,11 @@ function Card({ item, onRemocnUse }: { item: LibraryItem; onRemocnUse: () => voi
     <div
       role="button"
       tabIndex={0}
-      draggable
+      aria-disabled={disabled || undefined}
+      draggable={!disabled}
       onDragStart={(e) => {
         setCatalogDrag(e.dataTransfer, dragOf(item))
-        if (item.source === 'remocn') onRemocnUse()
+        if (item.source === 'remocn') useCatalog.getState().noteRemocnUse()
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -448,15 +426,20 @@ function Card({ item, onRemocnUse }: { item: LibraryItem; onRemocnUse: () => voi
         }
       }}
       title={item.description}
-      className="card card-hover group cursor-grab p-1.5 select-none active:cursor-grabbing"
+      className={cn(
+        'card card-hover group p-1.5 select-none',
+        disabled ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
+      )}
     >
       <ItemPreview item={item} hover={hover} className="rounded-[6px]">
         <span className="absolute top-1 left-1 rounded-[4px] bg-black/45 px-1 py-px text-[9px] font-medium tracking-[0.02em] text-white backdrop-blur-sm">
           {item.source === 'remocn' ? 'Remocn' : item.type === 'block' ? 'Block' : 'Component'}
         </span>
-        <span className="absolute top-1 right-1 flex size-6 scale-90 items-center justify-center rounded-full bg-white/90 text-[#111] opacity-0 shadow-sm transition-[opacity,transform] duration-150 group-hover:scale-100 group-hover:opacity-100">
-          <Plus size={13} strokeWidth={2.25} />
-        </span>
+        {disabled ? null : (
+          <span className="absolute top-1 right-1 flex size-6 scale-90 items-center justify-center rounded-full bg-white/90 text-[#111] opacity-0 shadow-sm transition-[opacity,transform] duration-150 group-hover:scale-100 group-hover:opacity-100">
+            <Plus size={13} strokeWidth={2.25} />
+          </span>
+        )}
       </ItemPreview>
       <div className="px-0.5 pt-1.5 pb-0.5">
         <span className="block truncate text-[11.5px] font-medium text-text">{item.title}</span>
@@ -485,7 +468,7 @@ function RemocnSetup({
   studio,
   onChanged
 }: {
-  studio: Studio
+  studio: StudioStatus
   onChanged: () => Promise<void>
 }): ReactElement {
   const [settingUp, setSettingUp] = useState(false)

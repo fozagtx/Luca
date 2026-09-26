@@ -10,7 +10,12 @@ type ChatStore = {
   draft: string
   error: string | null
   bound: boolean
+  /** Project the draft and chips belong to. */
+  projectDir: string | null
   bind: () => void
+  /** Clear the draft and chips when the open project changes (called from App, always mounted). */
+  setProject: (dir: string | null) => void
+  /** Load history. Leaves the draft and chips alone: the panel remounts whenever it is shown. */
   load: () => Promise<void>
   send: (text: string, context: unknown) => Promise<void>
   /** Send again without touching the draft or attached chips (Try again). */
@@ -32,6 +37,7 @@ export const useChat = create<ChatStore>((set, get) => ({
   draft: '',
   error: null,
   bound: false,
+  projectDir: null,
 
   bind: () => {
     if (get().bound) return
@@ -42,15 +48,13 @@ export const useChat = create<ChatStore>((set, get) => ({
     })
   },
 
+  setProject: (dir) => {
+    if (get().projectDir !== dir) set({ projectDir: dir, chips: [], draft: '', error: null })
+  },
+
   load: async () => {
     const [messages, status] = await Promise.all([luca.agent.history(), luca.agent.state()])
-    set({
-      messages,
-      state: status.state as AgentState,
-      detail: status.detail,
-      chips: [],
-      error: null
-    })
+    set({ messages, state: status.state as AgentState, detail: status.detail })
   },
 
   send: async (text, context) => {

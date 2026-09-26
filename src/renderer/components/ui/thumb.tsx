@@ -3,6 +3,9 @@ import { cn } from '../../lib/cn'
 
 type State = 'loading' | 'loaded' | 'error'
 
+/** Images already decoded this session: a remounted thumb shows them at once, no skeleton. */
+const decoded = new Set<string>()
+
 /**
  * An image that never shows a broken or half-loaded state: a shimmering skeleton while it
  * loads, a fade-in once decoded, and `fallback` if there is no image or it fails.
@@ -22,7 +25,9 @@ export function Thumb({
   lazy?: boolean
   children?: ReactNode
 }): ReactElement {
-  const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(() =>
+    src && decoded.has(src) ? src : null
+  )
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
   const img = useRef<HTMLImageElement>(null)
   const state: State =
@@ -31,7 +36,10 @@ export function Thumb({
   // an image already in the cache can finish before the load listener sees it
   useEffect(() => {
     const el = img.current
-    if (el && src && el.complete && el.naturalWidth > 0) setLoadedSrc(src)
+    if (el && src && el.complete && el.naturalWidth > 0) {
+      decoded.add(src)
+      setLoadedSrc(src)
+    }
   }, [src])
 
   return (
@@ -46,7 +54,10 @@ export function Thumb({
           draggable={false}
           loading={lazy ? 'lazy' : undefined}
           decoding="async"
-          onLoad={() => setLoadedSrc(src)}
+          onLoad={() => {
+            decoded.add(src)
+            setLoadedSrc(src)
+          }}
           onError={() => setFailedSrc(src)}
           className={cn(
             'absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-out',

@@ -266,7 +266,32 @@ const STOPWORDS = new Set([
   'that',
   'this',
   'it',
-  'please'
+  'please',
+  'video',
+  'clip',
+  'footage',
+  'something',
+  'like',
+  'can',
+  'you',
+  'could',
+  'would',
+  'need',
+  'nice',
+  'cool',
+  'good',
+  'find',
+  'give',
+  'get',
+  'one',
+  'into',
+  'onto',
+  'from',
+  'our',
+  'your',
+  'we',
+  'some',
+  'kind'
 ])
 
 export function queryWords(query: string): string[] {
@@ -295,7 +320,7 @@ function hay(i: LibraryItem): Hay {
 }
 
 const wordIn = (text: string, w: string): boolean =>
-  new RegExp(`(^|[^a-z0-9])${w.replace(/[-]/g, '\\-')}`).test(text)
+  new RegExp(`(^|[^a-z0-9])${w.replace(/[-]/g, '\\-')}(e?s)?(?![a-z0-9])`).test(text)
 
 /** `strong` limits matching to name, title and tags (used for synonyms, which are looser). */
 function scoreTerm(h: Hay, t: string, strong = false): number {
@@ -312,11 +337,14 @@ function scoreTerm(h: Hay, t: string, strong = false): number {
   return 0
 }
 
+/** Own keys only: a word like "constructor" must not reach Object.prototype. */
+const synonymsOf = (w: string): string[] => (Object.hasOwn(SYNONYMS, w) ? SYNONYMS[w] : [])
+
 function scoreWord(h: Hay, w: string): number {
   const stem = w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w
   let best = Math.max(scoreTerm(h, w), stem !== w ? scoreTerm(h, stem) * 0.95 : 0)
-  for (const syn of SYNONYMS[stem] ?? SYNONYMS[w] ?? [])
-    best = Math.max(best, scoreTerm(h, syn, true) * 0.6)
+  const syns = synonymsOf(stem).length ? synonymsOf(stem) : synonymsOf(w)
+  for (const syn of syns) best = Math.max(best, scoreTerm(h, syn, true) * 0.6)
   return best
 }
 
@@ -347,18 +375,30 @@ export function searchLibrary(
   const pool = filterLibrary(items, f)
   const words = queryWords(query)
   if (words.length === 0) return pool
-  const need = Math.max(1, Math.ceil(words.length * 0.6))
-  const scored: { i: LibraryItem; s: number }[] = []
-  for (const i of pool) {
+  const rows = pool.map((i) => {
     const h = hay(i)
-    let s = 0
-    let hit = 0
-    for (const w of words) {
-      const ws = scoreWord(h, w)
-      if (ws > 0) hit++
-      s += ws
-    }
-    if (hit >= need) scored.push({ i, s: s * (hit / words.length) })
-  }
-  return scored.sort((a, b) => b.s - a.s || a.i.title.localeCompare(b.i.title)).map((x) => x.i)
+    return { i, scores: words.map((w) => scoreWord(h, w)) }
+  })
+  // a word nothing matches ("my", "wedding") can't tell items apart, so it can't veto them
+  const informative = words.map((_, k) => rows.some((r) => r.scores[k] > 0))
+  const count = informative.filter(Boolean).length
+  if (count === 0) return []
+  const rank = (need: number): LibraryItem[] =>
+    rows
+      .map(({ i, scores }) => {
+        let s = 0
+        let hit = 0
+        scores.forEach((v, k) => {
+          if (!informative[k] || v <= 0) return
+          hit++
+          s += v
+        })
+        return { i, hit, s: s * (hit / count) }
+      })
+      .filter((r) => r.hit >= need)
+      .sort((a, b) => b.s - a.s || a.i.title.localeCompare(b.i.title))
+      .map((r) => r.i)
+  const strict = rank(Math.max(1, Math.ceil(count * 0.6)))
+  // phrasing that matches only a few items strictly still shows the closest ones
+  return strict.length >= 3 || count === 1 ? strict : rank(1)
 }

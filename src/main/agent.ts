@@ -58,7 +58,15 @@ type Pending = {
   suggestions?: PermissionUpdate[]
 }
 
-type Turn = { text: string; chips: Chip[]; context: unknown }
+type Turn = { text: string; chips: Chip[]; context: unknown; userId?: string }
+
+/** SDK result subtypes, as people should read them. */
+const PLAIN_ERRORS: Record<string, string> = {
+  error_during_execution: 'Something went wrong while working on this.',
+  error_max_turns: 'This needed more steps than Luca can take in one go.',
+  error_max_budget_usd: 'This reached the spending limit for a single request.',
+  error_max_structured_output_retries: 'Something went wrong while working on this.'
+}
 
 type ToolPart = Extract<ChatContentPart, { type: 'tool' }>
 
@@ -124,6 +132,7 @@ export class ProjectAgent {
   private streamedText = ''
   private working = false
   private queued: Turn[] = []
+  private interrupted = false
   private abort = new AbortController()
 
   constructor(readonly project: Project) {
@@ -145,7 +154,11 @@ export class ProjectAgent {
     for (const line of readFileSync(this.chatFile, 'utf8').split('\n')) {
       if (!line.trim()) continue
       try {
-        out.push(JSON.parse(line) as ChatMessage)
+        const m = JSON.parse(line) as ChatMessage
+        // a turn cut off by a crash or quit was saved mid-step; those steps can't finish now
+        for (const p of m.parts ?? [])
+          if (p.type === 'tool' && p.status === 'running') p.status = 'error'
+        out.push(m)
       } catch {
         // skip corrupt line
       }
@@ -245,6 +258,12 @@ export class ProjectAgent {
 
   async stop(): Promise<void> {
     this.closed = true
+    if (this.working) {
+      this.settleCurrent(true)
+      this.current = null
+      this.working = false
+      this.rewriteHistory()
+    }
     this.abort.abort()
     for (const w of this.waiters.splice(0)) w(null)
     for (const p of this.pending.values())
@@ -258,6 +277,12 @@ export class ProjectAgent {
     for (const w of this.waiters.splice(0)) w(null)
     this.q = null
     this.closed = false
+    if (this.working) {
+      this.settleCurrent(true)
+      this.current = null
+      this.rewriteHistory()
+      this.pushHistory()
+    }
     this.working = false
     await this.start()
   }
@@ -291,11 +316,12 @@ export class ProjectAgent {
     this.messages.push(user)
     this.rewriteHistory()
     this.pushHistory()
+    const t = { ...turn, userId: user.id }
     if (this.working) {
-      this.queued.push(turn)
+      this.queued.push(t)
       return
     }
-    this.dispatch(turn)
+    this.dispatch(t)
   }
 
   private dispatch(turn: Turn): void {
@@ -309,7 +335,8 @@ export class ProjectAgent {
       createdAt: new Date().toISOString(),
       text: '',
       parts: [],
-      pending: true
+      pending: true,
+      replyTo: turn.userId
     }
     this.messages.push(this.current)
     this.pushHistory()
@@ -366,8 +393,9 @@ export class ProjectAgent {
     else this.inbox.push(msg)
   }
 
+  /** Stop the current turn. Messages sent while it ran stay queued and are answered next. */
   async interrupt(): Promise<void> {
-    this.queued = []
+    if (this.working) this.interrupted = true
     try {
       await this.q?.interrupt()
     } catch {
@@ -398,10 +426,11 @@ export class ProjectAgent {
     if (always.includes(key)) return { behavior: 'allow', updatedInput: input }
 
     const id = randomUUID()
-    const part: ChatContentPart = { type: 'permission', id, tool: toolName, input }
+    // `rule` is what "Always allow" stores, so the card can say exactly what it would permit
+    const part: ChatContentPart = { type: 'permission', id, tool: toolName, input, rule: key }
     this.current?.parts?.push(part)
     this.pushHistory()
-    this.emit({ type: 'permission', id, tool: toolName, input })
+    this.emit({ type: 'permission', id, tool: toolName, input, rule: key })
     return new Promise<PermissionResult>((resolvePerm) => {
       this.pending.set(id, { resolve: resolvePerm, tool: key, suggestions })
     })
@@ -525,6 +554,23 @@ export class ProjectAgent {
             if (out && part.name !== 'Edit' && part.name !== 'Write') {
               part.detail = out.length > 4000 ? out.slice(0, 4000) + '\n…' : out
             }
+            if (part.name === 'mcp__luca__catalog_search' && !b.is_error && part.activity) {
+              try {
+                const r = JSON.parse(out) as { total?: number; query?: string }
+                if (typeof r.total === 'number') {
+                  const q = r.query ?? ''
+                  part.activity = {
+                    ...part.activity,
+                    done:
+                      r.total > 0
+                        ? `Found ${r.total} component${r.total === 1 ? '' : 's'} for “${q}”`
+                        : `No components matched “${q}”`
+                  }
+                }
+              } catch {
+                // keep the neutral label
+              }
+            }
             this.emit(part)
             this.pushHistory()
           }
@@ -560,16 +606,34 @@ export class ProjectAgent {
     this.emit({ type: 'text-delta', text })
   }
 
+  /** End the in-flight assistant message; steps still running can no longer finish. */
+  private settleCurrent(isError: boolean): void {
+    if (!this.current) return
+    for (const p of this.current.parts ?? [])
+      if (p.type === 'tool' && p.status === 'running') {
+        p.status = 'error'
+        this.emit(p)
+      }
+    this.current.pending = false
+    this.current.isError = isError
+    this.current.durationMs = Date.now() - this.turnStartedAt
+  }
+
   private finishTurn(isError: boolean, error?: string): void {
     if (!this.working) return
     this.working = false
+    // a turn the person stopped is not a failure
+    const stopped = this.interrupted
+    this.interrupted = false
+    if (stopped) isError = false
     if (this.current) {
-      this.current.pending = false
-      this.current.isError = isError
-      this.current.durationMs = Date.now() - this.turnStartedAt
-      if (isError && error && !this.current.text) {
+      this.settleCurrent(isError)
+      if (stopped && !this.current.text) this.appendText('Stopped.')
+      else if (isError && error && !this.current.text) {
         this.appendText(
-          this.state === 'needs-login' ? 'Sign in to Claude Code to continue.' : error
+          this.state === 'needs-login'
+            ? 'Sign in to Claude Code to continue.'
+            : (PLAIN_ERRORS[error] ?? error)
         )
       }
       this.current = null

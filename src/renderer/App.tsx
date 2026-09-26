@@ -1,5 +1,6 @@
 import { useEffect, type ReactElement } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
+import { ErrorBoundary } from './components/ui/error-boundary'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Chat } from './features/chat/Chat'
 import { CommandPalette } from './features/command/CommandPalette'
@@ -13,6 +14,7 @@ import { Toolbar } from './features/toolbar/Toolbar'
 import { Transport } from './features/viewer/Transport'
 import { Viewer } from './features/viewer/Viewer'
 import { luca } from './lib/luca'
+import { useChat } from './stores/chat'
 import { useProject } from './stores/project'
 import { useUi } from './stores/ui'
 
@@ -27,7 +29,13 @@ export default function App(): ReactElement {
   const setTheme = useUi((s) => s.setTheme)
   const sidebarOpen = useUi((s) => s.sidebarOpen)
   const chatOpen = useUi((s) => s.chatOpen)
+  const projectDir = useProject((s) => s.project?.dir ?? null)
   useShortcuts()
+
+  // the chat panel unmounts when hidden, so the draft's project is tracked here
+  useEffect(() => {
+    useChat.getState().setProject(projectDir)
+  }, [projectDir])
 
   useEffect(() => {
     void init()
@@ -105,7 +113,9 @@ export default function App(): ReactElement {
                 maxSize={520}
                 className="panel"
               >
-                <Chat />
+                <ErrorBoundary label="the chat">
+                  <Chat />
+                </ErrorBoundary>
               </Panel>
             </>
           )}

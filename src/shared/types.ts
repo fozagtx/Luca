@@ -84,7 +84,7 @@ export type AgentEvent =
       detail?: string
       activity?: Activity
     }
-  | { type: 'permission'; id: string; tool: string; input: unknown }
+  | { type: 'permission'; id: string; tool: string; input: unknown; rule?: string }
   | { type: 'permission-resolved'; id: string }
   | { type: 'turn-start' }
   | { type: 'turn-end'; sessionId: string; durationMs: number; isError: boolean; error?: string }
@@ -107,7 +107,15 @@ export type ChatContentPart =
       /** Plain-language description (older history may not have it). */
       activity?: Activity
     }
-  | { type: 'permission'; id: string; tool: string; input: unknown; resolved?: PermissionDecision }
+  | {
+      type: 'permission'
+      id: string
+      tool: string
+      input: unknown
+      resolved?: PermissionDecision
+      /** The rule "Always allow" saves, e.g. `Bash(rm)` or `WebFetch`. */
+      rule?: string
+    }
 
 export type ChatMessage = {
   id: string
@@ -120,6 +128,8 @@ export type ChatMessage = {
   isError?: boolean
   /** How long the assistant turn took, set when it ends. */
   durationMs?: number
+  /** For an assistant message: the id of the user message it answers. */
+  replyTo?: string
 }
 
 export type CutReason = 'filler' | 'pause' | 'retake' | 'false_start' | 'manual'

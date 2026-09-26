@@ -13,7 +13,7 @@ const categoryIds = CATEGORIES.map((c) => c.id) as [
   ...LibraryItem['category'][]
 ]
 
-function describe(i: LibraryItem): Record<string, unknown> {
+function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown> {
   const base = {
     name: i.name,
     source: i.source,
@@ -34,7 +34,12 @@ function describe(i: LibraryItem): Record<string, unknown> {
     avoidFor: i.remocn?.avoidFor,
     length: i.remocn?.naturalLength,
     docs: i.remocn?.docs,
-    add: `remocn_install {"name":"${i.name}"}, write remocn/<clipId>.tsx, then remocn_place`
+    ...(remocnReady
+      ? { add: `remocn_install {"name":"${i.name}"}, write remocn/<clipId>.tsx, then remocn_place` }
+      : {
+          ready: false,
+          note: 'Needs the one-time Remocn setup, which is not done. Prefer a HyperFrames item; suggest the setup only if the user wants this exact component.'
+        })
   }
 }
 
@@ -68,11 +73,19 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         },
         async ({ query, source, category, limit }) => {
           const items = await library(projectDir)
-          const hits = searchLibrary(items, query, { source: source ?? 'all', category })
+          let hits = searchLibrary(items, query, { source: source ?? 'all', category })
+          const remocnReady = studioStatus().ready
+          // without the studio, Remocn items can't be placed yet: list usable ones first
+          if (!remocnReady && (source ?? 'all') === 'all')
+            hits = [
+              ...hits.filter((i) => i.source === 'hyperframes'),
+              ...hits.filter((i) => i.source === 'remocn')
+            ]
           return text({
             query,
             total: hits.length,
-            results: hits.slice(0, limit ?? 12).map(describe)
+            ...(remocnReady ? {} : { remocnReady: false }),
+            results: hits.slice(0, limit ?? 12).map((i) => describe(i, remocnReady))
           })
         }
       ),
@@ -85,7 +98,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
           if (!st.ready)
             return text({
               ok: false,
-              error: `Remocn studio not ready (${st.step ?? 'unknown'}). Ask the user to set it up from the Catalog › Remocn tab.`
+              error: `Remocn studio not ready (${st.step ?? 'unknown'}). Pick a HyperFrames item from catalog_search instead; only if the user wants this exact component, ask them to set up Remocn from Catalog › Remocn (about two minutes).`
             })
           return text(await installComponent(name))
         }

@@ -1,11 +1,10 @@
 import { ArrowUpRight, Clock } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { toLibrary, type LibraryItem } from '../../../../shared/catalog'
-import type { CatalogItem } from '../../../../shared/types'
 import { Thumb } from '../../../components/ui/thumb'
 import { formatDuration, relativeDate } from '../../../lib/format'
 import { catalogChip } from '../../../lib/drag'
-import { luca } from '../../../lib/luca'
+import { useCatalog } from '../../../stores/catalog'
 import { useChat } from '../../../stores/chat'
 import { useProject } from '../../../stores/project'
 import { useUi } from '../../../stores/ui'
@@ -117,10 +116,23 @@ const SECTIONS: { title: string; ideas: Idea[] }[] = [
   }
 ]
 
+const IDEAS = SECTIONS.flatMap((s) => s.ideas)
+
 function tryIdea(idea: Idea, item: LibraryItem | undefined): void {
   const chat = useChat.getState()
-  if (item) chat.addChip(catalogChip(dragOf(item)))
-  chat.setDraft(idea.prompt)
+  const draft = chat.draft.trim()
+  // the box still holds an earlier idea, untouched: swap that idea (and its chip) out
+  const previous = IDEAS.find((x) => x.prompt.trim() === draft)
+  if (previous)
+    useChat.setState((s) => ({
+      chips: s.chips.filter((c) => !(c.kind === 'catalog' && c.name === previous.item))
+    }))
+  const attached = useChat
+    .getState()
+    .chips.some((c) => c.kind === 'catalog' && c.name === item?.name)
+  if (item && !attached) chat.addChip(catalogChip(dragOf(item)))
+  // never overwrite words the person typed themselves
+  if (!draft || previous) chat.setDraft(idea.prompt)
   if (!useUi.getState().chatOpen) useUi.getState().toggleChat()
   requestAnimationFrame(() => {
     const el = document.getElementById('chat-composer') as HTMLTextAreaElement | null
@@ -132,17 +144,10 @@ function tryIdea(idea: Idea, item: LibraryItem | undefined): void {
 
 export function InspirationTab(): ReactElement {
   const project = useProject((s) => s.project)
-  const [catalog, setCatalog] = useState<CatalogItem[] | null>(null)
+  const catalog = useCatalog((s) => s.hf)
 
   useEffect(() => {
-    let live = true
-    void luca.catalog
-      .list()
-      .catch((): CatalogItem[] => [])
-      .then((c) => live && setCatalog(c))
-    return () => {
-      live = false
-    }
+    void useCatalog.getState().load()
   }, [])
 
   const byName = useMemo(() => {

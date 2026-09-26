@@ -37,7 +37,10 @@ export function friendlyTarget(path: unknown, titleOf?: TitleOf): string {
   if (/(^|\/)remocn\/[^/]+\.tsx?$/.test(p)) return `the ${titleCase(stem)} animation`
   if (/(^|\/)(CLAUDE|AGENTS)\.md$/.test(p)) return 'the project notes'
   if (/(^|\/)media\//.test(p)) return 'your footage'
-  if (/\.json$/.test(p)) return 'the project settings'
+  if (/(^|\/)transcript(\.original)?\.json$/.test(p)) return 'the transcript'
+  if (/(^|\/)edl\.json$/.test(p)) return 'the cut list'
+  if (/(^|\/)cut-candidates\.json$/.test(p)) return 'the suggested cuts'
+  if (/(^|\/)(hyperframes|meta|package|project|look)\.json$/.test(p)) return 'the project settings'
   if (/\.html$/.test(p)) return 'a scene'
   return 'the project'
 }
@@ -48,8 +51,15 @@ const act = (kind: ActivityKind, active: string, done: string): Activity => ({
   done
 })
 
+const RISKY =
+  /[;&|<>`\n]|\$\(|\s-delete\b|\s-exec(dir)?\b|\bxargs\b|\brm\b|\bmv\b|\bcurl\b|\bwget\b/
+
 function bash(command: string, titleOf?: TitleOf): Activity {
   const cmd = command.trim()
+  // chained, piped, redirected, deleting or downloading commands can do anything: never give
+  // them a reassuring label (stderr redirects like 2>&1 or 2>/dev/null are harmless)
+  const probe = cmd.replace(/\s\d?>&\d\b/g, ' ').replace(/\s\d?>\s*\/dev\/null\b/g, ' ')
+  if (RISKY.test(probe)) return act('other', 'Running a command', 'Ran a command')
   const hf = /(?:^|\s)npx\s+(?:--yes\s+)?hyperframes(?:@[\w.-]+)?\s+(\w+)(?:\s+([\w@/.-]+))?/.exec(
     cmd
   )
@@ -81,7 +91,7 @@ function bash(command: string, titleOf?: TitleOf): Activity {
   if (first === 'ffmpeg') return act('media', 'Processing the footage', 'Processed the footage')
   if (['ls', 'cat', 'head', 'tail', 'find', 'grep', 'rg', 'wc', 'tree'].includes(first))
     return act('look', 'Looking around the project', 'Looked around the project')
-  return act('other', 'Running a step', 'Ran a step')
+  return act('other', 'Running a command', 'Ran a command')
 }
 
 export function describeActivity(
@@ -123,7 +133,7 @@ export function describeActivity(
     case 'mcp__luca__catalog_search': {
       const q = String(input.query ?? '').trim()
       return q
-        ? act('search', `Finding components for “${q}”`, `Found components for “${q}”`)
+        ? act('search', `Finding components for “${q}”`, `Searched components for “${q}”`)
         : act('search', 'Browsing the component library', 'Browsed the component library')
     }
     case 'mcp__luca__remocn_install': {

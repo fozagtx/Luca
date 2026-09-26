@@ -23,10 +23,21 @@ function StepIcon({ status }: { status: ToolPart['status'] }): ReactElement {
  * A run of tool calls as one collapsible list of plain-language steps (prompt-kit Steps /
  * Chain of Thought). Open while Luca works, folded to a one-line summary once done.
  */
-export function Steps({ parts, live }: { parts: ToolPart[]; live: boolean }): ReactElement {
-  const running = parts.find((p) => p.status === 'running')
+export function Steps({
+  parts,
+  live,
+  animate = true
+}: {
+  parts: ToolPart[]
+  live: boolean
+  animate?: boolean
+}): ReactElement {
+  // a step can only be running while the reply is live; a finished reply shows it as stopped
+  const statusOf = (p: ToolPart): ToolPart['status'] =>
+    p.status === 'running' && !live ? 'error' : p.status
+  const running = live ? parts.find((p) => p.status === 'running') : undefined
   // a failed step followed by others is a normal retry; only a failed last step is a problem
-  const endedBadly = !running && parts[parts.length - 1]?.status === 'error'
+  const endedBadly = !running && statusOf(parts[parts.length - 1]) === 'error'
   const [toggled, setToggled] = useState<boolean | null>(null)
   // a lone step says everything in its header; longer runs stay open for the whole turn so
   // they don't fold and unfold between tool calls
@@ -35,7 +46,7 @@ export function Steps({ parts, live }: { parts: ToolPart[]; live: boolean }): Re
   const summary = running
     ? `Luca is ${lowerFirst(activityOf(running).active)}`
     : single
-      ? parts[0].status === 'error'
+      ? statusOf(parts[0]) === 'error'
         ? `${activityOf(parts[0]).active} didn't work`
         : activityOf(parts[0]).done
       : live
@@ -43,7 +54,7 @@ export function Steps({ parts, live }: { parts: ToolPart[]; live: boolean }): Re
         : `Took ${parts.length} steps`
 
   return (
-    <div className="fade-in">
+    <div className={animate ? 'fade-in' : undefined}>
       <button
         type="button"
         disabled={single}
@@ -87,19 +98,22 @@ export function Steps({ parts, live }: { parts: ToolPart[]; live: boolean }): Re
               {parts.map((p) => {
                 const a = activityOf(p)
                 return (
-                  <li key={p.id} className="fade-in relative flex items-center gap-2 py-[3px]">
+                  <li
+                    key={p.id}
+                    className={cn('relative flex items-center gap-2 py-[3px]', live && 'fade-in')}
+                  >
                     <span className="absolute -left-[21px] flex size-3.5 items-center justify-center bg-panel">
-                      <StepIcon status={p.status} />
+                      <StepIcon status={statusOf(p)} />
                     </span>
                     <span
                       className={cn(
                         'truncate text-[11.5px]',
-                        p.status === 'running' ? 'text-text' : 'text-text-2'
+                        statusOf(p) === 'running' ? 'text-text' : 'text-text-2'
                       )}
                     >
-                      {p.status === 'running'
+                      {statusOf(p) === 'running'
                         ? `${a.active}…`
-                        : p.status === 'error'
+                        : statusOf(p) === 'error'
                           ? `${a.active} didn't work`
                           : a.done}
                     </span>
