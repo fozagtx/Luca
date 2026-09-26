@@ -1,0 +1,364 @@
+import type { CatalogItem, RemocnItem } from './types'
+
+/**
+ * One searchable library over the HyperFrames catalog (blocks + components) and Remocn's
+ * Remotion components. Shared by the Catalog tab and the agent's catalog_search tool so both
+ * find the same things for the same words.
+ */
+
+export type LibrarySource = 'hyperframes' | 'remocn'
+
+export type LibraryCategory =
+  | 'text'
+  | 'captions'
+  | 'overlays'
+  | 'transitions'
+  | 'effects'
+  | 'data'
+  | 'ui'
+  | 'camera'
+  | 'templates'
+  | 'more'
+
+export type LibraryItem = {
+  /** `${source}:${name}` — names can repeat across sources. */
+  id: string
+  source: LibrarySource
+  name: string
+  type: 'block' | 'component'
+  title: string
+  description: string
+  tags: string[]
+  category: LibraryCategory
+  duration?: number
+  preview?: { video?: string; poster?: string }
+  remocn?: Pick<RemocnItem, 'category' | 'useFor' | 'avoidFor' | 'naturalLength' | 'docs' | 'vibe'>
+}
+
+export const CATEGORIES: { id: LibraryCategory; label: string }[] = [
+  { id: 'text', label: 'Text & titles' },
+  { id: 'captions', label: 'Captions' },
+  { id: 'overlays', label: 'Overlays' },
+  { id: 'transitions', label: 'Transitions' },
+  { id: 'effects', label: 'Effects' },
+  { id: 'data', label: 'Charts & numbers' },
+  { id: 'ui', label: 'UI & devices' },
+  { id: 'camera', label: 'Camera & 3D' },
+  { id: 'templates', label: 'Templates' },
+  { id: 'more', label: 'More' }
+]
+
+export const categoryLabel = (c: LibraryCategory): string =>
+  CATEGORIES.find((x) => x.id === c)?.label ?? 'More'
+
+// First matching rule wins, so the more specific groups come first.
+const TAG_RULES: [LibraryCategory, string[]][] = [
+  ['captions', ['captions', 'caption-style', 'karaoke', 'subtitles']],
+  [
+    'text',
+    [
+      'typography',
+      'text',
+      'text-effect',
+      'text-effects',
+      'text-treatment',
+      'title-card',
+      'kinetic-type',
+      'headline',
+      'type',
+      'wordmark',
+      'letters',
+      'typing',
+      'variable-font'
+    ]
+  ],
+  [
+    'transitions',
+    ['transition', 'transition-primitive', 'wipe', 'match-cut', 'whip-pan', 'iris', 'bridge']
+  ],
+  [
+    'overlays',
+    [
+      'lower-third',
+      'overlay',
+      'social-overlay',
+      'annotation',
+      'handwritten',
+      'callout',
+      'notification',
+      'badge',
+      'cta',
+      'end-card'
+    ]
+  ],
+  [
+    'data',
+    ['data', 'chart', 'stats', 'counter', 'data-viz', 'gauge', 'number', 'progress', 'rating']
+  ],
+  ['templates', ['showcase', 'ad-template']],
+  [
+    'ui',
+    [
+      'mock-ui',
+      'ui-props',
+      'ui-flow',
+      'ui',
+      'device',
+      'product-demo',
+      'chat',
+      'cursor',
+      'prop',
+      'app',
+      'browser',
+      'phone',
+      'mobile',
+      'terminal',
+      'code-animation',
+      'social-proof',
+      'testimonial'
+    ]
+  ],
+  ['camera', ['camera', '3d', 'webgl', 'three-js', 'parallax', 'zoom', 'orbit', 'push-in']],
+  [
+    'effects',
+    [
+      'effect',
+      'effects',
+      'background',
+      'shader',
+      'texture',
+      'grain',
+      'vignette',
+      'light',
+      'particles',
+      'glitch',
+      'blur',
+      'gradient',
+      'confetti'
+    ]
+  ],
+  ['templates', ['carousel', 'gallery', 'images']]
+]
+
+const REMOCN_CATEGORY: Record<string, LibraryCategory> = {
+  typography: 'text',
+  ui: 'ui',
+  'ui blocks': 'ui',
+  ai: 'ui',
+  social: 'ui',
+  shaders: 'effects',
+  effects: 'effects',
+  layout: 'overlays',
+  templates: 'templates',
+  compositions: 'templates'
+}
+
+export function categorize(name: string, tags: string[]): LibraryCategory {
+  const set = new Set(tags.map((t) => t.toLowerCase()))
+  if (name.startsWith('caption-')) return 'captions'
+  for (const [cat, keys] of TAG_RULES) if (keys.some((k) => set.has(k))) return cat
+  return 'more'
+}
+
+export function toLibrary(hf: CatalogItem[], remocn: RemocnItem[]): LibraryItem[] {
+  const items: LibraryItem[] = hf.map((i) => ({
+    id: `hyperframes:${i.name}`,
+    source: 'hyperframes',
+    name: i.name,
+    type: i.type,
+    title: i.title || i.name,
+    description: i.description,
+    tags: i.tags,
+    category: categorize(i.name, i.tags),
+    duration: i.duration,
+    preview: i.preview
+  }))
+  for (const r of remocn) {
+    items.push({
+      id: `remocn:${r.name}`,
+      source: 'remocn',
+      name: r.name,
+      type: 'component',
+      title: r.title || titleCase(r.name),
+      description: r.description || r.useFor,
+      tags: [r.category.toLowerCase(), ...(r.vibe ? [r.vibe] : [])],
+      category: REMOCN_CATEGORY[r.category.toLowerCase()] ?? 'more',
+      remocn: {
+        category: r.category,
+        useFor: r.useFor,
+        avoidFor: r.avoidFor,
+        naturalLength: r.naturalLength,
+        docs: r.docs,
+        vibe: r.vibe
+      }
+    })
+  }
+  return items
+}
+
+const titleCase = (s: string): string =>
+  s.replace(/(^|-)([a-z])/g, (_, sep: string, c: string) => (sep ? ' ' : '') + c.toUpperCase())
+
+// ---------------------------------------------------------------------------------------------
+// Search
+
+/** Words people use for the same thing. Matches through a synonym score a little lower. */
+const SYNONYMS: Record<string, string[]> = {
+  text: ['typography', 'type', 'title', 'headline', 'words', 'letters', 'kinetic-type', 'typing'],
+  type: ['typography', 'text', 'kinetic-type'],
+  font: ['typography', 'type', 'variable-font'],
+  title: ['headline', 'title-card', 'typography', 'text', 'titlecard'],
+  heading: ['headline', 'title'],
+  caption: ['captions', 'subtitle', 'caption-style', 'karaoke'],
+  subtitle: ['caption', 'captions', 'caption-style'],
+  transition: ['wipe', 'cut', 'match-cut', 'transition-primitive', 'whip', 'swap'],
+  cut: ['match-cut', 'transition', 'hard-cut'],
+  chart: ['data', 'graph', 'stats', 'data-viz'],
+  graph: ['chart', 'data', 'stats'],
+  number: ['counter', 'count', 'stats', 'numbers'],
+  stats: ['data', 'chart', 'counter', 'number'],
+  logo: ['brand', 'wordmark', 'sting', 'lockup'],
+  brand: ['logo', 'wordmark'],
+  background: ['bg', 'gradient', 'shader', 'aurora', 'mesh', 'grain', 'texture'],
+  lower: ['lower-third'],
+  third: ['lower-third'],
+  name: ['lower-third', 'badge'],
+  phone: ['mobile', 'device', 'iphone'],
+  mobile: ['phone', 'device'],
+  intro: ['opener', 'reveal', 'title-card', 'logo', 'intros-reveals'],
+  outro: ['end-card', 'cta', 'close'],
+  ending: ['end-card', 'outro', 'close'],
+  zoom: ['camera', 'push-in', 'punch-in', 'focus'],
+  glitch: ['rgb', 'cyber', 'distortion', 'chromatic'],
+  social: ['tiktok', 'instagram', 'youtube', 'creator', 'social-proof'],
+  arrow: ['hw-arrow', 'pointer', 'annotation'],
+  highlight: ['marker', 'emphasis', 'spotlight'],
+  emoji: ['emoji-pop'],
+  countdown: ['timer', 'count'],
+  quote: ['testimonial'],
+  review: ['testimonial', 'rating', 'stars']
+}
+
+const STOPWORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'and',
+  'or',
+  'of',
+  'to',
+  'for',
+  'with',
+  'in',
+  'on',
+  'at',
+  'my',
+  'me',
+  'i',
+  'some',
+  'add',
+  'make',
+  'put',
+  'show',
+  'want',
+  'create',
+  'use',
+  'that',
+  'this',
+  'it',
+  'please'
+])
+
+export function queryWords(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/[^a-z0-9-]+/)
+    .filter((w) => w && !STOPWORDS.has(w))
+}
+
+type Hay = { name: string; title: string; tags: string[]; category: string; body: string }
+
+const hayCache = new WeakMap<LibraryItem, Hay>()
+function hay(i: LibraryItem): Hay {
+  let h = hayCache.get(i)
+  if (!h) {
+    h = {
+      name: i.name.toLowerCase(),
+      title: i.title.toLowerCase(),
+      tags: i.tags.map((t) => t.toLowerCase()),
+      category: `${i.category} ${categoryLabel(i.category).toLowerCase()}`,
+      body: `${i.description} ${i.remocn?.useFor ?? ''}`.toLowerCase()
+    }
+    hayCache.set(i, h)
+  }
+  return h
+}
+
+const wordIn = (text: string, w: string): boolean =>
+  new RegExp(`(^|[^a-z0-9])${w.replace(/[-]/g, '\\-')}`).test(text)
+
+/** `strong` limits matching to name, title and tags (used for synonyms, which are looser). */
+function scoreTerm(h: Hay, t: string, strong = false): number {
+  const nameWords = h.name.split('-')
+  if (h.name === t) return 14
+  if (nameWords.includes(t) || wordIn(h.title, t)) return 10
+  if (h.tags.includes(t)) return 7
+  if (strong) return 0
+  if (h.name.includes(t) || h.title.includes(t)) return 6
+  if (h.tags.some((x) => x.includes(t))) return 4
+  if (h.category.includes(t)) return 4
+  if (wordIn(h.body, t)) return 2.5
+  if (t.length > 3 && h.body.includes(t)) return 1.5
+  return 0
+}
+
+function scoreWord(h: Hay, w: string): number {
+  const stem = w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w
+  let best = Math.max(scoreTerm(h, w), stem !== w ? scoreTerm(h, stem) * 0.95 : 0)
+  for (const syn of SYNONYMS[stem] ?? SYNONYMS[w] ?? [])
+    best = Math.max(best, scoreTerm(h, syn, true) * 0.6)
+  return best
+}
+
+export type LibraryFilter = {
+  source?: LibrarySource | 'all'
+  type?: 'block' | 'component' | 'all'
+  category?: LibraryCategory | 'all'
+}
+
+export function filterLibrary(items: LibraryItem[], f: LibraryFilter): LibraryItem[] {
+  return items.filter(
+    (i) =>
+      (!f.source || f.source === 'all' || i.source === f.source) &&
+      (!f.type || f.type === 'all' || i.type === f.type) &&
+      (!f.category || f.category === 'all' || i.category === f.category)
+  )
+}
+
+/**
+ * Rank items for a free-text query. Most words have to match something (name, title, tags,
+ * category or description, directly or through a synonym); with no query the input order is kept.
+ */
+export function searchLibrary(
+  items: LibraryItem[],
+  query: string,
+  f: LibraryFilter = {}
+): LibraryItem[] {
+  const pool = filterLibrary(items, f)
+  const words = queryWords(query)
+  if (words.length === 0) return pool
+  const need = Math.max(1, Math.ceil(words.length * 0.6))
+  const scored: { i: LibraryItem; s: number }[] = []
+  for (const i of pool) {
+    const h = hay(i)
+    let s = 0
+    let hit = 0
+    for (const w of words) {
+      const ws = scoreWord(h, w)
+      if (ws > 0) hit++
+      s += ws
+    }
+    if (hit >= need) scored.push({ i, s: s * (hit / words.length) })
+  }
+  return scored.sort((a, b) => b.s - a.s || a.i.title.localeCompare(b.i.title)).map((x) => x.i)
+}

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CatalogItem, Clip, ClipKind, Timeline, Track } from '../shared/types'
+import bundled from './catalog/hyperframes.json'
 import { parseJsonOutput, runHyperframes } from './env'
 import { appDataDir } from './settings'
 
@@ -161,22 +162,39 @@ type HfCatalogEntry = {
 }
 
 const DAY = 24 * 60 * 60 * 1000
+const bundledCatalog = bundled as CatalogItem[]
 
+function readCache(file: string): CatalogItem[] | null {
+  try {
+    const items = JSON.parse(readFileSync(file, 'utf8')) as CatalogItem[]
+    return Array.isArray(items) && items.length > 0 ? items : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The HyperFrames catalog: the daily cache, else `hyperframes catalog --json`, else the last
+ * cache, else the copy bundled with Luca (captured from hyperframes@0.8.78) so the library is
+ * never empty offline or when the CLI fails.
+ */
 export async function catalog(opts: { refresh?: boolean; cwd: string }): Promise<CatalogItem[]> {
   const cacheFile = join(appDataDir(), 'catalog.json')
-  if (!opts.refresh && existsSync(cacheFile) && Date.now() - statSync(cacheFile).mtimeMs < DAY) {
-    try {
-      return JSON.parse(readFileSync(cacheFile, 'utf8')) as CatalogItem[]
-    } catch {
-      // refetch
-    }
+  const fresh = existsSync(cacheFile) && Date.now() - statSync(cacheFile).mtimeMs < DAY
+  if (!opts.refresh && fresh) {
+    const cached = readCache(cacheFile)
+    if (cached) return cached
   }
   const res = await runHyperframes(['catalog', '--json'], { cwd: opts.cwd, timeoutMs: 90_000 })
   if (res.code !== 0) {
-    if (existsSync(cacheFile)) return JSON.parse(readFileSync(cacheFile, 'utf8')) as CatalogItem[]
-    throw new Error(`hyperframes catalog failed: ${(res.stderr || res.stdout).slice(-400)}`)
+    return (existsSync(cacheFile) && readCache(cacheFile)) || bundledCatalog
   }
-  const raw = parseJsonOutput<HfCatalog | HfCatalogEntry[]>(res.stdout)
+  let raw: HfCatalog | HfCatalogEntry[]
+  try {
+    raw = parseJsonOutput<HfCatalog | HfCatalogEntry[]>(res.stdout)
+  } catch {
+    return (existsSync(cacheFile) && readCache(cacheFile)) || bundledCatalog
+  }
   const data: HfCatalog = Array.isArray(raw) ? { items: raw } : raw
   const map = (e: HfCatalogEntry, fallback: 'block' | 'component'): CatalogItem => ({
     name: e.name,
@@ -197,6 +215,7 @@ export async function catalog(opts: { refresh?: boolean; cwd: string }): Promise
     ...(data.components ?? []).map((e) => map(e, 'component')),
     ...(data.items ?? []).map((e) => map(e, 'block'))
   ]
+  if (items.length === 0) return (existsSync(cacheFile) && readCache(cacheFile)) || bundledCatalog
   writeFileSync(cacheFile, JSON.stringify(items))
   return items
 }

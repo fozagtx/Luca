@@ -2,7 +2,7 @@ import type { Theme } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 
-export type SidebarTab = 'files' | 'catalog' | 'transcript' | 'looks'
+export type SidebarTab = 'inspiration' | 'catalog' | 'transcript' | 'looks'
 
 type UiStore = {
   sidebarOpen: boolean
@@ -33,7 +33,7 @@ type UiStore = {
 export const useUi = create<UiStore>((set, get) => ({
   sidebarOpen: true,
   chatOpen: true,
-  tab: 'files',
+  tab: 'inspiration',
   paletteOpen: false,
   historyOpen: false,
   exportOpen: false,
