@@ -293,8 +293,7 @@ export class ProjectAgent {
     this.closed = true
     // nothing may be dispatched into the closing session, and queued turns won't run
     this.q = null
-    for (const t of this.queued.splice(0))
-      t.done?.({ isError: true, error: 'The project was closed' })
+    for (const t of this.queued.splice(0)) t.done?.({ isError: true, error: PLAIN_ERRORS.closed })
     this.abort.abort()
     for (const w of this.waiters.splice(0)) w(null)
     this.cancelPending('Project closed')
@@ -731,8 +730,12 @@ export class ProjectAgent {
     for (const cb of turnEndListeners) cb(this.project, end)
     const turn = this.active
     this.active = null
-    // a stopped turn is not a success for whoever waits on it (clean edit, Save Look)
-    turn?.done?.({ isError: end.isError, error: end.error })
+    // a stopped turn is not a success for whoever waits on it (clean edit, Save Look), and
+    // they show the error to the person, so it is in plain words
+    turn?.done?.({
+      isError: end.isError,
+      error: stopped ? 'Stopped' : error && (PLAIN_ERRORS[error] ?? error)
+    })
     if (this.state === 'working') this.setState('ready')
     // without a live session the queue waits for the next start (restart, or the next send)
     if (this.q) {
