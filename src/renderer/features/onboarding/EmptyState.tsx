@@ -32,7 +32,6 @@ import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
 import { kindOf, useStart, type Attachment } from '../../stores/start'
 import { ChipPill } from '../chat/Message'
-import { ComponentPicker } from './ComponentPicker'
 import { CreateProgressList } from './CreateProgress'
 
 const ASPECTS: { id: Aspect; label: string }[] = [
@@ -236,7 +235,6 @@ function StartCard(): ReactElement {
                   Add media
                 </button>
               </Tip>
-              <ComponentPicker />
               {kind === 'images' || kind === 'scratch' ? (
                 <>
                   <Segmented

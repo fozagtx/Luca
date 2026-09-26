@@ -465,8 +465,8 @@ function SkeletonGrid(): ReactElement {
 
 function RemocnSetup({ studio }: { studio: StudioStatus }): ReactElement {
   const settingUp = useCatalog((s) => s.settingUp)
-  const err = useCatalog((s) => s.setupError) ?? studio.error ?? null
-  const [details, setDetails] = useState(false)
+  // a run that didn't finish just offers to try again (it resumes); the reason is never shown
+  const unfinished = !!(useCatalog((s) => s.setupError) ?? studio.error)
   return (
     <div className="card mx-3 mb-2 p-3 text-[11.5px] text-text-2">
       <div className="font-medium text-text">Extras need a one-time setup</div>
@@ -474,25 +474,6 @@ function RemocnSetup({ studio }: { studio: StudioStatus }): ReactElement {
         Luca prepares a small animation workspace so the extra animations can play in your video. It
         takes about two minutes.
       </p>
-      {err ? (
-        <div className="mt-1.5 text-[11px] leading-[1.45]">
-          <span className="text-danger">
-            Setup couldn’t finish. Check your internet connection and try again.
-          </span>{' '}
-          <button
-            type="button"
-            onClick={() => setDetails((d) => !d)}
-            className="text-text-3 underline decoration-dotted underline-offset-2 hover:text-text"
-          >
-            {details ? 'Hide details' : 'Details'}
-          </button>
-          {details ? (
-            <pre className="fade-in mt-1 max-h-24 overflow-auto rounded-[6px] bg-bg-muted p-2 font-mono text-[10px] whitespace-pre-wrap text-text-2 select-text">
-              {err}
-            </pre>
-          ) : null}
-        </div>
-      ) : null}
       <div className="mt-2 flex items-center gap-2">
         <Button
           size="sm"
@@ -500,7 +481,7 @@ function RemocnSetup({ studio }: { studio: StudioStatus }): ReactElement {
           disabled={settingUp}
           onClick={() => void useCatalog.getState().setupRemocn()}
         >
-          {settingUp ? 'Setting up…' : 'Set up extras'}
+          {settingUp ? 'Setting up…' : unfinished ? 'Try again' : 'Set up extras'}
         </Button>
         {settingUp && studio.step ? (
           <span className="shimmer-text text-[11px]">{studio.step}</span>
