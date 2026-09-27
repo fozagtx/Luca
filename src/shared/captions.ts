@@ -268,8 +268,9 @@ export function captionLook(
     letterSpacing: o.letterSpacing ?? s.letterSpacing ?? 0,
     color,
     accent,
-    // a pill the style never had needs text that reads on it
-    activeText: o.activeColor ?? s.activeText ?? (wordBox ? readableOn(accent, color) : color),
+    // the spoken word on its pill stays readable whatever the highlight color (for the styles'
+    // own colors this is exactly their text on the pill)
+    activeText: o.activeColor ?? (wordBox ? readableOn(accent, color) : (s.activeText ?? color)),
     wordBox,
     outline:
       o.outline !== undefined ? o.outline : s.outline ? { color: OUTLINE, width: s.outline } : null,

@@ -5,6 +5,7 @@ import type { CleanResult, CleanStatus, Cut, Edl, Project, Transcript } from '..
 import { activeAgent, agentFor } from './agent'
 import { refreshCaptions } from './captions'
 import { ffmpegProgress, probeMedia } from './env'
+import { findTags, replaceTag, setAttrs, type TagMatch } from './html'
 import { Channels, broadcast } from './ipc'
 import { getSettings } from './settings'
 import { extractAudio, isFiller, transcribe } from './transcribe'
@@ -210,27 +211,128 @@ export function remap(original: Transcript, cuts: Cut[]): Transcript {
   return { words }
 }
 
-function relink(p: Project, cleanRel: string, duration: number): void {
+/** The clean master's name for a set of cuts: rendering is cached by it. */
+function cleanFileFor(cuts: Cut[], source: string): string {
+  const hash = createHash('sha1').update(JSON.stringify(cuts)).update(source).digest('hex')
+  return `media/clean-${hash.slice(0, 10)}.mp4`
+}
+
+/** Which cuts made the clean master that is on the timeline, recorded when it was applied. */
+const appliedFile = (dir: string): string => join(dir, '.luca', 'clean-applied.json')
+
+function cutsOf(p: Project, cleanRel: string): Cut[] | null {
+  try {
+    const a = JSON.parse(readFileSync(appliedFile(p.dir), 'utf8')) as { file: string; cuts: Cut[] }
+    if (a.file === cleanRel) return a.cuts
+  } catch {
+    // projects cleaned before this was recorded: edl.json still holds its cuts unless redone
+  }
+  const edl = readEdl(p.dir)
+  const cuts = edl ? mergeCuts(edl.cuts) : null
+  return cuts && cleanFileFor(cuts, p.source) === cleanRel ? cuts : null
+}
+
+/** A moment in the source → the same moment in the clean master (a cut-out moment → where the cut is). */
+function toClean(t: number, cuts: Cut[]): number {
+  let out = t
+  for (const c of cuts) if (t > c.start) out -= Math.min(t, c.end) - c.start
+  return out
+}
+
+/** A moment in a clean master → the source; `end` picks the earlier side of a join. */
+function toSource(t: number, cuts: Cut[], end: boolean): number {
+  let clean = 0
+  const segs = keptSegments(cuts, Number.POSITIVE_INFINITY)
+  for (const s of segs) {
+    const len = s.end - s.start
+    if (t < clean + len || (end && t <= clean + len)) return s.start + (t - clean)
+    clean += len
+  }
+  return segs.length ? segs[segs.length - 1].end : t
+}
+
+const r3 = (n: number): number => Math.round(n * 1000) / 1000
+const num = (v: string | undefined, fallback: number): number => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+/**
+ * Point every clip of the source (or of an earlier clean master) at the new clean master. Each
+ * piece keeps the part of the video it showed, minus what was cut from it, and everything after a
+ * piece on the timeline moves earlier by the time that piece lost, so later clips, titles and
+ * music stay where they belong and the video's length shrinks by exactly the cuts.
+ */
+function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): void {
   const indexFile = join(p.dir, 'index.html')
   let html = readFileSync(indexFile, 'utf8')
-  const escaped = p.source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const re = new RegExp(`<(video|audio)\\b[^>]*src="(?:media/)?${escaped}"[^>]*>`, 'g')
-  const prev = readEdl(p.dir)
-  const prevClean = /media\/clean-[0-9a-f]+\.mp4/
-  const target = (tag: string): string =>
-    tag
-      .replace(/src="[^"]*"/, `src="${cleanRel}"`)
-      .replace(/data-duration="[^"]*"/, `data-duration="${duration}"`)
-  html = html.replace(re, target)
-  if (prev) {
-    html = html.replace(
-      new RegExp(`<(video|audio)\\b[^>]*src="${prevClean.source}"[^>]*>`, 'g'),
-      target
+  const sourceRels = new Set([p.source, `media/${p.source}`])
+  const prevClean = /^media\/clean-[0-9a-f]+\.mp4$/
+  type Piece = {
+    tag: TagMatch
+    start: number
+    end: number
+    delta: number
+    set: Record<string, string>
+  }
+  const pieces: Piece[] = []
+  for (const tag of findTags(html)) {
+    if (tag.name !== 'video' && tag.name !== 'audio') continue
+    const src = tag.attrs.src ?? ''
+    // the earlier master's own cuts, to find which moments of the source it showed
+    const before = sourceRels.has(src) ? [] : prevClean.test(src) ? cutsOf(p, src) : null
+    if (!before) continue
+    const start = num(tag.attrs['data-start'], 0)
+    const mediaStart = num(tag.attrs['data-media-start'], 0)
+    const length = num(tag.attrs['data-duration'], duration)
+    const from = toClean(toSource(mediaStart, before, false), cuts)
+    const to = Math.min(duration, toClean(toSource(mediaStart + length, before, true), cuts))
+    const newLength = r3(Math.max(0, to - from))
+    pieces.push({
+      tag,
+      start,
+      end: start + length,
+      delta: newLength - length,
+      set: {
+        src: cleanRel,
+        'data-duration': String(newLength),
+        ...(from > 0 || tag.attrs['data-media-start'] !== undefined
+          ? { 'data-media-start': String(r3(from)) }
+          : {})
+      }
+    })
+  }
+  if (!pieces.length) return
+  // a video and its own audio are one piece of time: count what it lost once
+  const spans = new Map<string, { end: number; delta: number }>()
+  for (const x of pieces) spans.set(`${r3(x.start)}:${r3(x.end)}`, { end: x.end, delta: x.delta })
+  const shiftAt = (t: number): number =>
+    [...spans.values()].reduce((acc, s) => (s.end <= t + 1e-3 ? acc + s.delta : acc), 0)
+  const edits = new Map<number, string>()
+  for (const x of pieces) {
+    const shift = shiftAt(x.start)
+    edits.set(
+      x.tag.start,
+      setAttrs(x.tag, { ...x.set, ...(shift ? { 'data-start': String(r3(x.start + shift)) } : {}) })
     )
   }
+  // other timeline clips (on a track) after a shortened piece move up with it
+  for (const tag of findTags(html)) {
+    if (edits.has(tag.start) || tag.attrs['data-track-index'] === undefined) continue
+    if (tag.attrs['data-start'] === undefined) continue
+    const start = num(tag.attrs['data-start'], 0)
+    const shift = shiftAt(start)
+    if (shift)
+      edits.set(tag.start, setAttrs(tag, { 'data-start': String(r3(Math.max(0, start + shift))) }))
+  }
+  for (const tag of findTags(html).sort((a, b) => b.start - a.start)) {
+    const raw = edits.get(tag.start)
+    if (raw !== undefined) html = replaceTag(html, tag, raw)
+  }
+  const total = [...spans.values()].reduce((acc, s) => acc + s.delta, 0)
   html = html.replace(
-    /(<div[^>]*data-composition-id="[^"]+"[^>]*data-duration=")[^"]*(")/,
-    `$1${duration}$2`
+    /(<div[^>]*data-composition-id="[^"]+"[^>]*data-duration=")([^"]*)(")/,
+    (_, a: string, d: string, b: string) => `${a}${r3(Math.max(0.1, num(d, duration) + total))}${b}`
   )
   writeFileSync(indexFile, html)
 }
@@ -243,12 +345,7 @@ export async function applyEdl(p: Project, edl: Edl): Promise<CleanResult> {
   const err = validateEdl(edl, duration)
   if (err) throw new Error(`Invalid edl.json: ${err}`)
   const cuts = mergeCuts(edl.cuts)
-  const hash = createHash('sha1')
-    .update(JSON.stringify(cuts))
-    .update(p.source)
-    .digest('hex')
-    .slice(0, 10)
-  const cleanRel = `media/clean-${hash}.mp4`
+  const cleanRel = cleanFileFor(cuts, p.source)
   const out = join(p.dir, cleanRel)
   mkdirSync(join(p.dir, 'media'), { recursive: true })
   setStatus({ stage: 'applying', message: `${cuts.length} cuts`, progress: 0 })
@@ -270,7 +367,8 @@ export async function applyEdl(p: Project, edl: Edl): Promise<CleanResult> {
   setStatus({ stage: 'relinking' })
   const newDuration = Math.round((await probe(out)).duration * 1000) / 1000
   writeFileSync(join(p.dir, 'edl.json'), JSON.stringify({ ...edl, cuts }, null, 2))
-  relink(p, cleanRel, newDuration)
+  relink(p, cleanRel, cuts, newDuration)
+  writeFileSync(appliedFile(p.dir), JSON.stringify({ file: cleanRel, cuts }, null, 2))
   // captions on the timeline follow the cut words; saved in the same version as the cut
   try {
     refreshCaptions(p)
