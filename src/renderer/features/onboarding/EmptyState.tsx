@@ -1,5 +1,6 @@
 import { Menu } from '@base-ui/react/menu'
-import type { Aspect, Chip } from '@shared/types'
+import { TEMPLATES } from '@shared/styles'
+import type { Chip } from '@shared/types'
 import {
   AudioLines,
   Clapperboard,
@@ -36,19 +37,11 @@ import { useUi } from '../../stores/ui'
 import { HomeBackdrop } from '../backgrounds/HomeBackdrop'
 import { ChipPill } from '../chat/Message'
 import { CreateProgressList } from './CreateProgress'
+import { StartSteps } from './StartSteps'
+import { ASPECTS, lengthOptions } from './steps-lib'
+import { StyleFieldIcon } from './StyleFieldIcon'
+import { Templates } from './Templates'
 
-const ASPECTS: { id: Aspect; label: string }[] = [
-  { id: 'landscape', label: '16:9' },
-  { id: 'portrait', label: '9:16' },
-  { id: 'square', label: '1:1' }
-]
-const LENGTHS: { value: number | null; label: string }[] = [
-  { value: null, label: 'Any length' },
-  { value: 10, label: '10 s' },
-  { value: 15, label: '15 s' },
-  { value: 30, label: '30 s' },
-  { value: 60, label: '1 min' }
-]
 const IDEAS = [
   'A 15-second launch teaser with bold kinetic titles',
   'A photo slideshow with smooth camera moves',
@@ -57,14 +50,19 @@ const IDEAS = [
 ]
 
 export function EmptyState(): ReactElement {
+  // while the steps are open they are all there is: one choice at a time
+  const inSteps = useStart((s) => s.step !== null)
   return (
     <div className="relative h-full">
       <HomeBackdrop />
       <div className="scroll relative h-full">
-        <div className="flex min-h-full flex-col items-center px-8 py-10">
+        <div
+          className={cn('flex min-h-full flex-col items-center px-8', inSteps ? 'py-5' : 'py-10')}
+        >
           <div className="my-auto flex w-full max-w-[760px] flex-col gap-10">
             <StartCard />
-            <Recent />
+            {inSteps ? null : <Templates />}
+            {inSteps ? null : <Recent />}
           </div>
         </div>
       </div>
@@ -73,13 +71,17 @@ export function EmptyState(): ReactElement {
 }
 
 function StartCard(): ReactElement {
-  const { files, previews, aspect, duration, busy, progress, seen, error } = useStart()
-  const { addFiles, removeFile, pickFiles, setAspect, setDuration, create } = useStart()
+  const { files, previews, aspect, duration, busy, progress, seen, error, step, idea, style } =
+    useStart()
+  const { addFiles, removeFile, pickFiles, setAspect, setDuration } = useStart()
+  const { create, begin, setStep, applyTemplate } = useStart()
   const draft = useChat((s) => s.draft)
   const setDraft = useChat((s) => s.setDraft)
   const chips = useChat((s) => s.chips)
   const removeChip = useChat((s) => s.removeChip)
   const setBackgrounds = useUi((s) => s.setBackgrounds)
+  const template = TEMPLATES.find((t) => t.id === style.template)
+  const inSteps = step !== null
   const openProject = useProject((s) => s.open)
   const loading = useProject((s) => s.loading)
   const [over, setOver] = useState(false)
@@ -100,13 +102,27 @@ function StartCard(): ReactElement {
     el.style.height = `${Math.min(Math.max(el.scrollHeight, 66), 180)}px`
   }, [draft])
 
+  /** The idea goes to the steps first (theme, font…); a video with nothing asked just opens. */
   const go = async (): Promise<void> => {
     if (!canGo) return
-    setSince(Date.now())
     const text = draft
+    const begun = begin(text)
+    if (begun === 'invalid') return
     setDraft('')
+    if (begun === 'steps') return
+    setSince(Date.now())
     const ok = await create(text)
     if (!ok) setDraft(text)
+  }
+  const createFromSteps = (): void => {
+    setSince(Date.now())
+    void create(idea)
+  }
+  const editIdea = (): void => {
+    // words typed meanwhile (in the chat) win over the idea
+    if (!draft.trim()) setDraft(idea)
+    setStep(null)
+    requestAnimationFrame(() => ref.current?.focus())
   }
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -126,36 +142,49 @@ function StartCard(): ReactElement {
   }
 
   const placeholder =
-    kind === 'images'
-      ? files.length === 1
-        ? 'What should this photo become? (optional) e.g. “a moody cinematic intro”'
-        : 'What should Luca make from these photos? (optional)'
-      : kind === 'video'
-        ? videos.length > 1
-          ? 'What should Luca make from these clips? (optional) e.g. “cut them into a 30-second reel”'
-          : 'What should Luca do with this video? (optional) e.g. “add captions and a title”'
-        : kind === 'audio'
-          ? 'What visuals should go with this audio? (optional)'
-          : 'Describe the video you want… e.g. “a 15-second launch teaser for my coffee brand”'
+    template && kind === 'scratch'
+      ? template.placeholder
+      : kind === 'images'
+        ? files.length === 1
+          ? 'What should this photo become? (optional) e.g. “a moody cinematic intro”'
+          : 'What should Luca make from these photos? (optional)'
+        : kind === 'video'
+          ? videos.length > 1
+            ? 'What should Luca make from these clips? (optional) e.g. “cut them into a 30-second reel”'
+            : 'What should Luca do with this video? (optional) e.g. “add captions and a title”'
+          : kind === 'audio'
+            ? 'What visuals should go with this audio? (optional)'
+            : 'Describe the video you want… e.g. “a 15-second launch teaser for my coffee brand”'
   const catalogChips = chips.map((c, i) => ({ c, i })).filter(({ c }) => c.kind === 'catalog')
 
   return (
-    <section className="flex flex-col items-center gap-6">
-      <div className="flex flex-col items-center gap-3 text-center">
-        <img
-          src={logo}
-          alt=""
-          draggable={false}
-          className="size-16 rounded-[16px] shadow-[0_10px_24px_rgba(0,0,0,0.18)] transition-transform duration-300 hover:scale-105 hover:-rotate-2"
-        />
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-text">
-          What are we making today?
-        </h1>
-        <p className="max-w-[460px] text-[13px] leading-relaxed text-text-2">
-          Start from a video, one photo, a handful of images or just an idea. Luca builds the
-          scenes, titles, effects and motion for you.
-        </p>
-      </div>
+    <section className={cn('flex flex-col items-center', inSteps ? 'gap-4' : 'gap-6')}>
+      {inSteps && !busy ? (
+        // compact while the steps are open, so the choices and Next fit on one screen
+        <div className="flex flex-col items-center gap-1 text-center">
+          <h1 className="text-[18px] font-semibold tracking-[-0.02em] text-text">Make it yours</h1>
+          <p className="text-[12.5px] leading-relaxed text-text-2">
+            A few quick choices so Luca gets the look right. Slide through each one, or skip it and
+            Luca decides.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-3 text-center">
+          <img
+            src={logo}
+            alt=""
+            draggable={false}
+            className="size-16 rounded-[16px] shadow-[0_10px_24px_rgba(0,0,0,0.18)] transition-transform duration-300 hover:scale-105 hover:-rotate-2"
+          />
+          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-text">
+            What are we making today?
+          </h1>
+          <p className="max-w-[460px] text-[13px] leading-relaxed text-text-2">
+            Start from a video, one photo, a handful of images, a template or just an idea. Luca
+            asks a few quick questions, then builds the scenes, titles, effects and motion for you.
+          </p>
+        </div>
+      )}
 
       <div
         onDragOver={(e) => {
@@ -198,8 +227,31 @@ function StartCard(): ReactElement {
             </div>
             <CreateProgressList kind={kind} progress={progress} seen={seen} since={since} />
           </div>
+        ) : inSteps ? (
+          <div className={cn(over && 'opacity-0')}>
+            <StartSteps onCreate={createFromSteps} onEditIdea={editIdea} />
+          </div>
         ) : (
           <div className={cn('flex flex-col', over && 'opacity-0')}>
+            {template ? (
+              <div className="flex px-4 pt-3.5">
+                <span className="pop-in inline-flex h-7 items-center gap-1.5 rounded-full border border-secondary-border bg-secondary pr-1 pl-2.5 text-[12px] font-medium text-secondary-fg">
+                  <StyleFieldIcon field="template" size={12} />
+                  Template: {template.name}
+                  <span className="font-normal opacity-75">
+                    · {template.duration}s {template.aspect === 'portrait' ? '9:16' : '16:9'}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Stop using the template"
+                    onClick={() => applyTemplate(null)}
+                    className="ml-0.5 flex size-5 items-center justify-center rounded-full hover:bg-bg/60"
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              </div>
+            ) : null}
             {files.length > 0 || background ? (
               <div className="flex flex-wrap gap-2 px-4 pt-4">
                 {background ? (
@@ -258,22 +310,6 @@ function StartCard(): ReactElement {
                   Add media
                 </button>
               </Tip>
-              <Tip label="A photo or short video from Pexels to put behind your video">
-                <button
-                  type="button"
-                  onClick={() => setBackgrounds(true)}
-                  aria-pressed={!!background}
-                  className={cn(
-                    'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-medium transition-[border-color,color,transform] duration-150 active:scale-[0.97]',
-                    background
-                      ? 'border-secondary-border bg-secondary text-secondary-fg'
-                      : 'border-border bg-bg text-text-2 hover:border-border-strong hover:text-text'
-                  )}
-                >
-                  <Wallpaper size={13} strokeWidth={1.9} />
-                  Background
-                </button>
-              </Tip>
               {/* for footage it starts out matching the first video's shape */}
               <Segmented
                 items={ASPECTS}
@@ -289,7 +325,7 @@ function StartCard(): ReactElement {
                   onChange={(e) => setDuration(e.target.value ? Number(e.target.value) : null)}
                   className="h-8 rounded-full border border-border bg-bg px-3 text-[12px] font-medium text-text-2 outline-none hover:border-border-strong"
                 >
-                  {LENGTHS.map((l) => (
+                  {lengthOptions(duration).map((l) => (
                     <option key={l.label} value={l.value ?? ''}>
                       {l.label}
                     </option>
@@ -299,7 +335,9 @@ function StartCard(): ReactElement {
               <GenerateButton
                 className="ml-auto"
                 label={
-                  kind === 'video' && !draft.trim() && !background ? 'Open in Luca' : 'Create video'
+                  kind === 'video' && !draft.trim() && !background && !template
+                    ? 'Open in Luca'
+                    : 'Continue'
                 }
                 generatingLabel="Creating"
                 generating={busy}
@@ -317,7 +355,7 @@ function StartCard(): ReactElement {
         </div>
       ) : null}
 
-      {!busy ? (
+      {!busy && !inSteps ? (
         <div className="-mt-1 flex w-full flex-wrap items-center justify-center gap-1.5">
           {IDEAS.map((idea, i) => (
             <button

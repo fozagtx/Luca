@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { useBackgrounds } from '../../stores/backgrounds'
+import { useStart } from '../../stores/start'
 import { useUi } from '../../stores/ui'
 
 /**
@@ -15,6 +16,8 @@ export function HomeBackdrop(): ReactElement | null {
   const home = useBackgrounds((s) => s.home)
   const windowActive = useUi((s) => s.windowActive)
   const setBackgrounds = useUi((s) => s.setBackgrounds)
+  // the start steps have the whole screen: the corner credit and shuffle wait until they close
+  const inSteps = useStart((s) => s.step !== null)
   const [poster, setPoster] = useState<string | null>(null)
   const [playing, setPlaying] = useState<string | null>(null)
   const [shuffling, setShuffling] = useState(false)
@@ -77,7 +80,7 @@ export function HomeBackdrop(): ReactElement | null {
         </div>
       ) : null}
 
-      {home ? (
+      {inSteps ? null : home ? (
         <div className="fade-in absolute right-3 bottom-3 z-10 flex max-w-[calc(100%-24px)] items-center gap-0.5 rounded-full border border-border bg-bg/85 py-0.5 pr-0.5 pl-2.5 text-[10.5px] text-text-2 shadow-card backdrop-blur">
           <a
             href={home.url}

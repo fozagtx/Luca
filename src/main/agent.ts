@@ -437,6 +437,9 @@ export class ProjectAgent {
         lines.push(
           `Background the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with background_add {"id":"${chip.id}"} and use it as the background unless they ask for something else.`
         )
+      } else if (chip.kind === 'style') {
+        // a start-step choice: its full guide is in the start brief (and .luca/STYLE.md)
+        lines.push(`Picked on the start steps: ${chip.label}.`)
       } else if (chip.kind === 'media') {
         // a file the user added in the chat: Luca sees the image (or a frame of the video)
         const { line, image } = describeMedia(this.project.dir, chip)
@@ -460,6 +463,10 @@ export class ProjectAgent {
     }
     if (existsSync(join(lucaDir(this.project.dir), 'LOOK.md')))
       lines.push('An active Look is set: read .luca/LOOK.md and follow it for every visual choice.')
+    else if (existsSync(join(lucaDir(this.project.dir), 'STYLE.md')))
+      lines.push(
+        'The user picked a look when they started this video (.luca/STYLE.md): keep new titles, text, backgrounds and motion in that look unless they ask for something else.'
+      )
     const text = lines.length
       ? `${turn.text}\n\n<context>\n${lines.join('\n')}\n</context>`
       : turn.text

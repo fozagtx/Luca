@@ -177,7 +177,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
       {noProject && !voiceMode ? (
         <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] text-text-3">
           <Sparkles size={11} className="shrink-0 text-accent" />
-          No project open: describe a video and Luca starts it from scratch.
+          No project open: describe a video, then pick its look on the start screen.
         </div>
       ) : null}
       <div

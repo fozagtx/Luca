@@ -78,6 +78,8 @@ export type Chip =
     }
   | { kind: 'clip'; clipId: string; track: number; start: number; end: number }
   | { kind: 'transcript'; text: string; start: number; end: number }
+  /** A choice from the start steps (template, theme, font…), shown on the first request. */
+  | { kind: 'style'; field: StyleField; label: string }
   /** A Pexels photo or video the person picked as the background. */
   | {
       kind: 'background'
@@ -362,6 +364,30 @@ export type StartArgs = {
   look?: string | null
   /** Target length in seconds for image and scratch projects. */
   duration?: number
+  /** What the person picked on the start steps; Luca follows it (saved as .luca/STYLE.md). */
+  style?: StartStyle
+}
+
+/** One of the start steps' choices. */
+export type StyleField = 'template' | 'theme' | 'font' | 'background' | 'motion' | 'keyframes'
+
+/**
+ * The look picked on the start steps before Luca begins (ids from src/shared/styles.ts).
+ * Anything left out is Luca's to decide.
+ */
+export type StartStyle = {
+  /** A ready-made viral workflow. */
+  template?: string
+  theme?: string
+  /** A built-in font family. */
+  font?: string
+  /**
+   * Plain backgrounds in the theme's colours, none (the footage fills the frame), or the Pexels
+   * photo or video picked (it goes to Luca as its own chip).
+   */
+  background?: 'theme' | 'none' | 'picked'
+  motion?: string
+  keyframes?: string
 }
 
 export type StartResult = {

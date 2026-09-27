@@ -46,6 +46,12 @@ function layoutOf(ids: string[], sizes: number[] | undefined): Layout | undefine
   return Object.fromEntries(ids.map((id, i) => [id, sizes[i]]))
 }
 
+/** The stored outer layout, with the sidebar's share given to the centre while it starts hidden. */
+function outerLayout(sizes: number[] | undefined, sidebarOpen: boolean): Layout | undefined {
+  const l = layoutOf(['sidebar', 'center', 'chat'], sizes)
+  return l && !sidebarOpen ? { sidebar: 0, center: l.sidebar + l.center, chat: l.chat } : l
+}
+
 /**
  * Keeps a collapsible side panel and its toggle in the UI store in step: the toolbar button,
  * the menu and ⇧⌘S change the store and the panel follows (animated); dragging the panel shut
@@ -103,6 +109,10 @@ export default function App(): ReactElement {
   useEffect(() => {
     void init()
   }, [init])
+  // Home belongs to the start card and its steps: the sidebar stays out of the way there
+  useEffect(() => {
+    if (!hasProject) setSidebar(false)
+  }, [hasProject, setSidebar])
   useEffect(() => {
     if (settings) setTheme(settings.theme, false)
   }, [settings, setTheme])
@@ -132,7 +142,7 @@ export default function App(): ReactElement {
             elementRef={outerEl}
             orientation="horizontal"
             className="min-h-0 flex-1 px-1.5 pb-1.5"
-            defaultLayout={layoutOf(['sidebar', 'center', 'chat'], settings.panes?.outer)}
+            defaultLayout={outerLayout(settings.panes?.outer, sidebarOpen)}
             onLayoutChanged={(l) => {
               // a collapsed side panel is a toggle state, not a size worth remembering
               if (!(l.sidebar > 0) || !(l.chat > 0)) return
@@ -145,7 +155,7 @@ export default function App(): ReactElement {
               onResize={sidebar.onResize}
               collapsible
               collapsedSize={0}
-              defaultSize={280}
+              defaultSize={sidebarOpen ? 280 : 0}
               minSize={232}
               maxSize={420}
               className={cn('panel', !sidebarOpen && 'panel-collapsed')}
