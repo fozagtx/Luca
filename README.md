@@ -1,10 +1,90 @@
-<h1><img src="docs/logo.png" alt="" width="40" align="top" /> Luca</h1>
+<p align="center">
+  <img src="./docs/hero.png" alt="Luca editing a launch video: live preview, timeline and chat while Luca styles the title" />
+</p>
 
-Talk to your video. Luca is a personal macOS video editor: say or type what you want, approve it, and watch the preview change.
+<p align="center">
+  <a href="https://github.com/fozagtx/Luca/releases"><img src="https://img.shields.io/badge/version-0.1.0-7C5CFF" alt="Version 0.1.0" /></a>
+  <img src="https://img.shields.io/badge/macOS-13%2B%20%C2%B7%20Apple%20silicon-000000?logo=apple&logoColor=white" alt="macOS 13+ on Apple silicon" />
+  <a href="https://claude.com/claude-code"><img src="https://img.shields.io/badge/runs%20on-Claude%20Code-D97757?logo=claude&logoColor=white" alt="Runs on Claude Code" /></a>
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license" />
+</p>
 
-![Luca with a project loaded](docs/screenshots/editor-light.png)
+# <img src="docs/logo.png" alt="" width="36" align="top" /> Luca
 
-## What it does
+Luca is a video editor you talk to. Say or type what you want (“put my name in a lower third at 2s”, “cut the ums”, “make the title pop”), approve it, and watch the preview change in real time. Built for founders, creators and small teams who need a launch video, a product demo or a TikTok shipped today, not next week.
+
+## Why Luca
+
+- **Talk instead of keyframing.** Describe the change in plain words, or click anything in the preview and say what should change right there. Luca does the editing and asks before anything unusual.
+- **Watch it change live.** The preview plays exactly what will export and updates within a second of every edit, without losing your place.
+- **Nothing is ever lost.** Every change, Luca’s or yours, is saved as a version you can restore or undo with ⌘Z. Your original footage is never modified.
+- **Your Mac, your subscription.** Luca runs on your own Claude subscription through Claude Code and never sees your credentials. Projects are plain folders on your disk.
+- **A real editor underneath.** Timeline with trim, split and snapping, Caption Studio, clean edits that cut ums and retakes, stock backgrounds, clips made with Gemini, voice control and MP4 export.
+
+## Installation
+
+Luca runs on Claude Code, so set that up first:
+
+```bash
+brew install node ffmpeg git
+npm install -g @anthropic-ai/claude-code
+claude          # then type /login and sign in with your Claude subscription
+```
+
+Then download the latest `luca-<version>-arm64.dmg` from [Releases](https://github.com/fozagtx/Luca/releases) (Apple silicon, macOS 13+). The build isn’t signed yet: the first time, right-click `Luca.app` → **Open**, or allow it under System Settings → Privacy & Security.
+
+Optional keys, all entered inside the app and kept in the macOS Keychain:
+
+- [AssemblyAI](https://www.assemblyai.com/) for Clean edit, captions from speech and voice input.
+- [Pexels](https://www.pexels.com/api/) (free) for photo and video backgrounds.
+- [Gemini](https://aistudio.google.com/apikey) for making and editing video clips (Gemini in the toolbar). Generation is billed to the key’s Google Cloud project, so a key made in a project with Google Cloud credits uses them.
+
+## Make your first video
+
+You need two things: Luca and an idea.
+
+1. **Open Luca and describe the video**, for example “a 15-second TikTok about our launch”. Or drop in a video, a few photos or a song.
+2. **Pick a look.** Luca asks a few quick questions (theme, font, background, motion) with live previews. Skip any and Luca decides.
+3. **Watch it build, then keep talking.** “Put my name in a lower third at 2s.” “Make the captions bigger.” Press **G** to grab anything in the preview and comment on it.
+4. **Export.** Press ⌘E for an MP4, rendered in the background.
+
+Stuck on a blank page? Start from a **Viral TikTok** or **Viral explainer** template, or pick an idea from Inspiration (⌘1).
+
+## Built with
+
+Luca is free and MIT-licensed. It stands on these tools, and couldn’t exist without them.
+
+<!-- built-with:start -->
+<table align="center">
+  <tbody>
+    <tr>
+      <td colspan="20" width="850" align="center"><a href="https://claude.com/claude-code"><img src="docs/logos/claude.svg" alt="" height="44" align="middle" /> <b>Claude Code</b></a><br /><sub>The brain: Luca plans and makes every edit through it</sub></td>
+    </tr>
+    <tr>
+      <td colspan="5" width="212" align="center"><a href="https://ai.google.dev/gemini-api"><img src="docs/logos/gemini.svg" alt="" height="40" align="middle" /> <b>Gemini</b></a><br /><sub>New clips, restyles and continuations</sub></td>
+      <td colspan="5" width="212" align="center"><a href="https://github.com/heygen-com/hyperframes"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/hyperframes-dark.svg" /><img src="docs/logos/hyperframes.svg" alt="HeyGen HyperFrames" height="40" align="middle" /></picture></a><br /><sub>Preview and render</sub></td>
+      <td colspan="5" width="212" align="center"><a href="https://www.remotion.dev/"><img src="docs/logos/remotion.png" alt="" height="40" align="middle" /> <b>Remotion</b></a><br /><sub>Animated components</sub></td>
+      <td colspan="5" width="212" align="center"><a href="https://remocn.dev/"><img src="docs/logos/remocn.svg" alt="" height="40" align="middle" /> <b>remocn</b></a><br /><sub>Titles, transitions and effects</sub></td>
+    </tr>
+    <tr>
+      <td colspan="4" width="170" align="center"><a href="https://www.assemblyai.com/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/assemblyai-dark.png" /><img src="docs/logos/assemblyai.png" alt="AssemblyAI" height="26" align="middle" /></picture></a><br /><sub>Transcripts and voice</sub></td>
+      <td colspan="4" width="170" align="center"><a href="https://www.pexels.com/"><img src="docs/logos/pexels.svg" alt="" height="30" align="middle" /> <b>Pexels</b></a><br /><sub>Backgrounds</sub></td>
+      <td colspan="4" width="170" align="center"><a href="https://www.electronjs.org/"><img src="docs/logos/electron.svg" alt="" height="30" align="middle" /> <b>Electron</b></a><br /><sub>The Mac app</sub></td>
+      <td colspan="4" width="170" align="center"><a href="https://ffmpeg.org/"><img src="docs/logos/ffmpeg.svg" alt="" height="30" align="middle" /> <b>FFmpeg</b></a><br /><sub>Footage and audio</sub></td>
+      <td colspan="4" width="170" align="center"><a href="https://ui.shadcn.com/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/shadcnui-dark.svg" /><img src="docs/logos/shadcnui.svg" alt="" height="30" align="middle" /></picture> <b>shadcn/ui</b></a><br /><sub>Interface</sub></td>
+    </tr>
+  </tbody>
+</table>
+<!-- built-with:end -->
+
+<p align="center"><b>Coming soon:</b> <a href="https://higgsfield.ai/"><img src="docs/logos/higgsfield.png" alt="" height="20" align="middle" /> Higgsfield</a>, to find and generate media right from the chat.</p>
+
+Building a tool Luca should talk to? [Open an issue](https://github.com/fozagtx/Luca/issues) and it could live here.
+
+## Everything Luca can do
+
+<details>
+<summary>Every feature, in one table</summary>
 
 |     |                          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | --- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -29,40 +109,11 @@ Talk to your video. Luca is a personal macOS video editor: say or type what you 
 | F13 | **Voice**                | Talk to Luca hands-free or dictate, with live speech-to-text; nothing reaches Luca until you approve it. Voice mode: press ↩ or ⌘↩, click Send, or just say “send it” (“scratch that” drops it), and replies are read aloud. Dictation: press ↩ when you're done, then approve the card with ⌘↩ or Send.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | F14 | **Keyboard**             | `/` to type to Luca, `?` for every shortcut, ⌘K for commands. A notification tells you when Luca finishes or needs your OK while you're in another app.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
-## Screenshots
-
-| Empty state                                      | Dark mode (toolbar toggle, View → Appearance, ⇧⌘D) |
-| ------------------------------------------------ | -------------------------------------------------- |
-| ![Empty state](docs/screenshots/empty-state.png) | ![Editor, dark](docs/screenshots/editor-dark.png)  |
-
-| Timeline with a selected clip                                      | Chat                               |
-| ------------------------------------------------------------------ | ---------------------------------- |
-| ![Timeline, selected clip](docs/screenshots/timeline-selected.png) | ![Chat](docs/screenshots/chat.png) |
-
-| Catalog                                  | Looks                                | Transcript                                     |
-| ---------------------------------------- | ------------------------------------ | ---------------------------------------------- |
-| ![Catalog](docs/screenshots/catalog.png) | ![Looks](docs/screenshots/looks.png) | ![Transcript](docs/screenshots/transcript.png) |
-
-| Export sheet                                       |
-| -------------------------------------------------- |
-| ![Export sheet](docs/screenshots/export-sheet.png) |
-
-## Download
-
-Grab the latest `luca-<version>-arm64.dmg` from [Releases](https://github.com/fozagtx/Luca/releases) (Apple silicon, macOS 13+).
-
-The build is not signed or notarized. The first time, right-click `Luca.app` → **Open** (or allow it under System Settings → Privacy & Security). Luca still needs `ffmpeg`, `git` and the `claude` CLI on your PATH (see below).
+</details>
 
 ## Run from source
 
-Prerequisites:
-
-- Node 22+, ffmpeg, git (`brew install node ffmpeg git`)
-- Claude Code: `npm install -g @anthropic-ai/claude-code`, then `claude` → `/login` with your Claude subscription. Luca never stores your credentials.
-- HyperFrames browser: `npx hyperframes browser ensure`
-- Optional: an [AssemblyAI](https://www.assemblyai.com/) API key for Clean edit and voice input — entered in the Transcript tab (or when you first click the mic) and kept in the macOS Keychain via Electron `safeStorage`.
-- Optional: a [Gemini API key](https://aistudio.google.com/apikey) for making and editing video — entered under Gemini in the toolbar, checked with Google and kept the same way. Generation is billed to the key’s Google Cloud project, so a key made in a project that has Google Cloud credits uses them. For development you can instead set `GEMINI_API_KEY` in the environment.
-- Optional: a free [Pexels](https://www.pexels.com/api/) API key for backgrounds — entered in the Backgrounds tab (⌘4) or the start card's Background picker, checked with Pexels and kept the same way. For development you can instead set `PEXELS_API_KEY` in the environment, or `MAIN_VITE_PEXELS_API_KEY` in a git-ignored `.env` to build a key into the app (anyone with the build can read it).
+Prerequisites: everything under [Installation](#installation) (with Node 22+), plus the HyperFrames browser (`npx hyperframes browser ensure`). For development you can also set `PEXELS_API_KEY` and `GEMINI_API_KEY` in the environment, or `MAIN_VITE_PEXELS_API_KEY` in a git-ignored `.env` to build a key into the app (anyone with the build can read it).
 
 ```bash
 npm install
@@ -71,7 +122,8 @@ npm run typecheck && npm run lint
 npm run dist       # unsigned .dmg + .zip in dist/
 ```
 
-## How it works (for developers)
+<details>
+<summary><b>How it works</b> (for developers)</summary>
 
 The app itself never names the tools below; they are here for people building Luca from source.
 
@@ -87,8 +139,8 @@ The app itself never names the tools below; they are here for people building Lu
 - **Export** runs `@hyperframes/producer` in an Electron `utilityProcess` (parallel workers sized to the Mac, VideoToolbox) and writes `renders/<name>-<date>.mp4`.
 - **UI**: React 19, TypeScript, Tailwind v4, shadcn Base UI, three resizable panes (Inspiration/Catalog/Transcript/Looks · Preview/Timeline · Chat); the sidebar starts hidden (⇧⌘S) and stays hidden on Home, where the start steps take its place. Chat patterns (shimmering status text, steps, prompt input, suggestions, scroll button) are adapted from [prompt-kit](https://www.prompt-kit.com/) (MIT).
 
-**Coming soon:** Higgsfield, to find and generate media right from chat.
+</details>
 
 ## License
 
-MIT © fozagtx. HyperFrames, Remotion and Remocn are subject to their own licenses.
+MIT © fozagtx. HyperFrames, Remotion and remocn are subject to their own licenses.
