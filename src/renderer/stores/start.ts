@@ -61,7 +61,8 @@ type StartStore = {
    * Create the project from the attachments (or from nothing), open it and hand Luca the idea
    * with any components the person picked (they wait as chips in the chat composer).
    */
-  create: (prompt: string) => Promise<boolean>
+  /** `spoken`: asked out loud, so Luca's first reply is short enough to read aloud. */
+  create: (prompt: string, opts?: { spoken?: boolean }) => Promise<boolean>
 }
 
 let bound = false
@@ -108,7 +109,7 @@ export const useStart = create<StartStore>((set, get) => ({
   setDuration: (duration) => set({ duration }),
   reset: () => set({ files: [], error: null, progress: null, seen: [] }),
 
-  create: async (prompt) => {
+  create: async (prompt, opts) => {
     if (get().busy) return false
     if (!bound) {
       bound = true
@@ -148,7 +149,11 @@ export const useStart = create<StartStore>((set, get) => ({
               ? 'Turn my photo into a video'
               : `Make a video from my ${files.length} photos`
             : 'Make a video that goes with my audio')
-        await chat.send(visible, { time: 0, note: res.brief })
+        await chat.send(visible, {
+          time: 0,
+          note: res.brief,
+          ...(opts?.spoken ? { voice: true } : {})
+        })
       }
       return true
     } catch (err) {

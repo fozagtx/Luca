@@ -220,7 +220,13 @@ function onVoiceEvent(e: VoiceEvent): void {
   if (e.type === 'closed') {
     sid++
     teardown()
-    useVoice.setState({ ...OFF, error: `Voice input stopped: ${e.reason ?? 'connection closed'}` })
+    // what was said so far stays in the queue, but the next session starts a new request
+    useQueue.getState().closeTake()
+    console.warn('[voice] session closed:', e.reason)
+    useVoice.setState({
+      ...OFF,
+      error: 'Voice input stopped. Check your internet connection and try again.'
+    })
     return
   }
   if (e.text) touch()

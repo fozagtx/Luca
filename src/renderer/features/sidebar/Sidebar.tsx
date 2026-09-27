@@ -1,4 +1,4 @@
-import { Captions, LayoutGrid, Lightbulb, Palette, PanelLeftClose } from 'lucide-react'
+import { Captions, Lightbulb, Palette, PanelLeftClose } from 'lucide-react'
 import type { ReactElement, ReactNode } from 'react'
 import { ErrorBoundary } from '../../components/ui/error-boundary'
 import { Segmented, type SegmentedItem } from '../../components/ui/segmented'
@@ -17,25 +17,20 @@ const tabs: (SegmentedItem<SidebarTab> & { title: string })[] = [
     shortcut: '⌘1',
     icon: <Lightbulb size={15} strokeWidth={1.6} />
   },
-  {
-    id: 'catalog',
-    label: 'Catalog',
-    title: 'Catalog',
-    shortcut: '⌘2',
-    icon: <LayoutGrid size={15} strokeWidth={1.6} />
-  },
+  // Luca picks components itself from what you describe, so there is no catalog to browse; the
+  // Catalog tab (./catalog) stays in the code for when browsing comes back
   {
     id: 'transcript',
     label: 'Transcript',
     title: 'Transcript',
-    shortcut: '⌘3',
+    shortcut: '⌘2',
     icon: <Captions size={15} strokeWidth={1.6} />
   },
   {
     id: 'looks',
     label: 'Looks',
     title: 'Looks',
-    shortcut: '⌘4',
+    shortcut: '⌘3',
     icon: <Palette size={15} strokeWidth={1.6} />
   }
 ]

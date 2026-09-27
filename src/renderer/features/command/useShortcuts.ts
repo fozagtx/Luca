@@ -4,6 +4,7 @@ import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { stopLuca } from '../../stores/queue'
 import { useTimeline } from '../../stores/timeline'
+import { useVoice } from '../../stores/voice'
 import { useUi, type SidebarTab } from '../../stores/ui'
 import { goHome } from './go-home'
 import type { Theme } from '@shared/types'
@@ -24,9 +25,13 @@ const isEditable = (t: EventTarget | null): boolean => {
 }
 
 /** Open the chat if it's hidden and put the caret in the message box. */
-function focusChat(): void {
+async function focusChat(): Promise<void> {
   const ui = useUi.getState()
   if (!ui.chatOpen) ui.setChat(true)
+  // the message box is hidden while talking: wrap up first (what was said stays in the queue)
+  const voice = useVoice.getState()
+  if (voice.mode === 'dictate') await voice.finish()
+  else if (voice.mode === 'converse') voice.cancel()
   requestAnimationFrame(() => document.getElementById('chat-composer')?.focus())
 }
 
@@ -119,7 +124,7 @@ export function useShortcuts(): void {
           break
         case '/':
           e.preventDefault()
-          focusChat()
+          void focusChat()
           break
         case '?':
           e.preventDefault()

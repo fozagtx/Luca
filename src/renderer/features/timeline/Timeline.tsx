@@ -383,7 +383,9 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     setDropError(null)
     const res = await luca.catalog.add(d.name)
     if (!res.ok) {
-      setDropError(res.error ?? `Could not add ${d.name}`)
+      // the reason is technical; the person only needs to know it didn't go in
+      console.warn('[timeline] add failed:', res.error)
+      setDropError(`Couldn’t add ${d.title || d.name}. Ask Luca in the chat instead.`)
       setTimeout(() => setDropError(null), 6000)
       return
     }

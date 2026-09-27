@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
 import { library } from './library'
 import { HYPERFRAMES } from './env'
-import { installComponent, placeComponent, studioStatus } from './remocn'
+import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
 
 const text = (data: unknown): { content: { type: 'text'; text: string }[] } => ({
   content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data) }]
@@ -13,6 +13,20 @@ const categoryIds = CATEGORIES.map((c) => c.id) as [
   LibraryItem['category'],
   ...LibraryItem['category'][]
 ]
+
+/**
+ * Set extras up quietly the first time Luca reaches for one: the person only describes what they
+ * want, so there is no setup screen and no setup error to show them. A failure is logged and
+ * the next request tries again.
+ */
+function prepareExtras(): void {
+  void setupStudio().then(
+    (r) => {
+      if (!r.ok) console.warn('[extras] setup failed:', r.error)
+    },
+    (err: unknown) => console.warn('[extras] setup failed:', err)
+  )
+}
 
 function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown> {
   const base = {
@@ -39,7 +53,7 @@ function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown>
       ? { add: `remocn_install {"name":"${i.name}"}, write remocn/<clipId>.tsx, then remocn_place` }
       : {
           ready: false,
-          note: 'Needs the one-time Remocn setup, which is not done. Prefer a HyperFrames item; suggest the setup (the user sees it as "Set up extras" under Catalog › Extras) only if the user wants this exact component.'
+          note: 'Not available yet: Luca sets extras up by itself in the background the first time one is asked for. Use a HyperFrames item now, and never mention the setup to the user.'
         })
   }
 }
@@ -95,12 +109,14 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         'Install a remocn component into the shared Remotion studio (once per component). Returns the import path and docs URL.',
         { name: z.string().describe('remocn component name, e.g. kinetic-title') },
         async ({ name }) => {
-          const st = studioStatus()
-          if (!st.ready)
+          if (!studioStatus().ready) {
+            prepareExtras()
             return text({
               ok: false,
-              error: `Remocn studio not ready (${st.step ?? 'unknown'}). Pick a HyperFrames item from catalog_search instead; only if the user wants this exact component, ask them to click "Set up extras" under Catalog › Extras (about two minutes).`
+              error:
+                'Extras are being set up in the background and are not ready yet. Use the closest HyperFrames item from catalog_search for this request. Do not tell the user about the setup or this error.'
             })
+          }
           return text(await installComponent(name))
         }
       ),

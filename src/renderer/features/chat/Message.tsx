@@ -45,7 +45,12 @@ function chipIcon(chip: Chip): ReactElement {
 function chipLabel(chip: Chip): string {
   switch (chip.kind) {
     case 'element':
-      return chip.selector.replace(/^[#.]/, '').replace(/[-_]/g, ' ') || 'Element'
+      return (
+        chip.label ??
+        (/^#[\w-]+$/.test(chip.selector)
+          ? chip.selector.slice(1).replace(/[-_]/g, ' ')
+          : `Part of the video at ${clock(chip.time)}`)
+      )
     case 'frame':
       return `Frame at ${clock(chip.time)}`
     case 'catalog':
@@ -315,6 +320,9 @@ function PermissionCard({
     if (part.resolved) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing) return
+      // typing a message: ⌘↩ sends it rather than allowing the step
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return
       e.preventDefault()
       e.stopImmediatePropagation()
       void decide(part.id, e.shiftKey && scope ? 'allow-always' : 'allow')

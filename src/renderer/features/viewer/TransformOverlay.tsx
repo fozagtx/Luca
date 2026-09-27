@@ -1,5 +1,5 @@
 import type { HyperframesPlayer } from '@hyperframes/player'
-import { RotateCcw } from 'lucide-react'
+import { MessageSquarePlus, RotateCcw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { toast } from 'sonner'
 import { cn } from '../../lib/cn'
@@ -7,6 +7,9 @@ import { luca } from '../../lib/luca'
 import { usePlayer } from '../../stores/player'
 import { useTimeline } from '../../stores/timeline'
 import { findClip } from '../timeline/clip-actions'
+import { clock } from '../../lib/timecode'
+import { CommentBox } from './CommentBox'
+import { elementChip, elementLabel } from './element-chip'
 
 type Box = { x: number; y: number; w: number; h: number }
 type Target = { id: string; file: string }
@@ -99,6 +102,8 @@ export function TransformOverlay({
   const [hover, setHover] = useState<Box | null>(null)
   const [readout, setReadout] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  /** Replying to the selected element: the reply box is open for this target. */
+  const [commenting, setCommenting] = useState<string | null>(null)
   const gesture = useRef<Gesture | null>(null)
   const live = useRef<Live | null>(null)
 
@@ -260,6 +265,10 @@ export function TransformOverlay({
   }
 
   const onClick = (e: React.MouseEvent): void => {
+    if (commenting) {
+      setCommenting(null)
+      return
+    }
     const hit = pick(e.clientX, e.clientY)
     setHover(null)
     const hitClip = hit ? findClip(`#${hit.target.id}`) : null
@@ -328,8 +337,22 @@ export function TransformOverlay({
             style={{ left: Math.max(0, -shown.x) }}
           >
             <span className="rounded-[5px] bg-accent px-1.5 py-[3px] font-mono text-[10px] leading-none text-white shadow-sm">
-              {readout ?? target.id}
+              {readout ?? target.id.replace(/[-_]+/g, ' ')}
             </span>
+            {!readout ? (
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  player.pause()
+                  setCommenting(targetKey)
+                }}
+                className="pop-in inline-flex items-center gap-1 rounded-[5px] bg-bg/95 px-1.5 py-[3px] text-[10px] leading-none font-medium text-text shadow-sm hover:bg-bg"
+              >
+                <MessageSquarePlus size={9} /> Comment
+              </button>
+            ) : null}
             {!readout && changed ? (
               <button
                 type="button"
@@ -345,6 +368,14 @@ export function TransformOverlay({
             ) : null}
           </div>
         </div>
+      ) : null}
+      {shown && target && el && commenting === targetKey ? (
+        <CommentBox
+          chip={elementChip(el, usePlayer.getState().currentTime)}
+          label={`${elementLabel(el)} at ${clock(usePlayer.getState().currentTime)}`}
+          anchor={{ x: shown.x, y: shown.y, w: shown.w, h: shown.h }}
+          onClose={() => setCommenting(null)}
+        />
       ) : null}
     </div>
   )
