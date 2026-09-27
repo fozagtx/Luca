@@ -347,7 +347,8 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
         width: Math.round(rect.width),
         height: Math.round(rect.height)
       })
-      return img.resize({ width: 640 }).toDataURL()
+      // bare base64: the chip thumbnail and the image block sent to Claude each add their own framing
+      return img.resize({ width: 640 }).toPNG().toString('base64')
     }
   )
 

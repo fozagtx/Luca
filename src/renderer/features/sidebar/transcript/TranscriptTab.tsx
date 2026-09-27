@@ -163,14 +163,20 @@ export function TranscriptTab(): ReactElement {
     const hit = new Set(ws.map((w) => cutIndex.get(w.id)).filter(Boolean))
     void writeEdl(cuts.filter((c) => !hit.has(c)))
   }
+  /** Words keep their original times; the video plays the clean master, where each cut before them is gone. */
+  const onTimeline = (t: number): number =>
+    Math.max(
+      0,
+      t - cuts.filter((c) => c.end <= t + 1e-3).reduce((acc, c) => acc + (c.end - c.start), 0)
+    )
   const addToChat = (): void => {
     const ws = selected()
     if (!ws.length) return
     useChat.getState().addChip({
       kind: 'transcript',
       text: ws.map((w) => w.text).join(' '),
-      start: ws[0].start,
-      end: ws[ws.length - 1].end
+      start: onTimeline(ws[0].start),
+      end: onTimeline(ws[ws.length - 1].end)
     })
     if (!useUi.getState().chatOpen) useUi.getState().toggleChat()
     document.getElementById('chat-composer')?.focus()
@@ -328,10 +334,7 @@ export function TranscriptTab(): ReactElement {
                       else if (e.metaKey || e.shiftKey) setSel({ a: i, b: i })
                       else {
                         setSel(null)
-                        const shift = cuts
-                          .filter((c) => c.end <= w.start + 1e-3)
-                          .reduce((acc, c) => acc + (c.end - c.start), 0)
-                        usePlayer.getState().seek(Math.max(0, w.start - shift))
+                        usePlayer.getState().seek(onTimeline(w.start))
                       }
                     }}
                     className={cn(
