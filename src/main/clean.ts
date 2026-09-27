@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { join } from 'node:path'
 import type { CleanResult, CleanStatus, Cut, Edl, Project, Transcript } from '../shared/types'
 import { activeAgent, agentFor } from './agent'
+import { refreshCaptions } from './captions'
 import { ffmpegProgress, probeMedia } from './env'
 import { Channels, broadcast } from './ipc'
 import { getSettings } from './settings'
@@ -270,6 +271,12 @@ export async function applyEdl(p: Project, edl: Edl): Promise<CleanResult> {
   const newDuration = Math.round((await probe(out)).duration * 1000) / 1000
   writeFileSync(join(p.dir, 'edl.json'), JSON.stringify({ ...edl, cuts }, null, 2))
   relink(p, cleanRel, newDuration)
+  // captions on the timeline follow the cut words; saved in the same version as the cut
+  try {
+    refreshCaptions(p)
+  } catch (err) {
+    console.warn('[clean] re-timing captions failed', err)
+  }
   await checkpoint(p.dir, `Clean edit: ${cuts.length} cuts`)
   setStatus({ stage: 'done', message: `${cuts.length} cuts · ${cleanRel}` })
   return { cuts: cuts.length, cleanFile: cleanRel }

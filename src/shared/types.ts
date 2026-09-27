@@ -38,6 +38,8 @@ export type Clip = {
   remocn?: boolean
   /** data-volume of audio/video clips (1 = unchanged, 0 = muted). */
   volume?: number
+  /** data-media-start: where in its media file the clip starts playing (a trimmed start), in seconds. */
+  mediaStart?: number
 }
 
 export type Track = {
@@ -85,6 +87,30 @@ export type Chip =
       thumb: string
       duration?: number
     }
+  /** A video, audio file or image the person added to the open project from the chat. */
+  | {
+      kind: 'media'
+      media: MediaKind
+      /** Project-relative, e.g. media/IMG_1234.mp4. */
+      path: string
+      /** What people see: the file's own name, or "Pasted image". */
+      name: string
+      /** Seconds (videos and audio). */
+      duration?: number
+      width?: number
+      height?: number
+      /** Small still for the hover preview (data URL). */
+      thumb?: string
+    }
+
+/** What a file added to a project is. */
+export type MediaKind = 'video' | 'audio' | 'image'
+
+/** A file to add to the open project: a path on disk, or the bytes of a pasted picture. */
+export type MediaInput = { path: string } | { name: string; data: ArrayBuffer | Uint8Array }
+
+/** A video's shape as shown (rotation applied) and length, and the project shape that fits it. */
+export type FootageInfo = { width: number; height: number; duration: number; aspect: Aspect }
 
 export type AgentEvent =
   /** Streamed reply text for the assistant message `id`. */
@@ -328,7 +354,10 @@ export type StartKind = 'video' | 'audio' | 'images' | 'scratch'
 export type StartArgs = {
   name?: string
   aspect: Aspect
-  /** Absolute paths: one video, one audio file, or any number of images. */
+  /**
+   * Absolute paths, in the order they were added: videos (played back to back), images and at
+   * most one audio file. Next to videos or audio, images wait in media/ for Luca.
+   */
   files: string[]
   look?: string | null
   /** Target length in seconds for image and scratch projects. */
@@ -362,12 +391,54 @@ export type CaptionConfig = {
   accent?: string
   /** Drop "um", "uh", stutters and false starts. */
   clean: boolean
+  /** A custom look on top of the style; anything set here wins over the style's own value. */
+  overrides?: CaptionOverrides
+}
+
+/** How caption lines come in and how the spoken word is marked (the styles' animations). */
+export type CaptionAnimation =
+  'fade' | 'slide' | 'pop' | 'karaoke' | 'highlight' | 'typewriter' | 'slam' | 'glow' | 'bounce'
+
+/** Caption look overrides. Colors are CSS colors; px are for a 1080 px short side, like the styles. */
+export type CaptionOverrides = {
+  /** Text color. */
+  color?: string
+  /** Text color of the spoken word while it sits on the highlight (karaoke, highlight). */
+  activeColor?: string
+  /** 100–900. */
+  weight?: number
+  italic?: boolean
+  /** In em, e.g. 0.02. */
+  letterSpacing?: number
+  /** Outline around the letters; null removes the style's outline. */
+  outline?: { color: string; width: number } | null
+  /**
+   * Box behind each line; null removes the style's box. `opacity` 0–1, `radius` px (999 makes
+   * a pill), `padding` em left and right.
+   */
+  box?: { color: string; opacity?: number; radius?: number; padding?: number } | null
+  /** Shadow under the letters (a glow with `y` 0); null removes the style's shadow. */
+  shadow?: { color: string; blur: number; y?: number } | null
+  animation?: CaptionAnimation
 }
 
 export type ProjectFont = {
   family: string
   /** Project-relative file for fonts added by the user; absent for built-in fonts. */
   file?: string
+  /** Every file of a project font, for previews. */
+  faces?: ProjectFontFace[]
+}
+
+/** One font file added to the project, as declared with @font-face. */
+export type ProjectFontFace = {
+  file: string
+  weight: number
+  /** Upper end of a variable font's weight range. */
+  weightMax?: number
+  italic: boolean
+  /** The characters this file covers (Google Fonts splits families by script). */
+  unicodeRange?: string
 }
 
 export type CaptionState = {

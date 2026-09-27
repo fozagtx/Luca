@@ -1,16 +1,20 @@
+import { basename, extname } from 'node:path'
 import {
+  captionLook,
   captionStyle,
-  isBuiltinFont,
-  nearestWeight,
+  captionTextShadow,
   round,
-  type CaptionStyle
+  type CaptionLook,
+  type SpeechClip
 } from '../shared/captions'
-import type { CaptionConfig, CaptionGroup } from '../shared/types'
+import type { CaptionConfig, CaptionGroup, ProjectFontFace } from '../shared/types'
+import { findTags } from './html'
 
 /**
  * The captions sub-composition Luca writes: static caption lines (so every frame is
  * deterministic and seekable) plus one GSAP timeline that shows each line on its words' times,
- * following the structure of HyperFrames' own captions example.
+ * following the structure of HyperFrames' own captions example. Also where the transcribed
+ * media plays in index.html, so the captions can follow it.
  */
 
 export const CAPTIONS_ID = 'luca-captions'
@@ -18,33 +22,20 @@ export const CAPTIONS_FILE = `compositions/${CAPTIONS_ID}.html`
 const HOST_ID = CAPTIONS_ID
 const GSAP = 'https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js'
 
-const SIZE: Record<CaptionConfig['size'], number> = { sm: 0.82, md: 1, lg: 1.22 }
-
-function outline(px: number, color = 'rgba(0,0,0,0.92)'): string {
-  const out: string[] = []
-  for (let a = 0; a < 16; a++) {
-    const t = (a / 16) * Math.PI * 2
-    out.push(`${(Math.cos(t) * px).toFixed(1)}px ${(Math.sin(t) * px).toFixed(1)}px 0 ${color}`)
-  }
-  return out.join(', ')
-}
-
 const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-function css(style: CaptionStyle, cfg: CaptionConfig, d: { w: number; h: number }): string {
+function css(look: CaptionLook, cfg: CaptionConfig, d: { w: number; h: number }): string {
   const k = Math.min(d.w, d.h) / 1080
   const portrait = d.h > d.w
-  const size = Math.round(style.size * SIZE[cfg.size] * k)
-  const weight = isBuiltinFont(cfg.font) ? nearestWeight(cfg.font, style.weight) : style.weight
-  const shadow = [style.outline ? outline(style.outline * k) : '', style.shadow ?? '']
-    .filter(Boolean)
-    .join(', ')
+  const size = Math.round(look.size * k)
+  const shadow = captionTextShadow(look, k)
   const pad = Math.round((portrait ? 0.27 : 0.1) * d.h)
   const align =
     cfg.position === 'top' ? 'flex-start' : cfg.position === 'middle' ? 'center' : 'flex-end'
   const s = `[data-composition-id="${HOST_ID}"]`
-  const pill = style.box?.radius === 999
+  const box = look.box
+  const radius = box && (box.radius >= 999 ? '999px' : `${Math.round(box.radius * k)}px`)
   return `
       ${s} .lc-stage { position: absolute; inset: 0; pointer-events: none; }
       ${s} .cg {
@@ -54,30 +45,25 @@ function css(style: CaptionStyle, cfg: CaptionConfig, d: { w: number; h: number 
       }
       ${s} .cl {
         max-width: ${Math.round(d.w * (portrait ? 0.86 : 0.8))}px; text-align: center;
-        font-family: '${cfg.font}', 'Inter', sans-serif; font-weight: ${weight};
-        font-style: ${style.italic ? 'italic' : 'normal'}; font-size: ${size}px; line-height: 1.18;
-        letter-spacing: ${style.letterSpacing ?? 0}em; color: ${style.color};
+        font-family: '${cfg.font}', 'Inter', sans-serif; font-weight: ${look.weight};
+        font-style: ${look.italic ? 'italic' : 'normal'}; font-size: ${size}px; line-height: 1.18;
+        letter-spacing: ${look.letterSpacing}em; color: ${look.color};
         text-transform: ${cfg.uppercase ? 'uppercase' : 'none'};
         ${shadow ? `text-shadow: ${shadow};` : ''}
-        ${style.box ? `background: ${style.box.bg}; border-radius: ${pill ? '999px' : `${Math.round(style.box.radius * k)}px`}; padding: ${pill ? '0.28em 0.9em' : '0.2em 0.55em'};` : ''}
+        ${box ? `background: ${box.bg}; border-radius: ${radius}; padding: ${box.padding};` : ''}
         overflow: visible;
       }
-      ${s} .w { display: inline-block; ${style.wordBox ? 'padding: 0.02em 0.16em; border-radius: 0.2em;' : ''} }`
+      ${s} .w { display: inline-block; ${look.wordBox ? 'padding: 0.02em 0.16em; border-radius: 0.2em;' : ''} }`
 }
 
-function script(
-  groups: CaptionGroup[],
-  style: CaptionStyle,
-  cfg: CaptionConfig,
-  d: { w: number; h: number }
-): string {
+function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: number }): string {
   const data = groups.map((g) => [g.start, g.end, g.words.map((w) => [w.start, w.end])])
   const opts = {
-    anim: style.anim,
-    color: style.color,
-    accent: cfg.accent ?? style.accent,
-    active: style.activeText ?? style.color,
-    slow: style.id === 'cinematic',
+    anim: look.anim,
+    color: look.color,
+    accent: look.accent,
+    active: look.activeText,
+    slow: look.slow,
     k: Math.round((Math.min(d.w, d.h) / 1080) * 100) / 100
   }
   return `
@@ -153,9 +139,11 @@ function script(
 export function captionsComposition(
   groups: CaptionGroup[],
   cfg: CaptionConfig,
-  d: { w: number; h: number; duration: number }
+  d: { w: number; h: number; duration: number },
+  faces?: ProjectFontFace[]
 ): string {
   const style = captionStyle(cfg.style)
+  const look = captionLook(cfg, faces)
   const lines = groups
     .map(
       (g, i) =>
@@ -164,7 +152,7 @@ export function captionsComposition(
           .join(' ')}</div></div>`
     )
     .join('\n')
-  return `<!-- Captions made by Luca (style: ${style.name}, font: ${cfg.font}). Re-apply from Captions to regenerate. -->
+  return `<!-- Captions made by Luca (style: ${style.name}${cfg.overrides ? ', customized' : ''}, font: ${cfg.font}). Luca rebuilds this file from the transcript whenever the captions or the clips under them change, so edits here are lost: change captions with the captions_apply tool. -->
 <template id="${HOST_ID}-template">
   <div
     data-composition-id="${HOST_ID}"
@@ -176,13 +164,50 @@ export function captionsComposition(
 ${lines}
     </div>
 
-    <style>${css(style, cfg, d)}
+    <style>${css(look, cfg, d)}
     </style>
 
     <script src="${GSAP}"></script>
-    <script>${script(groups, style, cfg, d)}
+    <script>${script(groups, look, d)}
     </script>
   </div>
 </template>
 `
+}
+
+// ------------------------------------------------------------------ where the speech plays
+
+const CLEAN_MASTER = /(^|\/)media\/clean-[0-9a-f]+\.mp4$/
+
+/**
+ * Every clip in index.html that plays the transcribed media: the clean master once a clean edit
+ * replaced the source (the transcript then follows it), else the source file. Clips you can hear
+ * win over muted ones, so a video piece moved away from its own sound doesn't take the captions
+ * with it; muted clips count only when nothing plays the sound.
+ */
+export function speechClips(html: string, source: string): SpeechClip[] {
+  const root = findTags(html).find((t) => t.attrs['data-composition-id'] !== undefined)
+  const total = Number(root?.attrs['data-duration'] ?? 0) || 0
+  const media = [...findTags(html, 'video'), ...findTags(html, 'audio')]
+  const src = (t: (typeof media)[number]): string => (t.attrs.src ?? '').split(/[?#]/)[0]
+  const stem = (f: string): string => basename(f, extname(f))
+  let hits = media.filter((t) => CLEAN_MASTER.test(src(t)))
+  if (!hits.length && source) {
+    hits = media.filter((t) => basename(src(t)) === basename(source))
+    if (!hits.length) hits = media.filter((t) => stem(src(t)) === stem(source))
+  }
+  const heard = hits.filter((t) => t.name === 'audio' || !('muted' in t.attrs))
+  return (heard.length ? heard : hits)
+    .map((t) => {
+      const start = Number(t.attrs['data-start'] ?? 0) || 0
+      const rate = Number(t.attrs['data-playback-rate'] ?? 1) || 1
+      return {
+        start,
+        mediaStart: Number(t.attrs['data-media-start'] ?? 0) || 0,
+        duration: Number(t.attrs['data-duration'] ?? 0) || Math.max(0, total - start),
+        ...(rate !== 1 ? { rate } : {})
+      }
+    })
+    .filter((c) => c.duration > 0)
+    .sort((a, b) => a.start - b.start)
 }

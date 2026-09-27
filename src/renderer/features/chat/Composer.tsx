@@ -1,8 +1,20 @@
-import { ArrowUp, AudioLines, CircleAlert, Crosshair, Mic, Sparkles, Square, X } from 'lucide-react'
+import {
+  ArrowUp,
+  AudioLines,
+  CircleAlert,
+  Crosshair,
+  LoaderCircle,
+  Mic,
+  Paperclip,
+  Sparkles,
+  Square,
+  X
+} from 'lucide-react'
 import {
   useLayoutEffect,
   useRef,
   useState,
+  type ClipboardEvent,
   type KeyboardEvent,
   type MouseEvent,
   type ReactElement
@@ -11,7 +23,7 @@ import { Thumb } from '../../components/ui/thumb'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { catalogChip, hasCatalogDrag, readCatalogDrag } from '../../lib/drag'
-import { useChat } from '../../stores/chat'
+import { useChat, type PendingMedia } from '../../stores/chat'
 import { luca } from '../../lib/luca'
 import { stopLuca, useQueue } from '../../stores/queue'
 import { usePlayer } from '../../stores/player'
@@ -37,6 +49,8 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const chips = useChat((s) => s.chips)
   const addChip = useChat((s) => s.addChip)
   const removeChip = useChat((s) => s.removeChip)
+  const attaching = useChat((s) => s.attaching)
+  const attach = useChat((s) => s.attach)
   const send = useChat((s) => s.send)
   const state = useChat((s) => s.state)
   const error = useChat((s) => s.error)
@@ -55,7 +69,8 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const startPreviews = useStart((s) => s.previews)
   const starting = useStart((s) => s.busy)
   const disabled = starting
-  const canSend = hasText || (noProject && startFiles.length > 0)
+  // a file still on its way in would be missing from the message
+  const canSend = (hasText || (noProject && startFiles.length > 0)) && attaching.length === 0
   const sendLabel = noProject ? 'Start the video' : working ? 'Add to the queue' : 'Send'
 
   useLayoutEffect(() => {
@@ -86,8 +101,34 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
     el.focus()
     el.setSelectionRange(el.value.length, el.value.length)
   }
-  const fileDrop = (dt: DataTransfer): boolean =>
-    noProject && Array.from(dt.types).includes('Files')
+  const fileDrop = (dt: DataTransfer): boolean => Array.from(dt.types).includes('Files')
+  /** With no project, files are what the new video starts from; otherwise they go in the project. */
+  const addFiles = (files: File[]): void => {
+    if (noProject) {
+      const paths = files.map((f) => luca.project.pathForFile(f))
+      useStart.getState().addFiles(paths.filter(Boolean))
+    } else void attach(files)
+    ref.current?.focus()
+  }
+  const pick = async (): Promise<void> => {
+    const paths = await luca.project.pickMedia()
+    if (!paths.length) return
+    if (noProject) useStart.getState().addFiles(paths)
+    else void attach(paths)
+  }
+  /** A picture on the clipboard (a screenshot) is attached; copied text still pastes as text. */
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const files = [...e.clipboardData.files]
+    const text = e.clipboardData.getData('text/plain')
+    // some apps put a picture of copied text next to the text itself: the text wins then (and a
+    // new video can only start from files on disk)
+    const real = files.filter((f) => luca.project.pathForFile(f))
+    const take =
+      real.length || text || noProject ? real : files.filter((f) => f.type.startsWith('image/'))
+    if (!take.length) return
+    e.preventDefault()
+    addFiles(take)
+  }
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
@@ -109,9 +150,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
         setOver(false)
         if (fileDrop(e.dataTransfer)) {
           e.preventDefault()
-          const paths = [...e.dataTransfer.files].map((f) => luca.project.pathForFile(f))
-          useStart.getState().addFiles(paths.filter(Boolean))
-          ref.current?.focus()
+          addFiles([...e.dataTransfer.files])
           return
         }
         const d = readCatalogDrag(e.dataTransfer)
@@ -182,10 +221,13 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
             ))}
           </div>
         ) : null}
-        {chips.length > 0 ? (
+        {chips.length > 0 || attaching.length > 0 ? (
           <div className="flex flex-wrap gap-1 px-3 pt-2.5">
             {chips.map((c, i) => (
               <ChipPill key={i} chip={c} onRemove={() => removeChip(i)} />
+            ))}
+            {attaching.map((a) => (
+              <AddingPill key={a.id} file={a} />
             ))}
           </div>
         ) : null}
@@ -199,6 +241,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKey}
+              onPaste={onPaste}
               disabled={disabled}
               rows={1}
               placeholder={
@@ -214,6 +257,20 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
               )}
             />
             <div className="flex items-center gap-1 px-2 pt-0.5 pb-2">
+              <Tip label="Add a video, audio or images" side="top">
+                <button
+                  type="button"
+                  aria-label="Add a video, audio or images"
+                  disabled={disabled}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void pick()
+                  }}
+                  className="flex size-7 shrink-0 items-center justify-center rounded-full text-text-2 transition-[background-color,color,transform] duration-150 hover:bg-hover hover:text-text active:scale-90 disabled:pointer-events-none disabled:opacity-45"
+                >
+                  <Paperclip size={14} strokeWidth={1.9} />
+                </button>
+              </Tip>
               <Tip label="Point at something in the preview" shortcut="G" side="top">
                 <button
                   type="button"
@@ -237,13 +294,15 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
               <span className="ml-auto min-w-0 truncate pr-1 text-[10.5px] text-text-3">
                 {starting
                   ? 'Starting your video…'
-                  : working && hasText
-                    ? '↩ to add to the queue'
-                    : canSend
-                      ? noProject
-                        ? '↩ to start'
-                        : '↩ to send'
-                      : ''}
+                  : attaching.length
+                    ? 'Adding to your project…'
+                    : working && hasText
+                      ? '↩ to add to the queue'
+                      : canSend
+                        ? noProject
+                          ? '↩ to start'
+                          : '↩ to send'
+                        : ''}
               </span>
               <Tip label="Dictate" side="top">
                 <button
@@ -314,6 +373,25 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
         )}
       </div>
     </div>
+  )
+}
+
+/** A file on its way into the project, with how far along a video is. */
+function AddingPill({ file }: { file: PendingMedia }): ReactElement {
+  return (
+    <span className="pop-in inline-flex h-[22px] max-w-full items-center gap-1 rounded-full border border-dashed border-border-strong px-2 text-[11px] font-medium text-text-2">
+      <LoaderCircle size={11} className="shrink-0 animate-spin" />
+      <span className="max-w-40 truncate">
+        {file.media === 'video'
+          ? 'Getting your video ready'
+          : file.media === 'audio'
+            ? 'Adding your audio'
+            : 'Adding your image'}
+      </span>
+      {typeof file.progress === 'number' ? (
+        <span className="text-text-3 tabular-nums">{Math.round(file.progress * 100)}%</span>
+      ) : null}
+    </span>
   )
 }
 

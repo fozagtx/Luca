@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -28,6 +29,18 @@ function sourcePath(p: Project): string | null {
   }
   return null
 }
+
+/** A clip's media file (its project-relative src), or the project's source when none is given. */
+function mediaFile(p: Project, src?: string): string | null {
+  if (!src) return sourcePath(p)
+  const f = resolve(p.dir, src)
+  if (relative(p.dir, f).startsWith('..') || !existsSync(f)) return null
+  return f
+}
+
+/** A cache folder name for one media file: every clip's source gets its own frames and peaks. */
+const cacheKey = (file: string): string =>
+  createHash('sha1').update(file).digest('hex').slice(0, 12)
 
 const inflight = new Map<string, Promise<unknown>>()
 function once<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -96,19 +109,21 @@ export async function poster(p: Project): Promise<{ duration: number } | null> {
   })
 }
 
-/** One 160px JPEG per second in .luca/cache/thumbs/NNNN.jpg; generated once. */
+/** One 160px JPEG per second of a media file in .luca/cache/thumbs/<key>/NNNN.jpg; generated once. */
 export async function thumbnails(
-  p: Project
+  p: Project,
+  srcRel?: string
 ): Promise<{ dir: string; count: number; interval: number }> {
-  return once(`thumbs:${p.dir}`, async () => {
-    const out = cacheDir(p.dir, 'thumbs')
-    const src = sourcePath(p)
+  return once(`thumbs:${p.dir}:${srcRel ?? ''}`, async () => {
+    const src = mediaFile(p, srcRel)
     if (!src) return { dir: '.luca/cache/thumbs', count: 0, interval: THUMB_INTERVAL }
+    const dir = `.luca/cache/thumbs/${cacheKey(src)}`
+    const out = cacheDir(p.dir, `thumbs/${cacheKey(src)}`)
     const stamp = join(out, '.source')
     const sig = `${src}:${statSync(src).mtimeMs}`
     const existing = readdirSync(out).filter((f) => /^\d{4}\.jpg$/.test(f))
     if (existing.length > 0 && existsSync(stamp) && readFileSync(stamp, 'utf8') === sig) {
-      return { dir: '.luca/cache/thumbs', count: existing.length, interval: THUMB_INTERVAL }
+      return { dir, count: existing.length, interval: THUMB_INTERVAL }
     }
     const ffmpeg = await which('ffmpeg')
     if (!ffmpeg) throw new Error('ffmpeg not found')
@@ -131,16 +146,19 @@ export async function thumbnails(
     )
     writeFileSync(stamp, sig)
     const count = readdirSync(out).filter((f) => /^\d{4}\.jpg$/.test(f)).length
-    return { dir: '.luca/cache/thumbs', count, interval: THUMB_INTERVAL }
+    return { dir, count, interval: THUMB_INTERVAL }
   })
 }
 
-/** Mono 8 kHz PCM → 100 peaks/second (0..1) stored as uint8 in .luca/cache/peaks.bin. */
-export async function peaks(p: Project): Promise<{ peaksPerSecond: number; peaks: number[] }> {
-  return once(`peaks:${p.dir}`, async () => {
-    const file = join(cacheDir(p.dir, ''), 'peaks.bin')
-    const src = sourcePath(p)
+/** Mono 8 kHz PCM → 100 peaks/second (0..1) of a media file, stored as uint8 in .luca/cache/peaks-<key>.bin. */
+export async function peaks(
+  p: Project,
+  srcRel?: string
+): Promise<{ peaksPerSecond: number; peaks: number[] }> {
+  return once(`peaks:${p.dir}:${srcRel ?? ''}`, async () => {
+    const src = mediaFile(p, srcRel)
     if (!src) return { peaksPerSecond: PEAKS_PER_SECOND, peaks: [] }
+    const file = join(cacheDir(p.dir, ''), `peaks-${cacheKey(src)}.bin`)
     const stamp = file + '.source'
     const sig = `${src}:${statSync(src).mtimeMs}`
     if (existsSync(file) && existsSync(stamp) && readFileSync(stamp, 'utf8') === sig) {

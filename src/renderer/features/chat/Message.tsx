@@ -1,8 +1,10 @@
 import type { ChatContentPart, ChatMessage, Chip } from '@shared/types'
 import {
+  AudioLines,
   Check,
   ChevronRight,
   CircleAlert,
+  Clapperboard,
   Copy,
   Image as ImageIcon,
   MousePointer2,
@@ -20,6 +22,7 @@ import { Markdown } from '../../components/ai/markdown'
 import { TextShimmer, TypingDots } from '../../components/ai/text-shimmer'
 import { Button } from '../../components/ui/button'
 import { cn } from '../../lib/cn'
+import { formatDuration } from '../../lib/format'
 import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
 import { stopLuca } from '../../stores/queue'
@@ -42,6 +45,14 @@ function chipIcon(chip: Chip): ReactElement {
       return <Type size={11} />
     case 'background':
       return <Wallpaper size={11} />
+    case 'media':
+      return chip.media === 'video' ? (
+        <Clapperboard size={11} />
+      ) : chip.media === 'audio' ? (
+        <AudioLines size={11} />
+      ) : (
+        <ImageIcon size={11} />
+      )
   }
 }
 
@@ -64,7 +75,17 @@ function chipLabel(chip: Chip): string {
       return `“${chip.text.slice(0, 24)}${chip.text.length > 24 ? '…' : ''}”`
     case 'background':
       return `Background: ${chip.title}`
+    case 'media':
+      return chip.duration ? `${chip.name} · ${formatDuration(chip.duration)}` : chip.name
   }
+}
+
+/** The still shown above a chip on hover: a grabbed frame, a background, an added file. */
+function chipPreview(chip: Chip): string | undefined {
+  if (chip.kind === 'frame') return `data:image/png;base64,${chip.png}`
+  if (chip.kind === 'background') return chip.thumb
+  if (chip.kind === 'media') return chip.thumb
+  return undefined
 }
 
 export function ChipPill({
@@ -76,6 +97,7 @@ export function ChipPill({
   onRemove?: () => void
   tone?: 'default' | 'onBubble'
 }): ReactElement {
+  const preview = chipPreview(chip)
   return (
     <span
       className={cn(
@@ -100,9 +122,9 @@ export function ChipPill({
           <X size={10} />
         </button>
       ) : null}
-      {chip.kind === 'frame' || chip.kind === 'background' ? (
+      {preview ? (
         <img
-          src={chip.kind === 'frame' ? `data:image/png;base64,${chip.png}` : chip.thumb}
+          src={preview}
           alt=""
           className="pointer-events-none absolute bottom-7 left-0 z-10 hidden w-40 rounded-[6px] border border-border shadow-md group-hover:block"
         />

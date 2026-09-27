@@ -25,16 +25,18 @@ import { childEnv, HYPERFRAMES, run, which } from './env'
 import { Channels, broadcast, notifyInBackground } from './ipc'
 import { catalogTitle } from './library'
 import { lucaMcpServer } from './mcp'
+import { describeMedia } from './footage'
 import { lucaDir } from './projects'
 import { getSettings, updateSettings } from './settings'
 
 const SYSTEM_RULES = [
   'You are Luca, the editing agent inside Luca, a local video editor built on HyperFrames HTML compositions.',
   '1. The HTML files are the source of truth; never edit anything in media/ or renders/.',
-  '2. Before building any visual from scratch (text, titles, captions, lower thirds, overlays, transitions, effects, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
+  '2. Before building any visual from scratch (text, titles, lower thirds, overlays, transitions, effects, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
   `3. Add HyperFrames items with \`npx ${HYPERFRAMES} add <name> --json\`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.`,
   `4. After every edit, run \`npx ${HYPERFRAMES} lint --json\` and fix errors before replying. Always run the CLI as \`npx ${HYPERFRAMES}\` (this exact version, the one Luca uses), never plain \`npx hyperframes\`.`,
   '5. For backgrounds (behind a title, a scene or the whole video) use a real photo or short video instead of a plain gradient: find one with background_search, look at the previews, pick what suits the video’s subject and mood, and add it with background_add. Use an animated background from catalog_search only when the user asks for one. You may tell the user a background comes from Pexels.',
+  '6. Captions of what is said in the video always go through captions_apply: adding them and every change to their style, font, size, position, colors, outline, box or animation (to match a reference image, read its look and pass it as overrides). Never write or edit the captions file by hand; Luca rebuilds it from the transcript and keeps it in sync with every cut. For a font that is not built in (a Google Fonts link or name the user gives), call font_add first.',
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
   'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a title, caption, scene, animation, effect, transition, background) and use the plain-English title of anything you added, not its id.',
   'Keep replies short: say what you changed and why, no preamble.'
@@ -405,7 +407,10 @@ export class ProjectAgent {
 
     const content: Array<
       | { type: 'text'; text: string }
-      | { type: 'image'; source: { type: 'base64'; media_type: 'image/png'; data: string } }
+      | {
+          type: 'image'
+          source: { type: 'base64'; media_type: 'image/png' | 'image/jpeg'; data: string }
+        }
     > = []
     const lines: string[] = []
     for (const chip of turn.chips) {
@@ -432,6 +437,15 @@ export class ProjectAgent {
         lines.push(
           `Background the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with background_add {"id":"${chip.id}"} and use it as the background unless they ask for something else.`
         )
+      } else if (chip.kind === 'media') {
+        // a file the user added in the chat: Luca sees the image (or a frame of the video)
+        const { line, image } = describeMedia(this.project.dir, chip)
+        lines.push(line)
+        if (image)
+          content.push({
+            type: 'image',
+            source: { type: 'base64', media_type: image.mediaType, data: image.data }
+          })
       }
     }
     if (turn.context && typeof turn.context === 'object') {

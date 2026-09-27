@@ -1,11 +1,22 @@
-import type { CaptionConfig, CaptionState, CleanStatus } from '@shared/types'
-import { AudioLines, CaseUpper, Check, Plus, Trash2 } from 'lucide-react'
+import type { CaptionConfig, CaptionOverrides, CaptionState, CleanStatus } from '@shared/types'
+import {
+  AudioLines,
+  CaseUpper,
+  Check,
+  ChevronDown,
+  Link2,
+  Plus,
+  RotateCcw,
+  SlidersHorizontal,
+  Trash2
+} from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import {
   BUILTIN_FONTS,
   CAPTION_STYLES,
   SAMPLE_WORDS,
+  captionLook,
   captionStyle,
   cleanWords,
   configFor,
@@ -13,6 +24,7 @@ import {
 } from '../../../shared/captions'
 import { Button } from '../../components/ui/button'
 import { GenerateButton } from '../../components/ui/generate-button'
+import { Input } from '../../components/ui/input'
 import { StepList } from '../../components/ui/progress'
 import { Segmented } from '../../components/ui/segmented'
 import { Sheet } from '../../components/ui/sheet'
@@ -35,6 +47,25 @@ const ACCENTS = [
   '#FF5DA2',
   '#FFFFFF'
 ]
+const TEXT_COLORS = ['#FFFFFF', '#111111', '#FFE14D', '#22D3EE', '#FF5DA2', '#A3E635', '#FF4D4D']
+
+/** Outline widths (px at 1080p) behind the None / Thin / Bold / Heavy choice. */
+const OUTLINES = { none: 0, thin: 3, bold: 6, heavy: 10 } as const
+const WEIGHTS = { '400': 'Regular', '700': 'Bold', '900': 'Black' } as const
+
+/** A CSS color as #rrggbb plus its alpha, for color inputs; black when it can't be read. */
+function splitColor(c: string): { hex: string; alpha: number } {
+  const h = /^#([0-9a-f]{3,8})$/i.exec(c)?.[1]
+  if (h) {
+    const full = h.length <= 4 ? [...h].map((x) => x + x).join('') : h
+    const alpha = full.length === 8 ? parseInt(full.slice(6), 16) / 255 : 1
+    return { hex: `#${full.slice(0, 6)}`.toLowerCase(), alpha }
+  }
+  const m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+))?/i.exec(c)
+  if (!m) return { hex: '#000000', alpha: 1 }
+  const hex = [m[1], m[2], m[3]].map((v) => Number(v).toString(16).padStart(2, '0')).join('')
+  return { hex: `#${hex}`, alpha: m[4] === undefined ? 1 : Number(m[4]) }
+}
 
 /**
  * Captions in three moves: scroll the styles and pick one, choose a font (a built-in one or your
@@ -65,9 +96,11 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
   const [state, setState] = useState<CaptionState | null>(null)
   const [words, setWords] = useState<Word[] | null>(null)
   const [cfg, setCfg] = useState<CaptionConfig | null>(null)
-  const [busy, setBusy] = useState<'apply' | 'remove' | 'font' | null>(null)
+  const [busy, setBusy] = useState<'apply' | 'remove' | 'font' | 'google' | null>(null)
   const [clean, setClean] = useState<CleanStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [link, setLink] = useState('')
+  const [customOpen, setCustomOpen] = useState<boolean | null>(null)
   const portrait = project.aspect === 'portrait'
   const poster = recent.find((r) => r.dir === project.dir)?.thumb ?? null
 
@@ -91,7 +124,7 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
   // every preview font, loaded once
   useEffect(() => {
     for (const s of CAPTION_STYLES) ensurePreviewFont(s.font)
-    for (const f of state?.fonts ?? []) ensurePreviewFont(f.family, project.id, f.file)
+    for (const f of state?.fonts ?? []) ensurePreviewFont(f.family, project.id, f.faces)
   }, [state, project.id])
 
   const groups = useMemo(() => {
@@ -124,7 +157,7 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
     try {
       const { lines } = await luca.captions.apply(cfg)
       toast(`Captions on the timeline · ${lines} lines`, {
-        description: `${captionStyle(cfg.style).name} in ${cfg.font}`,
+        description: `${captionStyle(cfg.style).name}${cfg.overrides ? ', customized,' : ''} in ${cfg.font}`,
         action: { label: 'Undo', onClick: () => void luca.history.undo() }
       })
       onDone()
@@ -156,12 +189,33 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
       setState((s) => (s ? { ...s, fonts } : s))
       const added = fonts.find((f) => f.file && !before.has(f.family))
       if (added && cfg) {
-        ensurePreviewFont(added.family, project.id, added.file)
+        ensurePreviewFont(added.family, project.id, added.faces)
         setCfg({ ...cfg, font: added.family })
         toast(`Added ${added.family}`, {
           description: 'It ships with the project, so exports use it too.'
         })
       }
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+  const addGoogleFont = async (): Promise<void> => {
+    if (!link.trim()) return
+    setBusy('google')
+    setError(null)
+    try {
+      const { families, fonts } = await luca.captions.addGoogleFont(link)
+      setState((s) => (s ? { ...s, fonts } : s))
+      for (const f of fonts)
+        if (families.includes(f.family)) ensurePreviewFont(f.family, project.id, f.faces)
+      if (cfg && families[0]) setCfg({ ...cfg, font: families[0] })
+      setLink('')
+      toast(`Added ${families.join(', ')}`, {
+        description:
+          'Downloaded from Google Fonts. It ships with the project, so exports use it too.'
+      })
     } catch (e) {
       setError(errorMessage(e))
     } finally {
@@ -232,12 +286,38 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
 
   const set = (patch: Partial<CaptionConfig>): void => setCfg({ ...cfg, ...patch })
   const style = captionStyle(cfg.style)
+  const faces = state.fonts.find((f) => f.family === cfg.font)?.faces
+  const look = captionLook(cfg, faces)
+  /** Change one custom value; undefined puts the style's own back. */
+  const custom = (patch: CaptionOverrides): void => {
+    const next: Record<string, unknown> = { ...cfg.overrides, ...patch }
+    for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k]
+    set({ overrides: Object.keys(next).length ? (next as CaptionOverrides) : undefined })
+  }
+  const showCustom = customOpen ?? !!cfg.overrides
+  const fontWeights = faces?.length
+    ? new Set(faces.flatMap((f) => [f.weight, f.weightMax ?? f.weight]))
+    : new Set(
+        BUILTIN_FONTS.find((f) => f.family === cfg.font)?.weights.split(';') ?? ['400', '900']
+      )
+  const wantWeight = cfg.overrides?.weight ?? style.weight
+  const weightLevel = wantWeight >= 800 ? '900' : wantWeight >= 600 ? '700' : '400'
+  const outlineLevel = !look.outline
+    ? 'none'
+    : look.outline.width <= 4
+      ? 'thin'
+      : look.outline.width <= 8
+        ? 'bold'
+        : 'heavy'
+  const boxKind = !look.box ? 'none' : look.box.radius >= 999 ? 'pill' : 'box'
+  const boxColor = look.box ? splitColor(look.box.bg) : { hex: '#000000', alpha: 0.72 }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="overflow-hidden rounded-[12px] ring-1 ring-border">
         <CaptionPreview
           cfg={cfg}
+          faces={faces}
           groups={sample}
           height={portrait ? 280 : 208}
           portrait={portrait}
@@ -326,6 +406,32 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
             <Plus size={13} /> Add your font…
           </Button>
         </div>
+        <span />
+        <form
+          className="flex min-w-0 items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void addGoogleFont()
+          }}
+        >
+          <div className="relative min-w-0 flex-1">
+            <Link2
+              size={13}
+              className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-text-3"
+            />
+            <Input
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              placeholder="Paste a Google Fonts link, or type a font's name"
+              aria-label="Google Fonts link or font name"
+              spellCheck={false}
+              className="pl-7"
+            />
+          </div>
+          <Button type="submit" disabled={!link.trim()} loading={busy === 'google'}>
+            Add
+          </Button>
+        </form>
 
         <Label>Size</Label>
         <Row>
@@ -389,42 +495,173 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
 
         <Label>Highlight</Label>
         <Row>
-          {[style.accent, ...ACCENTS.filter((a) => a.toLowerCase() !== style.accent.toLowerCase())]
-            .slice(0, 8)
-            .map((a) => {
-              const on = (cfg.accent ?? style.accent).toLowerCase() === a.toLowerCase()
-              return (
-                <button
-                  key={a}
-                  type="button"
-                  aria-label={`Highlight ${a}`}
-                  onClick={() => set({ accent: a === style.accent ? undefined : a })}
-                  className={cn(
-                    'size-6 rounded-full ring-1 ring-black/10 transition-transform duration-150 hover:scale-110',
-                    on && 'ring-2 ring-accent ring-offset-2 ring-offset-bg'
-                  )}
-                  style={{ background: a }}
-                />
-              )
-            })}
-          <label
-            className="relative size-6 cursor-pointer overflow-hidden rounded-full ring-1 ring-border"
-            title="Any color"
-          >
-            <span className="absolute inset-0 bg-[conic-gradient(red,yellow,lime,cyan,blue,magenta,red)]" />
-            <input
-              type="color"
-              value={cfg.accent ?? style.accent}
-              onChange={(e) => set({ accent: e.target.value })}
-              className="absolute inset-0 cursor-pointer opacity-0"
-            />
-          </label>
+          <Swatches
+            label="Highlight"
+            colors={[style.accent, ...ACCENTS]}
+            value={look.accent}
+            onPick={(a) =>
+              set({ accent: a.toLowerCase() === style.accent.toLowerCase() ? undefined : a })
+            }
+          />
           <span className="text-[11px] text-text-3">
-            {style.anim === 'fade' || style.anim === 'slide' || style.anim === 'bounce'
+            {look.anim === 'fade' || look.anim === 'slide' || look.anim === 'bounce'
               ? 'This style animates whole lines'
               : 'Colors the word being spoken'}
           </span>
         </Row>
+
+        <Label>Customize</Label>
+        <Row>
+          <button
+            type="button"
+            aria-expanded={showCustom}
+            onClick={() => setCustomOpen(!showCustom)}
+            className={cn(
+              'inline-flex h-7 items-center gap-1.5 rounded-[7px] border px-2.5 text-[12px] font-medium transition-colors',
+              showCustom
+                ? 'border-secondary-border bg-secondary text-secondary-fg'
+                : 'border-border text-text-2 hover:text-text'
+            )}
+          >
+            <SlidersHorizontal size={13} /> Text color, outline, box & weight
+            <ChevronDown
+              size={13}
+              className={cn('transition-transform duration-150', showCustom && 'rotate-180')}
+            />
+          </button>
+          {cfg.overrides ? (
+            <Button variant="ghost" size="sm" onClick={() => set({ overrides: undefined })}>
+              <RotateCcw size={12} /> Back to {style.name}
+            </Button>
+          ) : null}
+        </Row>
+
+        {showCustom ? (
+          <>
+            <Label>Text color</Label>
+            <Row>
+              <Swatches
+                label="Text color"
+                colors={[style.color, ...TEXT_COLORS]}
+                value={look.color}
+                onPick={(c) =>
+                  custom({ color: c.toLowerCase() === style.color.toLowerCase() ? undefined : c })
+                }
+              />
+            </Row>
+
+            <Label>Outline</Label>
+            <Row>
+              <Segmented
+                items={[
+                  { id: 'none', label: 'None' },
+                  { id: 'thin', label: 'Thin' },
+                  { id: 'bold', label: 'Bold' },
+                  { id: 'heavy', label: 'Heavy' }
+                ]}
+                value={outlineLevel}
+                onChange={(level) =>
+                  custom({
+                    outline:
+                      level === 'none'
+                        ? null
+                        : { color: look.outline?.color ?? '#000000', width: OUTLINES[level] }
+                  })
+                }
+                ariaLabel="Outline"
+              />
+              {look.outline ? (
+                <ColorDot
+                  label="Outline color"
+                  value={look.outline.color}
+                  onChange={(color) =>
+                    custom({ outline: { color, width: look.outline?.width ?? OUTLINES.bold } })
+                  }
+                />
+              ) : null}
+            </Row>
+
+            <Label>Box</Label>
+            <Row>
+              <Segmented
+                items={[
+                  { id: 'none', label: 'None' },
+                  { id: 'box', label: 'Box' },
+                  { id: 'pill', label: 'Pill' }
+                ]}
+                value={boxKind}
+                onChange={(kind) =>
+                  custom({
+                    box:
+                      kind === 'none'
+                        ? style.box
+                          ? null
+                          : undefined
+                        : {
+                            color: boxColor.hex,
+                            opacity: boxColor.alpha,
+                            radius: kind === 'pill' ? 999 : 10
+                          }
+                  })
+                }
+                ariaLabel="Box behind the text"
+              />
+              {look.box ? (
+                <>
+                  <ColorDot
+                    label="Box color"
+                    value={boxColor.hex}
+                    onChange={(color) =>
+                      custom({
+                        box: { color, opacity: boxColor.alpha, radius: look.box?.radius ?? 10 }
+                      })
+                    }
+                  />
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={1}
+                    step={0.05}
+                    value={boxColor.alpha}
+                    aria-label="Box opacity"
+                    onChange={(e) =>
+                      custom({
+                        box: {
+                          color: boxColor.hex,
+                          opacity: Number(e.target.value),
+                          radius: look.box?.radius ?? 10
+                        }
+                      })
+                    }
+                    className="w-20 accent-[var(--accent)]"
+                  />
+                  <span className="w-8 text-[11px] text-text-3 tabular-nums">
+                    {Math.round(boxColor.alpha * 100)}%
+                  </span>
+                </>
+              ) : null}
+            </Row>
+
+            <Label>Weight</Label>
+            <Row>
+              {fontWeights.size > 1 ? (
+                <Segmented
+                  items={Object.entries(WEIGHTS).map(([id, label]) => ({
+                    id: id as keyof typeof WEIGHTS,
+                    label
+                  }))}
+                  value={weightLevel}
+                  onChange={(w) =>
+                    custom({ weight: Number(w) === style.weight ? undefined : Number(w) })
+                  }
+                  ariaLabel="Weight"
+                />
+              ) : (
+                <span className="text-[11px] text-text-3">{cfg.font} comes in one weight</span>
+              )}
+            </Row>
+          </>
+        ) : null}
       </div>
 
       {error ? (
@@ -455,6 +692,83 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
         />
       </div>
     </div>
+  )
+}
+
+/** A row of color dots plus a picker for any other color. */
+function Swatches({
+  label,
+  colors,
+  value,
+  onPick
+}: {
+  label: string
+  colors: string[]
+  value: string
+  onPick: (color: string) => void
+}): ReactElement {
+  const unique = colors.filter(
+    (c, i) => colors.findIndex((x) => x.toLowerCase() === c.toLowerCase()) === i
+  )
+  return (
+    <>
+      {unique.slice(0, 8).map((c) => {
+        const on = value.toLowerCase() === c.toLowerCase()
+        return (
+          <button
+            key={c}
+            type="button"
+            aria-label={`${label} ${c}`}
+            onClick={() => onPick(c)}
+            className={cn(
+              'size-6 rounded-full ring-1 ring-black/10 transition-transform duration-150 hover:scale-110',
+              on && 'ring-2 ring-accent ring-offset-2 ring-offset-bg'
+            )}
+            style={{ background: c }}
+          />
+        )
+      })}
+      <label
+        className="relative size-6 cursor-pointer overflow-hidden rounded-full ring-1 ring-border"
+        title="Any color"
+      >
+        <span className="absolute inset-0 bg-[conic-gradient(red,yellow,lime,cyan,blue,magenta,red)]" />
+        <input
+          type="color"
+          aria-label={`${label}: any color`}
+          value={splitColor(value).hex}
+          onChange={(e) => onPick(e.target.value)}
+          className="absolute inset-0 cursor-pointer opacity-0"
+        />
+      </label>
+    </>
+  )
+}
+
+/** The current color as a dot; clicking it opens the color picker. */
+function ColorDot({
+  label,
+  value,
+  onChange
+}: {
+  label: string
+  value: string
+  onChange: (color: string) => void
+}): ReactElement {
+  return (
+    <label
+      className="relative size-6 cursor-pointer overflow-hidden rounded-full ring-1 ring-border transition-transform duration-150 hover:scale-110"
+      title={label}
+    >
+      <span className="absolute inset-0" style={{ background: value }} />
+      <input
+        type="color"
+        aria-label={label}
+        value={splitColor(value).hex}
+        onChange={(e) => onChange(e.target.value)}
+        className="absolute inset-0 cursor-pointer opacity-0"
+      />
+    </label>
   )
 }
 

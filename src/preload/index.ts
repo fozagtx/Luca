@@ -44,6 +44,9 @@ const api: LucaApi = {
     pickVideo: () => invoke(C.projectPickVideo),
     pickMedia: () => invoke(C.projectPickMedia),
     mediaPreview: (path) => invoke(C.projectMediaPreview, path),
+    probeVideo: (path) => invoke(C.projectProbeVideo, path),
+    addMedia: (file) => invoke(C.projectAddMedia, file),
+    onMediaProgress: (cb) => on(C.projectMediaProgress, cb),
     pickProjectDir: () => invoke(C.projectPickDir),
     forget: (dir) => invoke(C.projectForget, dir),
     trash: (dir) => invoke(C.projectTrash, dir),
@@ -60,8 +63,8 @@ const api: LucaApi = {
   timeline: {
     get: () => invoke(C.timelineGet),
     edit: (edit) => invoke(C.timelineEdit, edit),
-    thumbs: () => invoke(C.timelineThumbs),
-    peaks: () => invoke(C.timelinePeaks),
+    thumbs: (src) => invoke(C.timelineThumbs, src),
+    peaks: (src) => invoke(C.timelinePeaks, src),
     transform: (t) => invoke(C.timelineTransform, t)
   },
   agent: {
@@ -102,7 +105,8 @@ const api: LucaApi = {
     words: () => invoke(C.captionsWords),
     apply: (config) => invoke(C.captionsApply, config),
     remove: () => invoke(C.captionsRemove),
-    addFonts: () => invoke(C.fontsAdd)
+    addFonts: () => invoke(C.fontsAdd),
+    addGoogleFont: (input) => invoke(C.fontsAddGoogle, input)
   },
   looks: {
     list: () => invoke(C.looksList),

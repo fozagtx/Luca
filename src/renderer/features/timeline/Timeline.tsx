@@ -29,7 +29,7 @@ import {
   type DragEvent,
   type ReactElement
 } from 'react'
-import type { Clip } from '../../../shared/types'
+import type { Clip, Timeline as TimelineData } from '../../../shared/types'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { catalogChip, hasCatalogDrag, readCatalogDrag, type CatalogDrag } from '../../lib/drag'
@@ -38,7 +38,7 @@ import { clock, timecode } from '../../lib/timecode'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useQueue } from '../../stores/queue'
-import { useTimeline } from '../../stores/timeline'
+import { useTimeline, type Peaks, type Thumbs } from '../../stores/timeline'
 import { useUi } from '../../stores/ui'
 import { PlayheadTimecode } from '../viewer/PlayheadTimecode'
 import {
@@ -163,17 +163,16 @@ export function Timeline(): ReactElement {
   const reset = useTimeline((s) => s.reset)
   const error = useTimeline((s) => s.error)
 
-  useEffect(() => {
-    if (!projectDir) {
-      reset()
-      return
-    }
-    void load()
-  }, [projectDir, version, load, reset])
+  // another project starts from nothing: no clips, frames or waveforms of the last one
+  useEffect(() => reset(), [projectDir, reset])
 
   useEffect(() => {
-    if (projectDir) void loadMedia()
-  }, [projectDir, loadMedia])
+    if (projectDir) void load()
+  }, [projectDir, version, load])
+
+  useEffect(() => {
+    if (timeline) void loadMedia(mediaNeeds(timeline))
+  }, [timeline, loadMedia])
 
   if (!project) {
     return (
@@ -348,6 +347,7 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
 
   const duration = Math.max(timeline.duration, playerDuration, 1)
   const { rows, meta, clips } = useMemo(() => toRows(timeline, duration), [timeline, duration])
+  const stripClips = useMemo(() => footageClips(timeline), [timeline])
   const { scale, splits } = rulerStep(zoom)
 
   // Player → cursor (skip while the user drags the cursor), set directly on the editor: as a
@@ -445,7 +445,8 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
 
   const renderAction = (action: TimelineAction, row: TimelineRow): ReactElement => {
     const m = meta.get(row.id)
-    if (action.id === STRIP_ROW) return <Strip projectId={projectId} thumbs={thumbs} zoom={zoom} />
+    if (action.id === STRIP_ROW)
+      return <Strip projectId={projectId} clips={stripClips} thumbs={thumbs} zoom={zoom} />
     const clip = clips.get(action.id)
     if (!clip || !m) return <div />
     return (
@@ -453,7 +454,7 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
         clip={clip}
         selected={!!action.selected}
         locked={locked.includes(m.index)}
-        peaks={peaks}
+        peaks={clip.src ? peaks[clip.src] : undefined}
         fps={fps}
       />
     )
@@ -613,7 +614,7 @@ const ClipFace = memo(function ClipFace({
   clip: Clip
   selected: boolean
   locked: boolean
-  peaks: { peaksPerSecond: number; peaks: number[] } | null
+  peaks: Peaks | undefined
   fps: number
 }): ReactElement {
   return (
@@ -631,8 +632,8 @@ const ClipFace = memo(function ClipFace({
         <Waveform
           peaks={peaks.peaks}
           peaksPerSecond={peaks.peaksPerSecond}
-          start={clip.start}
-          end={clip.end}
+          start={clip.mediaStart ?? 0}
+          end={(clip.mediaStart ?? 0) + clip.end - clip.start}
         />
       ) : null}
       <span className="luca-clip-label">
@@ -660,30 +661,70 @@ const ScaleLabel = memo(function ScaleLabel({
   return <span>{timecode(seconds, fps).replace(/:\d\d$/, '')}</span>
 })
 
-/** One <img> per second of footage; memoized so it only re-renders when zoom or thumbs change. */
+/** The footage clips the Frames row shows: every clip on the lowest video track. */
+function footageClips(t: TimelineData): Clip[] {
+  const track = t.tracks.filter((tr) => tr.kind === 'video').sort((a, b) => a.index - b.index)[0]
+  return track ? track.clips.filter((c) => c.kind === 'video' && !!c.src) : []
+}
+
+/** Media files whose frames (footage) and waveforms (audio clips) the timeline shows. */
+function mediaNeeds(t: TimelineData): { video: string[]; audio: string[] } {
+  const audio = t.tracks.flatMap((tr) =>
+    tr.clips.filter((c) => c.kind === 'audio' && !!c.src).map((c) => c.src!)
+  )
+  return {
+    video: [...new Set(footageClips(t).map((c) => c.src!))],
+    audio: [...new Set(audio)]
+  }
+}
+
+/**
+ * One <img> per second of each footage clip, laid out where the clip sits and starting where it
+ * starts in its file; memoized so it only re-renders when zoom, clips or thumbs change.
+ */
 const Strip = memo(function Strip({
   projectId,
+  clips,
   thumbs,
   zoom
 }: {
   projectId: string
-  thumbs: { dir: string; count: number; interval: number } | null
+  clips: Clip[]
+  thumbs: Record<string, Thumbs>
   zoom: number
 }): ReactElement {
-  if (!thumbs || thumbs.count === 0) return <div className="luca-strip" />
-  const w = thumbs.interval * zoom
-  const imgs: ReactElement[] = []
-  for (let i = 0; i < thumbs.count; i++) {
-    imgs.push(
-      <img
-        key={i}
-        src={`/p/${encodeURIComponent(projectId)}/${thumbs.dir}/${String(i + 1).padStart(4, '0')}.jpg`}
-        style={{ width: w, height: STRIP_HEIGHT }}
-        className="block shrink-0 object-cover"
-        draggable={false}
-        alt=""
-      />
+  const pieces: ReactElement[] = []
+  for (const c of clips) {
+    const t = c.src ? thumbs[c.src] : undefined
+    if (!t || t.count === 0) continue
+    const from = c.mediaStart ?? 0
+    const first = Math.floor(from / t.interval)
+    const last = Math.min(t.count, Math.ceil((from + c.end - c.start) / t.interval))
+    const w = t.interval * zoom
+    const imgs: ReactElement[] = []
+    for (let i = first; i < last; i++) {
+      imgs.push(
+        <img
+          key={i}
+          src={`/p/${encodeURIComponent(projectId)}/${t.dir}/${String(i + 1).padStart(4, '0')}.jpg`}
+          style={{ width: w, height: STRIP_HEIGHT }}
+          className="block shrink-0 object-cover"
+          draggable={false}
+          alt=""
+        />
+      )
+    }
+    pieces.push(
+      <div
+        key={c.ref}
+        className="absolute inset-y-0 flex overflow-hidden"
+        style={{ left: c.start * zoom, width: (c.end - c.start) * zoom }}
+      >
+        <div className="flex shrink-0" style={{ marginLeft: -(from - first * t.interval) * zoom }}>
+          {imgs}
+        </div>
+      </div>
     )
   }
-  return <div className="luca-strip">{imgs}</div>
+  return <div className="luca-strip relative">{pieces}</div>
 })

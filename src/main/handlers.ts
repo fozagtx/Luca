@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, nativeImage, nativeTheme, shell } from 'electron'
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import type {
   Aspect,
   BackgroundSearch,
@@ -10,7 +10,9 @@ import type {
   Edl,
   ElementTransform,
   ExportOptions,
+  MediaInput,
   PermissionDecision,
+  Project,
   Settings,
   StartArgs,
   TimelineEdit
@@ -18,10 +20,13 @@ import type {
 import { activeAgent, agentFor, closeAgent, onTurnEnd } from './agent'
 import {
   addFonts,
+  addGoogleFont,
   applyCaptions,
   captionState,
   captionWords,
   FONT_EXT,
+  projectFonts,
+  refreshCaptions,
   removeCaptions
 } from './captions'
 import {
@@ -34,6 +39,7 @@ import {
 } from './clean'
 import { cancelExport, startExport } from './export'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
+import { addMedia, footageInfo } from './footage'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
 import { remocnCatalog, setupStudio, studioStatus } from './remocn'
 import { Channels, broadcast, handle, listen } from './ipc'
@@ -67,6 +73,18 @@ import { stopWatching, watchProject } from './watcher'
 type WinGetter = () => BrowserWindow | null
 
 const warnCheckpoint = (err: unknown): void => console.warn('[luca] checkpoint failed', err)
+
+/**
+ * Captions on the timeline follow the speech under them once it moved (a no-op otherwise); the
+ * caller's checkpoint saves the change and the captions as one version.
+ */
+function followCaptions(p: Project): void {
+  try {
+    refreshCaptions(p)
+  } catch (err) {
+    console.warn('[luca] re-timing captions failed', err)
+  }
+}
 
 const openDialog = (
   win: BrowserWindow | null,
@@ -121,6 +139,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   onTurnEnd((p, e) => {
     // a stopped turn's edits are kept, so they get a checkpoint too (undo takes back just them)
     if (e.isError && !e.stopped) return
+    followCaptions(p)
     checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72)).catch(
       warnCheckpoint
     )
@@ -180,6 +199,13 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     const img = nativeImage.createFromPath(path)
     return img.isEmpty() ? null : img.resize({ width: 240 }).toDataURL()
   })
+  handle(Channels.projectProbeVideo, (path: string) => footageInfo(path))
+  handle(Channels.projectAddMedia, (file: MediaInput) => {
+    const name = 'path' in file ? basename(file.path) : file.name
+    return addMedia(requireProject().dir, file, (progress) =>
+      broadcast(Channels.projectMediaProgress, { name, progress })
+    )
+  })
   handle(Channels.projectForget, (dir: string) => {
     forgetRecent(dir)
     broadcast(Channels.projectRecentChanged, null)
@@ -236,7 +262,9 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.timelineEdit, async (edit: TimelineEdit) => {
     const p = requireProject()
     const res = await applyEdit(p.dir, edit)
-    if (res.ok) checkpoint(p.dir, editLabel(edit)).catch(warnCheckpoint)
+    if (!res.ok) return res
+    followCaptions(p)
+    checkpoint(p.dir, editLabel(edit)).catch(warnCheckpoint)
     return res
   })
   handle(Channels.timelineTransform, async (t: ElementTransform) => {
@@ -245,8 +273,8 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     if (res.ok) checkpoint(p.dir, `Edit: move/resize ${t.id}`).catch(warnCheckpoint)
     return res
   })
-  handle(Channels.timelineThumbs, () => thumbnails(requireProject()))
-  handle(Channels.timelinePeaks, () => peaks(requireProject()))
+  handle(Channels.timelineThumbs, (src?: string) => thumbnails(requireProject(), src))
+  handle(Channels.timelinePeaks, (src?: string) => peaks(requireProject(), src))
 
   // agent
   handle(Channels.agentSend, (args: { text: string; chips: Chip[]; context: unknown }) =>
@@ -309,6 +337,12 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     })
     if (res.canceled || !res.filePaths.length) return captionState(p).fonts
     return addFonts(p, res.filePaths)
+  })
+  handle(Channels.fontsAddGoogle, async (input: string) => {
+    const p = requireProject()
+    const families = await addGoogleFont(p.dir, input)
+    await checkpoint(p.dir, `Add font${families.length === 1 ? '' : 's'}: ${families.join(', ')}`)
+    return { families, fonts: projectFonts(p.dir) }
   })
 
   // looks

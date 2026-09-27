@@ -86,6 +86,9 @@ function StartCard(): ReactElement {
   const [since, setSince] = useState<number | undefined>()
   const ref = useRef<HTMLTextAreaElement>(null)
   const kind = kindOf(files)
+  const videos = files.filter((f) => f.kind === 'video')
+  // the video (or audio) the project starts from, named on the progress card
+  const lead = videos[0] ?? files.find((f) => f.kind === 'audio')
   const bgAt = chips.findIndex((c) => c.kind === 'background')
   const background = bgAt < 0 ? null : (chips[bgAt] as Extract<Chip, { kind: 'background' }>)
   const canGo = !busy && (draft.trim().length > 0 || files.length > 0 || !!background)
@@ -128,7 +131,9 @@ function StartCard(): ReactElement {
         ? 'What should this photo become? (optional) e.g. “a moody cinematic intro”'
         : 'What should Luca make from these photos? (optional)'
       : kind === 'video'
-        ? 'What should Luca do with this video? (optional) e.g. “add captions and a title”'
+        ? videos.length > 1
+          ? 'What should Luca make from these clips? (optional) e.g. “cut them into a 30-second reel”'
+          : 'What should Luca do with this video? (optional) e.g. “add captions and a title”'
         : kind === 'audio'
           ? 'What visuals should go with this audio? (optional)'
           : 'Describe the video you want… e.g. “a 15-second launch teaser for my coffee brand”'
@@ -187,7 +192,9 @@ function StartCard(): ReactElement {
                 ? 'Starting a new video from scratch'
                 : kind === 'images'
                   ? `Starting from your ${files.length === 1 ? 'photo' : `${files.length} photos`}`
-                  : `Starting from ${files[0]?.name ?? 'your file'}`}
+                  : kind === 'video' && videos.length > 1
+                    ? `Starting from your ${videos.length} videos`
+                    : `Starting from ${lead?.name ?? 'your file'}`}
             </div>
             <CreateProgressList kind={kind} progress={progress} seen={seen} since={since} />
           </div>
@@ -210,8 +217,8 @@ function StartCard(): ReactElement {
                     onRemove={() => removeFile(f.path)}
                   />
                 ))}
-                {kind === 'images' ? (
-                  <Tip label="Add more images">
+                {kind === 'images' || kind === 'video' ? (
+                  <Tip label={kind === 'video' ? 'Add more videos or images' : 'Add more images'}>
                     <button
                       type="button"
                       onClick={() => void pickFiles()}
@@ -267,28 +274,27 @@ function StartCard(): ReactElement {
                   Background
                 </button>
               </Tip>
+              {/* for footage it starts out matching the first video's shape */}
+              <Segmented
+                items={ASPECTS}
+                value={aspect}
+                onChange={setAspect}
+                ariaLabel="Aspect ratio"
+                className="h-8"
+              />
               {kind === 'images' || kind === 'scratch' ? (
-                <>
-                  <Segmented
-                    items={ASPECTS}
-                    value={aspect}
-                    onChange={setAspect}
-                    ariaLabel="Aspect ratio"
-                    className="h-8"
-                  />
-                  <select
-                    aria-label="Length"
-                    value={duration ?? ''}
-                    onChange={(e) => setDuration(e.target.value ? Number(e.target.value) : null)}
-                    className="h-8 rounded-full border border-border bg-bg px-3 text-[12px] font-medium text-text-2 outline-none hover:border-border-strong"
-                  >
-                    {LENGTHS.map((l) => (
-                      <option key={l.label} value={l.value ?? ''}>
-                        {l.label}
-                      </option>
-                    ))}
-                  </select>
-                </>
+                <select
+                  aria-label="Length"
+                  value={duration ?? ''}
+                  onChange={(e) => setDuration(e.target.value ? Number(e.target.value) : null)}
+                  className="h-8 rounded-full border border-border bg-bg px-3 text-[12px] font-medium text-text-2 outline-none hover:border-border-strong"
+                >
+                  {LENGTHS.map((l) => (
+                    <option key={l.label} value={l.value ?? ''}>
+                      {l.label}
+                    </option>
+                  ))}
+                </select>
               ) : null}
               <GenerateButton
                 className="ml-auto"
