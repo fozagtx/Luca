@@ -163,8 +163,12 @@ export function Timeline(): ReactElement {
   const reset = useTimeline((s) => s.reset)
   const error = useTimeline((s) => s.error)
 
-  // another project starts from nothing: no clips, frames or waveforms of the last one
-  useEffect(() => reset(), [projectDir, reset])
+  // another project starts from nothing: no clips, frames or waveforms of the last one (the
+  // panel only shows while a project is open, so closing one clears them on the way out)
+  useEffect(() => {
+    reset()
+    return reset
+  }, [projectDir, reset])
 
   useEffect(() => {
     if (projectDir) void load()
@@ -174,21 +178,8 @@ export function Timeline(): ReactElement {
     if (timeline) void loadMedia(mediaNeeds(timeline))
   }, [timeline, loadMedia])
 
-  if (!project) {
-    return (
-      <div className="flex h-full flex-col bg-panel">
-        <div className="panel-head">
-          <span className="panel-title">Timeline</span>
-        </div>
-        <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-          <div className="text-[12.5px] font-medium text-text-2">No project open</div>
-          <div className="text-[11.5px] text-text-3">
-            Start one above and its video, graphics, captions and audio show up here.
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // App only mounts the timeline while a project is open
+  if (!project) return <div className="h-full bg-panel" />
 
   return (
     <div className="relative flex h-full flex-col bg-panel">
