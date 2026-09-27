@@ -551,22 +551,26 @@ export function parseGoogleFontsInput(input: string): GoogleFontsRequest | null 
 export const GOOGLE_WEIGHTS = '400;700;800;900'
 
 /**
- * Stylesheet links to try in order for a family name. Google Fonts answers 400 when none of the
- * asked weights exist (the plain link then gets whatever the family has) and names are
- * case-sensitive, so "bebas neue" is also tried as "Bebas Neue" and "dm sans" as "DM Sans".
+ * Stylesheet links to try, in order, for a family name. Names are case-sensitive, so "bebas neue"
+ * is also tried as "Bebas Neue" and "dm sans" as "DM Sans". For each spelling: `weights` asks for
+ * GOOGLE_WEIGHTS and gets the ones the family has; Google answers 400 when it has none of them
+ * (a light-only family), so `plain` checks the family exists and `each` finds the weights it has.
  */
-export function familyCssUrls(name: string): string[] {
+export function familyCssUrls(name: string): { weights: string; plain: string; each: string[] }[] {
   const title = name.replace(/\b[a-z]/g, (c) => c.toUpperCase())
   const acronyms = title.replace(/\b[A-Za-z]{2,3}\b/g, (w) =>
     /[aeiou]/i.test(w.slice(1)) && w.length === 3 ? w : w.toUpperCase()
   )
-  const urls: string[] = []
-  for (const n of new Set([name, title, acronyms])) {
+  const css2 = (spec: string): string =>
+    `https://fonts.googleapis.com/css2?family=${spec}&display=swap`
+  return [...new Set([name, title, acronyms])].map((n) => {
     const p = specParam(n)
-    urls.push(`https://fonts.googleapis.com/css2?family=${p}:wght@${GOOGLE_WEIGHTS}&display=swap`)
-    urls.push(`https://fonts.googleapis.com/css2?family=${p}&display=swap`)
-  }
-  return urls
+    return {
+      weights: css2(`${p}:wght@${GOOGLE_WEIGHTS}`),
+      plain: css2(p),
+      each: [100, 200, 300, 400, 500, 600, 700, 800, 900].map((w) => css2(`${p}:wght@${w}`))
+    }
+  })
 }
 
 /** One @font-face of a Google Fonts stylesheet. */

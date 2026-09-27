@@ -76,7 +76,8 @@ function followFirstVideo(): void {
   const { files, aspectFrom } = useStart.getState()
   const first = files.find((f) => f.kind === 'video')?.path ?? null
   if (first === aspectFrom) return
-  useStart.setState({ aspectFrom: first, aspectPicked: false })
+  // a shape the person picked stays until they start over with no video at all
+  useStart.setState({ aspectFrom: first, ...(first ? {} : { aspectPicked: false }) })
   if (!first) return
   void luca.project
     .probeVideo(first)
@@ -133,7 +134,15 @@ export const useStart = create<StartStore>((set, get) => ({
   },
   setAspect: (aspect) => set({ aspect, aspectPicked: true }),
   setDuration: (duration) => set({ duration }),
-  reset: () => set({ files: [], aspectFrom: null, error: null, progress: null, seen: [] }),
+  reset: () =>
+    set({
+      files: [],
+      aspectFrom: null,
+      aspectPicked: false,
+      error: null,
+      progress: null,
+      seen: []
+    }),
 
   create: async (prompt, opts) => {
     if (get().busy) return false

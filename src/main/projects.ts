@@ -25,6 +25,7 @@ import {
   convertImage,
   copyMedia,
   IMAGE_EXT,
+  mediaPath,
   needsPreparing,
   prepareVideo,
   probeVideo,
@@ -320,7 +321,7 @@ async function placeClips(
   for (let i = 1; i < videos.length; i++) {
     report({ stage: 'scaffolding', message: `Adding clip ${i + 1} of ${videos.length}` })
     mkdirSync(media, { recursive: true })
-    const rel = `media/${uniqueFile(media, safeName(basename(ready[i])))}`
+    const rel = mediaPath(dir, safeName(basename(ready[i])))
     // a prepared copy is Luca's own and moves in; the person's original is copied
     const prepared = ready[i] !== videos[i]
     if (prepared) renameSync(ready[i], join(dir, rel))
@@ -436,7 +437,7 @@ async function importExtras(dir: string, files: string[], report: Report): Promi
   for (const f of files.filter((f) => AUDIO_EXT.has(extname(f).toLowerCase()))) {
     report({ stage: 'scaffolding', message: 'Adding your audio' })
     mkdirSync(join(dir, 'media'), { recursive: true })
-    const rel = `media/${uniqueFile(join(dir, 'media'), safeName(basename(f)))}`
+    const rel = mediaPath(dir, safeName(basename(f)))
     await copyMedia(f, join(dir, rel))
     out.push(rel)
   }

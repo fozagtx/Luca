@@ -5,7 +5,7 @@ import type { CleanResult, CleanStatus, Cut, Edl, Project, Transcript } from '..
 import { activeAgent, agentFor } from './agent'
 import { refreshCaptions } from './captions'
 import { ffmpegProgress, probeMedia } from './env'
-import { findTags, replaceTag, setAttrs, type TagMatch } from './html'
+import { closingOffset, findTags, replaceTag, setAttrs, type TagMatch } from './html'
 import { Channels, broadcast } from './ipc'
 import { getSettings } from './settings'
 import { extractAudio, isFiller, transcribe } from './transcribe'
@@ -259,77 +259,111 @@ const num = (v: string | undefined, fallback: number): number => {
 
 /**
  * Point every clip of the source (or of an earlier clean master) at the new clean master. Each
- * piece keeps the part of the video it showed, minus what was cut from it, and everything after a
- * piece on the timeline moves earlier by the time that piece lost, so later clips, titles and
- * music stay where they belong and the video's length shrinks by exactly the cuts.
+ * piece keeps the part of the video it showed, minus what was cut from it. Everything else on the
+ * timeline follows the speech: a title inside a piece moves with the words under it, and clips
+ * after a piece (chained footage, music, outros) move earlier by the time that piece lost, so the
+ * video shortens by exactly the cuts.
  */
 function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): void {
   const indexFile = join(p.dir, 'index.html')
   let html = readFileSync(indexFile, 'utf8')
+  const tags = findTags(html)
+  const root = tags.find((t) => t.attrs['data-composition-id'] !== undefined)
+  // times inside a scene or group are its own, not the timeline's: only top-level clips move
+  const holders = tags
+    .filter(
+      (t) =>
+        t !== root &&
+        (t.attrs['data-composition-id'] !== undefined || t.attrs['data-start'] !== undefined)
+    )
+    .map((t) => ({ from: t.end, to: closingOffset(html, t)?.start ?? t.end }))
+  const topLevel = (t: TagMatch): boolean =>
+    !holders.some((h) => t.start >= h.from && t.start < h.to)
+
   const sourceRels = new Set([p.source, `media/${p.source}`])
   const prevClean = /^media\/clean-[0-9a-f]+\.mp4$/
   type Piece = {
     tag: TagMatch
     start: number
     end: number
-    delta: number
-    set: Record<string, string>
+    mediaStart: number
+    /** The cuts behind the file it plays now ([] for the source), null when unknown. */
+    before: Cut[] | null
+    newMediaStart: number
+    newLength: number
   }
   const pieces: Piece[] = []
-  for (const tag of findTags(html)) {
-    if (tag.name !== 'video' && tag.name !== 'audio') continue
+  for (const tag of tags) {
+    if ((tag.name !== 'video' && tag.name !== 'audio') || !topLevel(tag)) continue
     const src = tag.attrs.src ?? ''
-    // the earlier master's own cuts, to find which moments of the source it showed
-    const before = sourceRels.has(src) ? [] : prevClean.test(src) ? cutsOf(p, src) : null
-    if (!before) continue
+    const isSource = sourceRels.has(src)
+    if (!isSource && !prevClean.test(src)) continue
+    const before = isSource ? [] : cutsOf(p, src)
     const start = num(tag.attrs['data-start'], 0)
     const mediaStart = num(tag.attrs['data-media-start'], 0)
     const length = num(tag.attrs['data-duration'], duration)
-    const from = toClean(toSource(mediaStart, before, false), cuts)
-    const to = Math.min(duration, toClean(toSource(mediaStart + length, before, true), cuts))
-    const newLength = r3(Math.max(0, to - from))
-    pieces.push({
-      tag,
-      start,
-      end: start + length,
-      delta: newLength - length,
-      set: {
-        src: cleanRel,
-        'data-duration': String(newLength),
-        ...(from > 0 || tag.attrs['data-media-start'] !== undefined
-          ? { 'data-media-start': String(r3(from)) }
-          : {})
-      }
-    })
+    let newMediaStart = 0
+    let newLength = duration
+    if (before) {
+      newMediaStart = toClean(toSource(mediaStart, before, false), cuts)
+      const to = toClean(toSource(mediaStart + length, before, true), cuts)
+      newLength = Math.max(0, Math.min(duration, to) - newMediaStart)
+    }
+    // an earlier master whose cuts weren't recorded (cleaned before they were) becomes the whole new one
+    pieces.push({ tag, start, end: start + length, mediaStart, before, newMediaStart, newLength })
   }
   if (!pieces.length) return
-  // a video and its own audio are one piece of time: count what it lost once
-  const spans = new Map<string, { end: number; delta: number }>()
-  for (const x of pieces) spans.set(`${r3(x.start)}:${r3(x.end)}`, { end: x.end, delta: x.delta })
-  const shiftAt = (t: number): number =>
-    [...spans.values()].reduce((acc, s) => (s.end <= t + 1e-3 ? acc + s.delta : acc), 0)
+
+  // a video and its own audio (even trimmed a little differently) are one stretch of time
+  type Stretch = { start: number; end: number; rep: Piece; delta: number }
+  const stretches: Stretch[] = []
+  for (const x of [...pieces].sort((a, b) => a.start - b.start)) {
+    const last = stretches[stretches.length - 1]
+    if (last && x.start < last.end - 1e-3) {
+      if (x.end > last.end) Object.assign(last, { end: x.end, rep: x })
+    } else stretches.push({ start: x.start, end: x.end, rep: x, delta: 0 })
+  }
+  for (const s of stretches) s.delta = s.rep.newLength - (s.rep.end - s.rep.start)
+  const lostBefore = (t: number): number =>
+    stretches.reduce((acc, s) => (s.end <= t + 1e-3 ? acc + s.delta : acc), 0)
+  /** Where a moment of the timeline goes: with the speech inside a piece, earlier after it. */
+  const moved = (t: number): number => {
+    const s = stretches.find((s) => t > s.start + 1e-3 && t < s.end - 1e-3)
+    if (!s) return t + lostBefore(t)
+    const r = s.rep
+    const at = r.mediaStart + (t - r.start)
+    const now = r.before ? toClean(toSource(at, r.before, false), cuts) : at
+    return r.start + lostBefore(r.start) + Math.max(0, now - r.newMediaStart)
+  }
+
   const edits = new Map<number, string>()
   for (const x of pieces) {
-    const shift = shiftAt(x.start)
+    const start = x.start + lostBefore(x.start)
     edits.set(
       x.tag.start,
-      setAttrs(x.tag, { ...x.set, ...(shift ? { 'data-start': String(r3(x.start + shift)) } : {}) })
+      setAttrs(x.tag, {
+        src: cleanRel,
+        'data-duration': String(r3(x.newLength)),
+        ...(start !== x.start ? { 'data-start': String(r3(start)) } : {}),
+        ...(x.newMediaStart > 0 || x.tag.attrs['data-media-start'] !== undefined
+          ? { 'data-media-start': String(r3(x.newMediaStart)) }
+          : {})
+      })
     )
   }
-  // other timeline clips (on a track) after a shortened piece move up with it
-  for (const tag of findTags(html)) {
-    if (edits.has(tag.start) || tag.attrs['data-track-index'] === undefined) continue
-    if (tag.attrs['data-start'] === undefined) continue
+  for (const tag of tags) {
+    if (edits.has(tag.start) || tag === root || !topLevel(tag)) continue
+    if (tag.attrs['data-track-index'] === undefined || tag.attrs['data-start'] === undefined)
+      continue
     const start = num(tag.attrs['data-start'], 0)
-    const shift = shiftAt(start)
-    if (shift)
-      edits.set(tag.start, setAttrs(tag, { 'data-start': String(r3(Math.max(0, start + shift))) }))
+    const next = r3(Math.max(0, moved(start)))
+    if (next !== start) edits.set(tag.start, setAttrs(tag, { 'data-start': String(next) }))
   }
-  for (const tag of findTags(html).sort((a, b) => b.start - a.start)) {
+  for (const tag of [...tags].sort((a, b) => b.start - a.start)) {
     const raw = edits.get(tag.start)
     if (raw !== undefined) html = replaceTag(html, tag, raw)
   }
-  const total = [...spans.values()].reduce((acc, s) => acc + s.delta, 0)
+  const total = stretches.reduce((acc, s) => acc + s.delta, 0)
   html = html.replace(
     /(<div[^>]*data-composition-id="[^"]+"[^>]*data-duration=")([^"]*)(")/,
     (_, a: string, d: string, b: string) => `${a}${r3(Math.max(0.1, num(d, duration) + total))}${b}`

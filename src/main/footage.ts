@@ -61,6 +61,22 @@ export function uniqueFile(dir: string, name: string): string {
   return file
 }
 
+/**
+ * A free `media/<name>` path in a project. The a-roll sits at the project root and Luca looks for
+ * the source in media/ first, so a clip may never take the root file's name either.
+ */
+export function mediaPath(projectDir: string, name: string): string {
+  const ext = extname(name)
+  let file = name
+  for (
+    let n = 2;
+    existsSync(join(projectDir, 'media', file)) || existsSync(join(projectDir, file));
+    n++
+  )
+    file = `${stemOf(name)}-${n}${ext}`
+  return `media/${file}`
+}
+
 /** Copy without blocking the app (a clone on APFS, so even long clips are instant there). */
 export function copyMedia(src: string, dest: string): Promise<void> {
   return copyFile(src, dest, constants.COPYFILE_FICLONE)
@@ -391,13 +407,12 @@ async function addVideo(
 ): Promise<MediaChip> {
   const info = await probeVideo(src)
   if (!info) throw new Error(`Luca can't read ${file} as a video`)
-  const media = join(dir, 'media')
   let rel: string
   if (needsPreparing(info)) {
-    rel = `media/${uniqueFile(media, `${stemOf(safeName(file))}.mp4`)}`
+    rel = mediaPath(dir, `${stemOf(safeName(file))}.mp4`)
     await prepareVideo(src, join(dir, rel), onProgress, info)
   } else {
-    rel = `media/${uniqueFile(media, safeName(file))}`
+    rel = mediaPath(dir, safeName(file))
     await copyMedia(src, join(dir, rel))
   }
   const final = (await probeVideo(join(dir, rel)).catch(() => null)) ?? info
@@ -417,13 +432,12 @@ async function addVideo(
 }
 
 async function addImage(dir: string, src: string, file: string, name: string): Promise<MediaChip> {
-  const media = join(dir, 'media')
   let rel: string
   if (WEB_IMAGE_EXT.has(extname(file).toLowerCase())) {
-    rel = `media/${uniqueFile(media, safeName(file))}`
+    rel = mediaPath(dir, safeName(file))
     await copyMedia(src, join(dir, rel))
   } else {
-    rel = `media/${uniqueFile(media, `${stemOf(safeName(file))}.jpg`)}`
+    rel = mediaPath(dir, `${stemOf(safeName(file))}.jpg`)
     await convertImage(src, join(dir, rel))
   }
   const size = await probeVideo(join(dir, rel)).catch(() => null)
@@ -442,7 +456,7 @@ async function addImage(dir: string, src: string, file: string, name: string): P
 }
 
 async function addAudio(dir: string, src: string, file: string, name: string): Promise<MediaChip> {
-  const rel = `media/${uniqueFile(join(dir, 'media'), safeName(file))}`
+  const rel = mediaPath(dir, safeName(file))
   await copyMedia(src, join(dir, rel))
   const { duration } = await probeMedia(join(dir, rel)).catch(() => ({ duration: 0 }))
   return { kind: 'media', media: 'audio', path: rel, name, duration: r2(duration) || undefined }

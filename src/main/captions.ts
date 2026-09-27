@@ -312,6 +312,21 @@ async function downloadWoff2(url: string, to: string): Promise<void> {
   writeFileSync(to, buf)
 }
 
+/** A family's stylesheet with the weights captions use, or every weight it has when it has none of those. */
+async function familyCss(name: string): Promise<string | null> {
+  for (const { weights, plain, each } of familyCssUrls(name)) {
+    const all = await googleCss(weights)
+    if (all) return all
+    const regular = await googleCss(plain)
+    if (!regular) continue // not this spelling
+    const found = (await Promise.all(each.map((url) => googleCss(url).catch(() => null)))).filter(
+      (css): css is string => !!css
+    )
+    return found.length ? found.join('\n') : regular
+  }
+  return null
+}
+
 const slug = (s: string): string => s.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 
 /**
@@ -336,8 +351,7 @@ export async function addGoogleFont(dir: string, input: string): Promise<string[
     faces = parseFontFaces(css)
   } else {
     for (const name of req.families) {
-      let css: string | null = null
-      for (const url of familyCssUrls(name)) if ((css = await googleCss(url))) break
+      const css = await familyCss(name)
       if (!css) throw new Error(`Google Fonts has no font called “${name}”.`)
       faces.push(...parseFontFaces(css))
     }
@@ -377,7 +391,15 @@ export async function addGoogleFont(dir: string, input: string): Promise<string[
     })
   )
 
-  const families = [...new Set(added.map((f) => f.family))]
+  // in the order they were asked for: Google lists them alphabetically, downloads finish in any order
+  const asked = req.families.map((n) => n.toLowerCase())
+  const rank = (family: string): number => {
+    const i = asked.indexOf(family.toLowerCase())
+    return i < 0 ? asked.length : i
+  }
+  const families = [...new Set([...byUrl.values()].map((f) => f.family))].sort(
+    (a, b) => rank(a) - rank(b)
+  )
   const before = readFontFiles(dir)
   const replaced = before.filter((f) => f.google && families.includes(f.family))
   const list = [

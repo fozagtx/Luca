@@ -80,14 +80,20 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
         requested.add(key)
         return true
       })
+    // nothing back (a file still being written, ffmpeg failing once): try again next time
+    const retry = (kind: string, src: string): void => {
+      if (seq === mediaSeq) requested.delete(`${kind}:${src}`)
+    }
     await Promise.all([
       ...fresh('video', video).map(async (src) => {
         const t = await luca.timeline.thumbs(src).catch(() => null)
-        if (t && seq === mediaSeq) set((s) => ({ thumbs: { ...s.thumbs, [src]: t } }))
+        if (!t?.count) retry('video', src)
+        else if (seq === mediaSeq) set((s) => ({ thumbs: { ...s.thumbs, [src]: t } }))
       }),
       ...fresh('audio', audio).map(async (src) => {
         const p = await luca.timeline.peaks(src).catch(() => null)
-        if (p && seq === mediaSeq) set((s) => ({ peaks: { ...s.peaks, [src]: p } }))
+        if (!p?.peaks.length) retry('audio', src)
+        else if (seq === mediaSeq) set((s) => ({ peaks: { ...s.peaks, [src]: p } }))
       })
     ])
   },
