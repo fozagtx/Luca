@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { aspectFrom, durationFrom } from '../lib/idea'
 import { luca } from '../lib/luca'
 import { useChat } from './chat'
+import { useMaking } from './making'
 import { errorMessage, useProject } from './project'
 import { useUi } from './ui'
 
@@ -314,11 +315,14 @@ export const useStart = create<StartStore>((set, get) => ({
         // the picks go first among the chips, so they show on the request (and come back with
         // the rest if it can't be sent)
         useChat.setState({ chips: [...styleChips(style), ...chat.chips] })
-        await chat.send(visible, {
+        // the preview shows Luca at work instead of the blank starter until this turn ends
+        useMaking.getState().begin(res.project.id, kind, duration)
+        const sent = await chat.send(visible, {
           time: 0,
           note: res.brief,
           ...(opts?.spoken ? { voice: true } : {})
         })
+        if (!sent) useMaking.getState().cancel()
       }
       return true
     } catch (err) {

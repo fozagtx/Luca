@@ -23,6 +23,7 @@ import {
 } from 'react'
 import { toast } from 'sonner'
 import logo from '../../assets/logo.png'
+import { EdgeGlow } from '../../components/ui/edge-glow'
 import { GenerateButton } from '../../components/ui/generate-button'
 import { Segmented } from '../../components/ui/segmented'
 import { Thumb } from '../../components/ui/thumb'
@@ -158,7 +159,8 @@ function StartCard(): ReactElement {
   const catalogChips = chips.map((c, i) => ({ c, i })).filter(({ c }) => c.kind === 'catalog')
 
   return (
-    <section className={cn('flex flex-col items-center', inSteps ? 'gap-4' : 'gap-6')}>
+    // isolate: the glow while the video starts sits behind the card
+    <section className={cn('isolate flex flex-col items-center', inSteps ? 'gap-4' : 'gap-6')}>
       {inSteps && !busy ? (
         // compact while the steps are open, so the choices and Next fit on one screen
         <div className="flex flex-col items-center gap-1 text-center">
@@ -207,6 +209,7 @@ function StartCard(): ReactElement {
             : 'border-border shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_28px_-14px_rgba(0,0,0,0.18)] focus-within:border-border-strong focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.05),0_14px_36px_-14px_rgba(0,0,0,0.24)]'
         )}
       >
+        <EdgeGlow on={busy} />
         {over ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 rounded-[18px] text-accent">
             <ImagePlus size={22} strokeWidth={1.6} />

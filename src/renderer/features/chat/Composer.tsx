@@ -19,6 +19,7 @@ import {
   type MouseEvent,
   type ReactElement
 } from 'react'
+import { EdgeGlow } from '../../components/ui/edge-glow'
 import { Thumb } from '../../components/ui/thumb'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
@@ -138,7 +139,8 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
 
   return (
     <div
-      className="shrink-0 px-3 pt-1 pb-3"
+      // isolate: the glow while Luca works sits behind the box, not behind the panel
+      className="isolate shrink-0 px-3 pt-1 pb-3"
       onDragOver={(e) => {
         if (!hasCatalogDrag(e.dataTransfer) && !fileDrop(e.dataTransfer)) return
         e.preventDefault()
@@ -195,6 +197,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
           disabled && 'cursor-default opacity-70'
         )}
       >
+        <EdgeGlow on={working && !noProject && !over} />
         {over ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[16px] text-[12px] font-medium text-accent">
             {noProject ? 'Drop to start your video from it' : 'Drop to show it to Luca'}
