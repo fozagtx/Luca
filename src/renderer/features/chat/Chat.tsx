@@ -33,7 +33,10 @@ export function Chat(): ReactElement {
   return (
     <section className="flex h-full flex-col bg-panel">
       <header className="panel-head shrink-0">
-        <span className="panel-title">Chat</span>
+        <span className="flex items-center gap-2">
+          <LucaAvatar size={20} />
+          <span className="panel-title">Luca</span>
+        </span>
         <div className="ml-auto">
           <Status />
         </div>

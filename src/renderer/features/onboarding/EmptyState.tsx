@@ -55,13 +55,97 @@ const IDEAS = [
 
 export function EmptyState(): ReactElement {
   return (
-    <div className="scroll h-full">
-      <div className="flex min-h-full flex-col items-center px-8 py-10">
-        <div className="my-auto flex w-full max-w-[760px] flex-col gap-10">
-          <StartCard />
-          <Recent />
-        </div>
+    <div className="scroll @container h-full">
+      <div className="mx-auto flex min-h-full w-full max-w-[1040px] flex-col gap-8 px-6 py-6 @min-[720px]:px-8">
+        <Hero />
+        <Recent />
       </div>
+    </div>
+  )
+}
+
+/** Start something new: what Luca does, the box to describe it, and your latest video beside it. */
+function Hero(): ReactElement {
+  return (
+    <section className="flex flex-col gap-6 rounded-[18px] border border-border bg-bg-subtle p-6 shadow-card @min-[720px]:p-8">
+      <div className="grid items-center gap-6 @min-[640px]:grid-cols-[minmax(0,1fr)_minmax(0,240px)]">
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex items-center gap-2.5">
+            <img
+              src={logo}
+              alt=""
+              draggable={false}
+              className="size-9 rounded-[10px] shadow-[0_6px_16px_rgba(0,0,0,0.16)] transition-transform duration-300 hover:scale-105 hover:-rotate-2"
+            />
+            <span className="text-[10.5px] font-semibold tracking-[0.06em] text-text-3 uppercase">
+              New project
+            </span>
+          </div>
+          <h1 className="text-[28px] leading-[1.1] font-semibold tracking-[-0.025em] text-text">
+            What are we making today?
+          </h1>
+          <p className="max-w-[440px] text-[13px] leading-relaxed text-text-2">
+            Start from a video, one photo, a handful of images or just an idea. Describe it and Luca
+            builds the scenes, titles, effects and motion for you.
+          </p>
+        </div>
+        <LatestShot />
+      </div>
+      <StartCard />
+    </section>
+  )
+}
+
+/** The latest project as a product shot, a click away; your first video's place until then. */
+function LatestShot(): ReactElement | null {
+  const recent = useProject((s) => s.recent)
+  const open = useProject((s) => s.open)
+  const loading = useProject((s) => s.loading)
+  const last = recent[0]
+  return (
+    <div className="hidden @min-[640px]:block">
+      <button
+        type="button"
+        disabled={!last || loading}
+        onClick={() => last && void open(last.dir).catch(() => undefined)}
+        title={last ? `Continue ${last.name}` : undefined}
+        className="card card-hover group block w-full rounded-[14px] p-2 text-left shadow-popover disabled:pointer-events-none"
+      >
+        <Thumb
+          src={last?.thumb ?? null}
+          lazy={false}
+          className="aspect-video w-full rounded-[8px]"
+          imgClassName="transition-transform duration-300 group-hover:scale-[1.03]"
+          fallback={
+            <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-secondary text-secondary-fg">
+              <img src={logo} alt="" draggable={false} className="size-12 rounded-[12px]" />
+              <span className="text-[11.5px] font-medium">
+                {last ? last.name : 'Your first video starts here'}
+              </span>
+            </div>
+          }
+        >
+          {last?.thumb ? (
+            <span className="absolute bottom-2 left-2 max-w-[calc(100%-16px)] truncate rounded-[5px] bg-black/70 px-1.5 py-[3px] text-[11px] font-medium text-white">
+              {last.name}
+            </span>
+          ) : null}
+        </Thumb>
+        <div className="flex items-center gap-1 px-0.5 pt-2 pb-0.5" aria-hidden>
+          <span className="h-1.5 flex-1 rounded-full bg-border" />
+          <span className="h-1.5 flex-[2] rounded-full bg-accent/50" />
+          <span className="h-1.5 flex-1 rounded-full bg-border" />
+          <span className="h-1.5 flex-1 rounded-full bg-border" />
+        </div>
+        {last ? (
+          <div className="flex items-center justify-between px-0.5 pt-1.5 text-[11px] text-text-3">
+            <span>Continue where you left off</span>
+            {last.duration ? (
+              <span className="font-mono tabular-nums">{formatDuration(last.duration)}</span>
+            ) : null}
+          </div>
+        ) : null}
+      </button>
     </div>
   )
 }
@@ -126,23 +210,7 @@ function StartCard(): ReactElement {
   const catalogChips = chips.map((c, i) => ({ c, i })).filter(({ c }) => c.kind === 'catalog')
 
   return (
-    <section className="flex flex-col items-center gap-6">
-      <div className="flex flex-col items-center gap-3 text-center">
-        <img
-          src={logo}
-          alt=""
-          draggable={false}
-          className="size-16 rounded-[16px] shadow-[0_10px_24px_rgba(0,0,0,0.18)] transition-transform duration-300 hover:scale-105 hover:-rotate-2"
-        />
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-text">
-          What are we making today?
-        </h1>
-        <p className="max-w-[460px] text-[13px] leading-relaxed text-text-2">
-          Start from a video, one photo, a handful of images or just an idea. Luca builds the
-          scenes, titles, effects and motion for you.
-        </p>
-      </div>
-
+    <section className="flex flex-col gap-3">
       <div
         onDragOver={(e) => {
           if (busy) return
@@ -272,13 +340,13 @@ function StartCard(): ReactElement {
       </div>
 
       {error && !busy ? (
-        <div className="fade-in -mt-2 w-full rounded-[10px] border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[12px] text-danger select-text">
+        <div className="fade-in w-full rounded-[10px] border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[12px] text-danger select-text">
           {error}
         </div>
       ) : null}
 
       {!busy ? (
-        <div className="-mt-1 flex w-full flex-wrap items-center justify-center gap-1.5">
+        <div className="flex w-full flex-wrap items-center gap-1.5">
           {IDEAS.map((idea, i) => (
             <button
               key={idea}
@@ -354,13 +422,15 @@ function Recent(): ReactElement | null {
   if (recent.length === 0 || busy) return null
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between px-0.5">
-        <h2 className="text-[13px] font-semibold text-text">Recent</h2>
-        <span className="text-[11px] text-text-3">
+      <div className="flex items-baseline gap-2.5 px-0.5">
+        <span className="font-mono text-[11px] text-text-3 tabular-nums">01</span>
+        <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-text">Recent projects</h2>
+        <span className="text-[12px] text-text-3">Pick up where you left off</span>
+        <span className="ml-auto text-[11px] text-text-3">
           {recent.length} project{recent.length === 1 ? '' : 's'}
         </span>
       </div>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(164px,1fr))] gap-3">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(188px,1fr))] gap-3">
         {recent.slice(0, 12).map((r, i) => (
           <div
             key={r.dir}

@@ -156,33 +156,40 @@ export default function App(): ReactElement {
               title="Drag to resize · double-click to hide or show"
             />
             <Panel id="center" minSize={480}>
-              <Group
-                orientation="vertical"
-                className="h-full"
-                defaultLayout={layoutOf(['viewer', 'timeline'], settings.panes?.center)}
-                onLayoutChanged={(l) =>
-                  void luca.settings.savePanes('center', [l.viewer, l.timeline])
-                }
-              >
-                <Panel id="viewer" minSize={260} className="panel">
-                  <div className="flex h-full flex-col">
-                    <div className="min-h-0 flex-1">
-                      <Viewer />
-                    </div>
-                    <Transport />
-                  </div>
-                </Panel>
-                <Separator className={sepH} />
-                <Panel
-                  id="timeline"
-                  defaultSize={280}
-                  minSize={200}
-                  maxSize={560}
-                  className="panel"
+              {projectDir ? (
+                <Group
+                  orientation="vertical"
+                  className="h-full"
+                  defaultLayout={layoutOf(['viewer', 'timeline'], settings.panes?.center)}
+                  onLayoutChanged={(l) =>
+                    void luca.settings.savePanes('center', [l.viewer, l.timeline])
+                  }
                 >
-                  <Timeline />
-                </Panel>
-              </Group>
+                  <Panel id="viewer" minSize={260} className="panel">
+                    <div className="flex h-full flex-col">
+                      <div className="min-h-0 flex-1">
+                        <Viewer />
+                      </div>
+                      <Transport />
+                    </div>
+                  </Panel>
+                  <Separator className={sepH} />
+                  <Panel
+                    id="timeline"
+                    defaultSize={280}
+                    minSize={200}
+                    maxSize={560}
+                    className="panel"
+                  >
+                    <Timeline />
+                  </Panel>
+                </Group>
+              ) : (
+                // Home: the start screen gets the whole column; there is no video to play or cut yet
+                <div className="panel h-full">
+                  <Viewer />
+                </div>
+              )}
             </Panel>
             <Separator
               className={sepV}

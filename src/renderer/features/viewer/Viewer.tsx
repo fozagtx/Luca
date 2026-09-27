@@ -1,7 +1,9 @@
 import { MessageSquare, PanelLeftOpen } from 'lucide-react'
 import type { ReactElement } from 'react'
 import { Tip } from '../../components/ui/tooltip'
+import { cn } from '../../lib/cn'
 import { useProject } from '../../stores/project'
+import { useTimeline } from '../../stores/timeline'
 import { useUi } from '../../stores/ui'
 import { EmptyState } from '../onboarding/EmptyState'
 import { Player } from './Player'
@@ -9,21 +11,39 @@ import { Player } from './Player'
 const EDGE =
   'pop-in absolute top-3 z-20 flex size-8 items-center justify-center rounded-[9px] border border-border bg-bg/90 text-text-2 shadow-card backdrop-blur transition-[color,transform] duration-150 hover:text-text active:scale-95'
 
+const SPEC =
+  'flex h-6 items-center rounded-[6px] border border-border bg-bg/90 px-2 font-mono text-[10.5px] text-text-2 shadow-card tabular-nums backdrop-blur'
+
 export function Viewer(): ReactElement {
   const project = useProject((s) => s.project)
   const sidebarOpen = useUi((s) => s.sidebarOpen)
   const chatOpen = useUi((s) => s.chatOpen)
   const setSidebar = useUi((s) => s.setSidebar)
   const setChat = useUi((s) => s.setChat)
+  const timeline = useTimeline((s) => s.timeline)
   return (
     <div className="relative h-full w-full bg-viewer-bg">
       {project ? (
-        <div className="h-full w-full p-6">
+        <div className="h-full w-full px-6 pt-11 pb-6">
           <Player />
         </div>
       ) : (
         <EmptyState />
       )}
+      {project && timeline ? (
+        // the frame the video is made in, above the top-left corner of the stage
+        <div
+          className={cn(
+            'pointer-events-none absolute top-3 z-10 flex gap-1.5',
+            sidebarOpen ? 'left-3' : 'left-14'
+          )}
+        >
+          <span className={SPEC}>
+            {timeline.width} × {timeline.height}
+          </span>
+          <span className={SPEC}>{timeline.fps} fps</span>
+        </div>
+      ) : null}
       {!sidebarOpen ? (
         <Tip label="Show sidebar" shortcut="⇧⌘S" side="right">
           <button

@@ -2,7 +2,7 @@ import type { Theme } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 
-export type SidebarTab = 'inspiration' | 'catalog' | 'transcript' | 'looks'
+export type SidebarTab = 'inspiration' | 'media' | 'catalog' | 'transcript' | 'looks'
 
 type UiStore = {
   sidebarOpen: boolean
