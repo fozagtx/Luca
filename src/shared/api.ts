@@ -164,6 +164,7 @@ export type LucaApi = {
     freeMemoryMB: () => Promise<number>
   }
   capture: {
+    /** The captured area as a base64 PNG (no data: prefix). */
     frame: (rect: { x: number; y: number; width: number; height: number }) => Promise<string>
   }
   voice: {
