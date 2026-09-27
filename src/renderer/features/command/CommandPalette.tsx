@@ -12,7 +12,8 @@ import {
   Plus,
   Scissors,
   Sun,
-  Upload
+  Upload,
+  Wallpaper
 } from 'lucide-react'
 import type { ReactElement } from 'react'
 import { luca } from '../../lib/luca'
@@ -75,6 +76,12 @@ export function CommandPalette(): ReactElement {
       icon: <Upload size={14} strokeWidth={1.5} />,
       run: () => ui.setExport(true),
       needsProject: true
+    },
+    {
+      id: 'background',
+      label: 'Choose a background…',
+      icon: <Wallpaper size={14} strokeWidth={1.5} />,
+      run: () => ui.setBackgrounds(true)
     },
     {
       id: 'look',

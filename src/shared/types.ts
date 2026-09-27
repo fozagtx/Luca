@@ -76,6 +76,15 @@ export type Chip =
     }
   | { kind: 'clip'; clipId: string; track: number; start: number; end: number }
   | { kind: 'transcript'; text: string; start: number; end: number }
+  /** A Pexels photo or video the person picked as the background. */
+  | {
+      kind: 'background'
+      id: string
+      media: BackgroundMedia
+      title: string
+      thumb: string
+      duration?: number
+    }
 
 export type AgentEvent =
   /** Streamed reply text for the assistant message `id`. */
@@ -369,4 +378,60 @@ export type CaptionState = {
   fonts: ProjectFont[]
   /** The project has audio worth transcribing. */
   hasAudio: boolean
+}
+
+export type BackgroundMedia = 'photo' | 'video'
+
+/** A free stock photo or video from Pexels, ready to become a video's background. */
+export type Background = {
+  /** `photo:<pexels id>` or `video:<pexels id>`. */
+  id: string
+  media: BackgroundMedia
+  width: number
+  height: number
+  /** Seconds (videos only). */
+  duration?: number
+  /** What it shows, in words. */
+  title: string
+  /** Small still for grids. */
+  thumb: string
+  /** Larger still: a photo at screen size, a video's poster frame. */
+  poster: string
+  /** A light MP4 for hover previews and the home screen (videos only). */
+  preview?: string
+  /** Its average color, shown while the still loads. */
+  color?: string | null
+  /** Photographer or videographer, and their Pexels page. */
+  author: string
+  authorUrl: string
+  /** The item's Pexels page. */
+  url: string
+}
+
+export type BackgroundSearch = {
+  /** Plain words; empty browses popular backgrounds. */
+  query?: string
+  media?: 'all' | BackgroundMedia
+  orientation?: Aspect
+  page?: number
+}
+
+export type BackgroundResults = {
+  items: Background[]
+  page: number
+  hasMore: boolean
+}
+
+/** A background downloaded into the project, sized for its composition. */
+export type AddedBackground = {
+  id: string
+  media: BackgroundMedia
+  /** Project-relative path, e.g. media/backgrounds/pexels-video-123.mp4. */
+  file: string
+  width: number
+  height: number
+  duration?: number
+  title: string
+  /** "Video by … on Pexels". */
+  credit: string
 }

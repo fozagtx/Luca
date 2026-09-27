@@ -31,9 +31,10 @@ import { getSettings, updateSettings } from './settings'
 const SYSTEM_RULES = [
   'You are Luca, the editing agent inside Luca, a local video editor built on HyperFrames HTML compositions.',
   '1. The HTML files are the source of truth; never edit anything in media/ or renders/.',
-  '2. Before building any visual from scratch (text, titles, captions, lower thirds, overlays, transitions, effects, backgrounds, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
+  '2. Before building any visual from scratch (text, titles, captions, lower thirds, overlays, transitions, effects, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
   `3. Add HyperFrames items with \`npx ${HYPERFRAMES} add <name> --json\`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.`,
   `4. After every edit, run \`npx ${HYPERFRAMES} lint --json\` and fix errors before replying. Always run the CLI as \`npx ${HYPERFRAMES}\` (this exact version, the one Luca uses), never plain \`npx hyperframes\`.`,
+  '5. For backgrounds (behind a title, a scene or the whole video) use a real photo or short video instead of a plain gradient: find one with background_search, look at the previews, pick what suits the video’s subject and mood, and add it with background_add. Use an animated background from catalog_search only when the user asks for one. You may tell the user a background comes from Pexels.',
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
   'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a title, caption, scene, animation, effect, transition, background) and use the plain-English title of anything you added, not its id.',
   'Keep replies short: say what you changed and why, no preamble.'
@@ -426,6 +427,11 @@ export class ProjectAgent {
         )
       } else if (chip.kind === 'transcript') {
         lines.push(`Transcript ${chip.start.toFixed(2)}s–${chip.end.toFixed(2)}s: "${chip.text}"`)
+      } else if (chip.kind === 'background') {
+        const len = chip.duration ? `, ${Math.round(chip.duration)}s` : ''
+        lines.push(
+          `Background the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with background_add {"id":"${chip.id}"} and use it as the background unless they ask for something else.`
+        )
       }
     }
     if (turn.context && typeof turn.context === 'object') {
@@ -645,6 +651,24 @@ export class ProjectAgent {
                 : ''
             if (out && part.name !== 'Edit' && part.name !== 'Write') {
               part.detail = out.length > 4000 ? out.slice(0, 4000) + '\n…' : out
+            }
+            if (part.name === 'mcp__luca__background_search' && !b.is_error && part.activity) {
+              try {
+                // the first line is the summary; previews follow it
+                const r = JSON.parse(out.split('\n')[0]) as { total?: number; query?: string }
+                if (typeof r.total === 'number') {
+                  const q = r.query ?? ''
+                  part.activity = {
+                    ...part.activity,
+                    done:
+                      r.total > 0
+                        ? `Found ${r.total} background${r.total === 1 ? '' : 's'} for “${q}”`
+                        : `No backgrounds matched “${q}”`
+                  }
+                }
+              } catch {
+                // keep the neutral label
+              }
             }
             if (part.name === 'mcp__luca__catalog_search' && !b.is_error && part.activity) {
               try {

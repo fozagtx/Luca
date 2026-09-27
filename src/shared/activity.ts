@@ -228,6 +228,14 @@ export function describeActivity(
         ? act('search', `Finding components for “${q}”`, `Searched components for “${q}”`)
         : act('search', 'Browsing the component library', 'Browsed the component library')
     }
+    case 'mcp__luca__background_search': {
+      const q = String(input.query ?? '').trim()
+      return q
+        ? act('search', `Finding backgrounds for “${q}”`, `Searched backgrounds for “${q}”`)
+        : act('search', 'Finding a background', 'Looked for a background')
+    }
+    case 'mcp__luca__background_add':
+      return act('media', 'Adding the background', 'Added the background')
     case 'mcp__luca__remocn_install': {
       const name = String(input.name ?? 'component')
       const what = titleOf?.(name) ?? titleCase(name)

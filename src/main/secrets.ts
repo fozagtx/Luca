@@ -2,7 +2,7 @@ import { app, safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-type SecretName = 'assemblyai'
+type SecretName = 'assemblyai' | 'pexels'
 
 function file(): string {
   const dir = app.getPath('userData')

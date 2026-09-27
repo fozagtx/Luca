@@ -1,6 +1,9 @@
 import type {
   AgentEvent,
   Aspect,
+  Background,
+  BackgroundResults,
+  BackgroundSearch,
   CaptionConfig,
   CaptionState,
   CreateProgress,
@@ -110,6 +113,15 @@ export type LucaApi = {
     remocnPreview: (name: string) => Promise<string | null>
     remocnStudioStatus: () => Promise<{ ready: boolean; step?: string; error?: string }>
     remocnSetup: () => Promise<{ ok: boolean; error?: string }>
+  }
+  /** Free stock photos and videos from Pexels, for backgrounds. */
+  backgrounds: {
+    hasKey: () => Promise<boolean>
+    /** Checks the key with Pexels and saves it (empty removes it); rejects when Pexels refuses it. */
+    setKey: (key: string) => Promise<boolean>
+    search: (args: BackgroundSearch) => Promise<BackgroundResults>
+    /** Today's home-screen background (null without a key); `shuffle` picks another one. */
+    home: (args?: { shuffle?: boolean }) => Promise<Background | null>
   }
   clean: {
     run: () => Promise<void>

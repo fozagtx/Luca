@@ -54,7 +54,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     rows: [
       ['⌘K', 'Search commands'],
       ['⌘E', 'Export'],
-      ['⌘1 – ⌘3', 'Inspiration, Transcript, Looks'],
+      ['⌘1 – ⌘4', 'Inspiration, Transcript, Looks, Backgrounds'],
       ['⇧⌘S  ⇧⌘C', 'Show or hide the sidebar and the chat'],
       ['⇧⌘D', 'Light or dark'],
       ['?  ⌘/', 'This list']

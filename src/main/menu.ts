@@ -100,6 +100,11 @@ export function buildAppMenu(): void {
         { label: 'Inspiration', accelerator: 'Cmd+1', click: () => send('tab', 'inspiration') },
         { label: 'Transcript', accelerator: 'Cmd+2', click: () => send('tab', 'transcript') },
         { label: 'Looks', accelerator: 'Cmd+3', click: () => send('tab', 'looks') },
+        {
+          label: 'Backgrounds',
+          accelerator: 'Cmd+4',
+          click: () => send('tab', 'backgrounds')
+        },
         { type: 'separator' },
         { label: 'Toggle Grab', click: () => send('toggle-grab') },
         { label: 'History', accelerator: 'Cmd+Y', click: () => send('history') },

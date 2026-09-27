@@ -73,7 +73,8 @@ const RESOLUTION: Record<Aspect, string> = {
   square: 'square'
 }
 
-const SIZE: Record<Aspect, [number, number]> = {
+/** Composition pixels for each aspect ratio. */
+export const SIZE: Record<Aspect, [number, number]> = {
   landscape: [1920, 1080],
   portrait: [1080, 1920],
   square: [1080, 1080]
@@ -159,7 +160,7 @@ export async function startProject(
   } else if (kind === 'scratch') {
     const [w, h] = SIZE[args.aspect]
     brief =
-      `This project starts empty: a blank ${w}×${h} composition with a placeholder title. Build the whole video from the user's description: pick components with catalog_search (or use the ones the user attached), write the scenes, then add GSAP keyframes, motion and transitions` +
+      `This project starts empty: a blank ${w}×${h} composition with a placeholder title. Build the whole video from the user's description: pick components with catalog_search (or use the ones the user attached), give the scenes a real photo or short video background with background_search (or the one the user picked) instead of a gradient, write the scenes, then add GSAP keyframes, motion and transitions` +
       (args.duration ? `. Aim for about ${args.duration}s.` : '.')
   } else if (kind === 'audio') {
     brief =

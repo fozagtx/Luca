@@ -51,7 +51,9 @@ type ChatStore = {
   retry: () => Promise<void>
 }
 
-const chipName = (c: Chip): string | undefined => (c.kind === 'catalog' ? c.name : undefined)
+/** Chips a fill can attach and later take back: catalog items and backgrounds. */
+const chipName = (c: Chip): string | undefined =>
+  c.kind === 'catalog' ? c.name : c.kind === 'background' ? c.id : undefined
 
 /** "A", "A and B", "A, B and C". */
 const listOf = (xs: string[]): string =>
@@ -157,8 +159,8 @@ export const useChat = create<ChatStore>((set, get) => ({
   setDraft: (draft) => set({ draft, auto: null }),
   fillDraft: (text, chip, add) => {
     const { draft, auto, chips } = get()
-    const attached = (cs: Chip[]): boolean =>
-      !!chip && cs.some((c) => c.kind === 'catalog' && c.name === chipName(chip))
+    const name = chip && chipName(chip)
+    const attached = (cs: Chip[]): boolean => !!name && cs.some((c) => chipName(c) === name)
     const untouched = auto !== null && draft.trim() === auto.draft.trim()
     if (draft.trim() && !untouched) {
       // the person's own words stay; the item is still attached
@@ -171,13 +173,11 @@ export const useChat = create<ChatStore>((set, get) => ({
     const building = !!adds && adds.length > 1
     // replacing an earlier fill takes back the chips it added, not ones the person attached
     let next =
-      untouched && !building
-        ? chips.filter((c) => !(c.kind === 'catalog' && auto.chips.includes(c.name)))
-        : chips
+      untouched && !building ? chips.filter((c) => !auto.chips.includes(chipName(c) ?? '')) : chips
     const owned = building && auto ? [...auto.chips] : []
     if (chip && !attached(next)) {
       next = [...next, chip]
-      if (chip.kind === 'catalog') owned.push(chip.name)
+      if (name) owned.push(name)
     }
     const text2 = building ? `Add ${listOf(adds)} ` : text
     set({ draft: text2, chips: next, auto: { draft: text2, chips: owned, adds } })

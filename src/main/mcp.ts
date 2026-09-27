@@ -3,11 +3,37 @@ import { z } from 'zod'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
 import { library } from './library'
 import { HYPERFRAMES } from './env'
+import { addBackground, hasPexelsKey, searchBackgrounds } from './pexels'
+import { readProject } from './projects'
 import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
 
 const text = (data: unknown): { content: { type: 'text'; text: string }[] } => ({
   content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data) }]
 })
+
+type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+
+/** How many background_search results come with a preview Luca can look at. */
+const PREVIEWS = 8
+
+const NO_PEXELS =
+  'Stock backgrounds are not connected yet (no Pexels key). If the user asked for a photo or video background, tell them in one short sentence to connect Pexels in the Backgrounds panel; otherwise build the background another way and do not mention this.'
+
+/** A small still as an image block, or null when it can't be fetched quickly. */
+async function preview(url: string): Promise<Content | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8_000) })
+    // only image types Claude reads; anything else would fail the whole turn
+    const mimeType = /^image\/(jpeg|png|gif|webp)\b/.exec(
+      res.headers.get('content-type') ?? ''
+    )?.[0]
+    if (!res.ok || !mimeType) return null
+    const data = Buffer.from(await res.arrayBuffer()).toString('base64')
+    return { type: 'image', data, mimeType }
+  } catch {
+    return null
+  }
+}
 
 const categoryIds = CATEGORIES.map((c) => c.id) as [
   LibraryItem['category'],
@@ -70,7 +96,10 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'Remocn components are React/Remotion. Never put React in the HyperFrames HTML. ' +
       'Install with remocn_install, read the returned docs URL, write remocn/<clipId>.tsx in the ' +
       'project (default export rendering the component with props, plus `export const durationInFrames`), ' +
-      'then call remocn_place. Re-run remocn_place with the same clipId after editing the wrapper.',
+      'then call remocn_place. Re-run remocn_place with the same clipId after editing the wrapper. ' +
+      'background_search finds free stock photos and short videos (Pexels) for backgrounds and shows ' +
+      'previews of the best ones; background_add downloads the chosen one into media/backgrounds, ' +
+      'sized for this video, and returns the path to use.',
     tools: [
       tool(
         'catalog_search',
@@ -102,6 +131,90 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
             ...(remocnReady ? {} : { remocnReady: false }),
             results: hits.slice(0, limit ?? 12).map((i) => describe(i, remocnReady))
           })
+        }
+      ),
+      tool(
+        'background_search',
+        'Search free stock photos and short videos (Pexels) to use as the background of the video or a scene. Returns the best matches with their ids, plus small previews of the first ones so you can see them. Pick what fits the video’s subject and mood, then add it with background_add.',
+        {
+          query: z
+            .string()
+            .describe(
+              'what the background should show, in plain words: "soft abstract light", "modern office", "city at night", "ocean waves", "coffee beans"'
+            ),
+          media: z
+            .enum(['any', 'photo', 'video'])
+            .optional()
+            .describe('default any; videos are short clips that keep moving behind everything'),
+          limit: z.number().int().min(1).max(24).optional().describe('default 12')
+        },
+        async ({ query, media, limit }) => {
+          if (!hasPexelsKey()) return text({ ok: false, error: NO_PEXELS })
+          try {
+            const res = await searchBackgrounds({
+              query,
+              media: media === 'photo' || media === 'video' ? media : 'all',
+              orientation: readProject(projectDir)?.aspect ?? 'landscape'
+            })
+            const hits = res.items.slice(0, limit ?? 12)
+            const content: Content[] = [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  query,
+                  total: hits.length,
+                  results: hits.map((b) => ({
+                    id: b.id,
+                    media: b.media,
+                    shows: b.title,
+                    ...(b.duration ? { seconds: b.duration } : {}),
+                    size: `${b.width}x${b.height}`,
+                    by: b.author
+                  })),
+                  ...(hits.length
+                    ? { previews: `The first ${Math.min(PREVIEWS, hits.length)} follow, in order.` }
+                    : {})
+                })
+              }
+            ]
+            const shots = await Promise.all(hits.slice(0, PREVIEWS).map((b) => preview(b.thumb)))
+            shots.forEach((shot, i) => {
+              if (!shot) return
+              content.push({ type: 'text', text: `${hits[i].id}: ${hits[i].title}` }, shot)
+            })
+            return { content }
+          } catch (err) {
+            return text({ ok: false, error: err instanceof Error ? err.message : String(err) })
+          }
+        }
+      ),
+      tool(
+        'background_add',
+        'Download a background found with background_search (or picked by the user) into the project, sized for this video. Returns the project path to use and how to place it.',
+        {
+          id: z
+            .string()
+            .describe('the id from background_search or the user’s pick, e.g. "video:123"')
+        },
+        async ({ id }) => {
+          if (!hasPexelsKey()) return text({ ok: false, error: NO_PEXELS })
+          try {
+            const added = await addBackground(
+              projectDir,
+              id,
+              readProject(projectDir)?.aspect ?? 'landscape'
+            )
+            return text({
+              ok: true,
+              ...added,
+              place:
+                added.media === 'video'
+                  ? 'Put it behind everything as a full-frame, muted video clip on the lowest track (object-fit: cover) across the scenes it belongs to. If a scene runs longer than the clip, loop or repeat it. Keep text readable over it with a soft dark or light overlay.'
+                  : 'Put it behind everything as a full-frame image on the lowest track (object-fit: cover) across the scenes it belongs to; a slow push-in or drift keeps it alive. Keep text readable over it with a soft dark or light overlay.'
+            })
+          } catch (err) {
+            return text({ ok: false, error: err instanceof Error ? err.message : String(err) })
+          }
         }
       ),
       tool(

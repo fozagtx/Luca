@@ -123,8 +123,10 @@ export const useStart = create<StartStore>((set, get) => ({
     const { files, aspect, duration } = get()
     const kind = kindOf(files)
     const text = prompt.trim()
-    if (kind === 'scratch' && !text) {
-      set({ error: 'Describe the video you want, or add a video, audio or images.' })
+    // a background picked on the start card goes to Luca with the first request
+    const background = useChat.getState().chips.some((c) => c.kind === 'background')
+    if (kind === 'scratch' && !text && !background) {
+      set({ error: 'Describe the video you want, or add a video, audio, images or a background.' })
       return false
     }
     set({ busy: true, error: null, progress: { stage: 'preparing' }, seen: ['preparing'] })
@@ -140,7 +142,7 @@ export const useStart = create<StartStore>((set, get) => ({
       set({ files: [], previews: {} })
       const chat = useChat.getState()
       // a video with nothing asked is a plain new project; everything else starts Luca working
-      if (text || kind === 'images' || kind === 'audio') {
+      if (text || kind === 'images' || kind === 'audio' || background) {
         if (!useUi.getState().chatOpen) useUi.getState().setChat(true)
         const visible =
           text ||
@@ -148,7 +150,11 @@ export const useStart = create<StartStore>((set, get) => ({
             ? files.length === 1
               ? 'Turn my photo into a video'
               : `Make a video from my ${files.length} photos`
-            : 'Make a video that goes with my audio')
+            : kind === 'audio'
+              ? 'Make a video that goes with my audio'
+              : kind === 'video'
+                ? 'Put my video on this background'
+                : 'Make a video on this background')
         await chat.send(visible, {
           time: 0,
           note: res.brief,
