@@ -43,7 +43,8 @@ type UiStore = {
 }
 
 export const useUi = create<UiStore>((set, get) => ({
-  sidebarOpen: true,
+  // hidden until asked for (⇧⌘S): new videos get their look from the start steps instead
+  sidebarOpen: false,
   chatOpen: true,
   tab: 'inspiration',
   paletteOpen: false,

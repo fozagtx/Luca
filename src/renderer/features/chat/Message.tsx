@@ -26,6 +26,7 @@ import { formatDuration } from '../../lib/format'
 import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
 import { stopLuca } from '../../stores/queue'
+import { StyleFieldIcon } from '../onboarding/StyleFieldIcon'
 import type { ToolPart } from './activity'
 import { Steps } from './Steps'
 
@@ -45,6 +46,8 @@ function chipIcon(chip: Chip): ReactElement {
       return <Type size={11} />
     case 'background':
       return <Wallpaper size={11} />
+    case 'style':
+      return <StyleFieldIcon field={chip.field} size={11} />
     case 'media':
       return chip.media === 'video' ? (
         <Clapperboard size={11} />
@@ -75,6 +78,8 @@ function chipLabel(chip: Chip): string {
       return `“${chip.text.slice(0, 24)}${chip.text.length > 24 ? '…' : ''}”`
     case 'background':
       return `Background: ${chip.title}`
+    case 'style':
+      return chip.label
     case 'media':
       return chip.duration ? `${chip.name} · ${formatDuration(chip.duration)}` : chip.name
   }

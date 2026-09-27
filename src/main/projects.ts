@@ -18,6 +18,7 @@ import type {
   StartArgs,
   StartKind
 } from '../shared/types'
+import { styleGuide } from '../shared/styles'
 import { childEnv, run, runHyperframes, which } from './env'
 import {
   aspectOf,
@@ -225,6 +226,15 @@ export async function startProject(
     if (extras.length) {
       const added = await importExtras(dir, extras, report)
       brief += ` The user also added ${added.length === 1 ? 'this file' : 'these files'}, in the order they added them: ${added.join(', ')}. Use ${added.length === 1 ? 'it' : 'them'} where ${added.length === 1 ? 'it fits' : 'they fit'} what the user asks for (images as cutaways, a logo or an intro; audio as music).`
+    }
+    // the look picked on the start steps: in the first request, and kept for later edits
+    const guide = styleGuide(
+      args.style,
+      kind === 'images' || kind === 'scratch' ? args.duration : undefined
+    )
+    if (guide) {
+      writeFileSync(join(lucaDir(dir), 'STYLE.md'), guide + '\n')
+      brief += `\n\n${guide}`
     }
 
     const now = new Date().toISOString()

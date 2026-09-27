@@ -145,10 +145,19 @@ export const useChat = create<ChatStore>((set, get) => ({
   },
 
   send: async (text, context, opts) => {
-    // with nothing open, a message is an idea for a new video: start one from it
+    // with nothing open, a message is an idea for a new video: typed, it goes through the start
+    // steps (theme, font…) on the start card; spoken, Luca starts on it right away
     if (!useProject.getState().project) {
       if (!opts?.keepDraft) set({ draft: '', error: null })
       const spoken = !!(context as { voice?: boolean } | null)?.voice
+      if (!spoken) {
+        const begun = useStart.getState().begin(text)
+        if (begun === 'steps') return true
+        if (begun === 'invalid') {
+          set({ error: useStart.getState().error, ...(opts?.keepDraft ? {} : { draft: text }) })
+          return false
+        }
+      }
       const ok = await useStart.getState().create(text, { spoken })
       if (!ok)
         set({ error: useStart.getState().error, ...(opts?.keepDraft ? {} : { draft: text }) })
