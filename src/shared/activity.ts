@@ -236,6 +236,12 @@ export function describeActivity(
     }
     case 'mcp__luca__background_add':
       return act('media', 'Adding the background', 'Added the background')
+    case 'mcp__luca__video_generate':
+      if (input.extend)
+        return act('media', 'Continuing the clip with Gemini', 'Continued the clip with Gemini')
+      if (input.video)
+        return act('media', 'Changing the clip with Gemini', 'Changed the clip with Gemini')
+      return act('media', 'Making a video with Gemini', 'Made a video with Gemini')
     case 'mcp__luca__remocn_install': {
       const name = String(input.name ?? 'component')
       const what = titleOf?.(name) ?? titleCase(name)

@@ -37,6 +37,7 @@ const SYSTEM_RULES = [
   `4. After every edit, run \`npx ${HYPERFRAMES} lint --json\` and fix errors before replying. Always run the CLI as \`npx ${HYPERFRAMES}\` (this exact version, the one Luca uses), never plain \`npx hyperframes\`.`,
   '5. For backgrounds (behind a title, a scene or the whole video) use a real photo or short video instead of a plain gradient: find one with background_search, look at the previews, pick what suits the video’s subject and mood, and add it with background_add. Use an animated background from catalog_search only when the user asks for one. You may tell the user a background comes from Pexels.',
   '6. Captions of what is said in the video always go through captions_apply: adding them and every change to their style, font, size, position, colors, outline, box or animation (to match a reference image, read its look and pass it as overrides). Never write or edit the captions file by hand; Luca rebuilds it from the transcript and keeps it in sync with every cut. For a font that is not built in (a Google Fonts link or name the user gives), call font_add first.',
+  '7. Footage nobody filmed (a shot, a scene, b-roll, a clip of anything) and changes to how a clip looks (restyle, relight, add or remove something in it, change the weather, continue it) are made with video_generate (Gemini). It spends the user’s Gemini credits and takes a few minutes: use it only when they ask for a generated or edited clip, never for what a title, effect or stock background already does. Say in one short line that it takes a few minutes before you call it, then put the result in the video yourself. You may tell the user a clip was made with Gemini.',
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
   'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a title, caption, scene, animation, effect, transition, background) and use the plain-English title of anything you added, not its id.',
   'Keep replies short: say what you changed and why, no preamble.'
@@ -435,7 +436,7 @@ export class ProjectAgent {
       } else if (chip.kind === 'background') {
         const len = chip.duration ? `, ${Math.round(chip.duration)}s` : ''
         lines.push(
-          `Background the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with background_add {"id":"${chip.id}"} and use it as the background unless they ask for something else.`
+          `Background the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with background_add {"id":"${chip.id}"} and use it as the background unless they ask for something else. If they ask to change how it looks (a style, colors, season, weather…), restyle the added file with video_generate (as video for a clip, in images for a photo) and use the restyled clip as the background instead.`
         )
       } else if (chip.kind === 'style') {
         // a start-step choice: its full guide is in the start brief (and .luca/STYLE.md)
@@ -686,6 +687,20 @@ export class ProjectAgent {
                         ? `Found ${r.total} background${r.total === 1 ? '' : 's'} for “${q}”`
                         : `No backgrounds matched “${q}”`
                   }
+                }
+              } catch {
+                // keep the neutral label
+              }
+            }
+            if (part.name === 'mcp__luca__video_generate' && !b.is_error && part.activity) {
+              try {
+                // the first line is the summary; frames follow it
+                const r = JSON.parse(out.split('\n')[0]) as { ok?: boolean; seconds?: number }
+                part.activity = {
+                  ...part.activity,
+                  done: r.ok
+                    ? `${part.activity.done} (${Math.round(r.seconds ?? 0)} s)`
+                    : 'Gemini couldn’t make the video'
                 }
               } catch {
                 // keep the neutral label

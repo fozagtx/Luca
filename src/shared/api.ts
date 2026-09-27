@@ -135,6 +135,12 @@ export type LucaApi = {
     /** Today's home-screen background (null without a key); `shuffle` picks another one. */
     home: (args?: { shuffle?: boolean }) => Promise<Background | null>
   }
+  /** Video generation and editing with Gemini Omni, on the person's own API key. */
+  gemini: {
+    hasKey: () => Promise<boolean>
+    /** Checks the key with Google and saves it (empty removes it); rejects when Google refuses it. */
+    setKey: (key: string) => Promise<boolean>
+  }
   clean: {
     run: () => Promise<void>
     applyEdl: (edl: Edl) => Promise<CleanResult>

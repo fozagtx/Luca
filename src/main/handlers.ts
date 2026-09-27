@@ -46,6 +46,7 @@ import { Channels, broadcast, handle, listen } from './ipc'
 import { invalidateLibrary } from './library'
 import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
+import { hasGeminiKey, saveGeminiKey } from './gemini'
 import { hasPexelsKey, homeBackground, savePexelsKey, searchBackgrounds } from './pexels'
 import {
   AUDIO_EXT,
@@ -306,6 +307,10 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.catalogRemocnPreview, () => null)
   handle(Channels.catalogRemocnStudioStatus, () => studioStatus())
   handle(Channels.catalogRemocnSetup, () => setupStudio())
+
+  // video generation (Gemini)
+  handle(Channels.geminiHasKey, hasGeminiKey)
+  handle(Channels.geminiSetKey, (key: string) => saveGeminiKey(key))
 
   // backgrounds (Pexels)
   handle(Channels.backgroundsHasKey, hasPexelsKey)
