@@ -1,9 +1,10 @@
 import type { Aspect, Background } from '@shared/types'
-import { Check, Film, Plus, Search, X } from 'lucide-react'
+import { Check, Film, Plus, Search, WandSparkles, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactElement, type WheelEvent } from 'react'
 import { Button } from '../../components/ui/button'
 import { Segmented, type SegmentedItem } from '../../components/ui/segmented'
 import { Thumb } from '../../components/ui/thumb'
+import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { formatDuration } from '../../lib/format'
 import {
@@ -37,12 +38,15 @@ const GRID = { 2: 'grid-cols-2', 3: 'grid-cols-3' } as const
 export function BackgroundBrowser({
   columns = 2,
   onPick,
+  onRestyle,
   pickedId,
   hint,
   autoFocus
 }: {
   columns?: 2 | 3
   onPick: (b: Background) => void
+  /** Restyle a background with Gemini; offered on each card when given. */
+  onRestyle?: (b: Background) => void
   /** The background already chosen, marked in the grid. */
   pickedId?: string
   /** What clicking does, shown in the footer. */
@@ -161,6 +165,7 @@ export function BackgroundBrowser({
                 shape={SHAPE[orientation]}
                 picked={b.id === pickedId}
                 onPick={onPick}
+                onRestyle={onRestyle}
               />
             ))}
           </div>
@@ -246,54 +251,72 @@ function Card({
   item,
   shape,
   picked,
-  onPick
+  onPick,
+  onRestyle
 }: {
   item: Background
   shape: string
   picked: boolean
   onPick: (b: Background) => void
+  onRestyle?: (b: Background) => void
 }): ReactElement {
   const [hover, setHover] = useState(false)
   const windowActive = useUi((s) => s.windowActive)
   const kind = item.media === 'video' ? 'Video' : 'Photo'
   return (
-    <button
-      type="button"
-      onClick={() => onPick(item)}
+    <div
+      className="group relative"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      title={`${item.title} · ${kind} by ${item.author}`}
-      aria-pressed={picked}
-      className={cn(
-        'card card-hover group block w-full p-1.5 text-left',
-        picked &&
-          'border-accent shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)]'
-      )}
     >
-      <Thumb src={item.thumb} className={cn(shape, 'rounded-[6px]')}>
-        {hover && windowActive && item.preview ? <HoverVideo src={item.preview} /> : null}
-        {item.media === 'video' ? (
-          <span className="absolute top-1 left-1 inline-flex items-center gap-0.5 rounded-[4px] bg-black/55 px-1 py-px font-mono text-[9.5px] text-white tabular-nums backdrop-blur-sm">
-            <Film size={9} strokeWidth={2} />
-            {formatDuration(item.duration ?? 0)}
+      <button
+        type="button"
+        onClick={() => onPick(item)}
+        title={`${item.title} · ${kind} by ${item.author}`}
+        aria-pressed={picked}
+        className={cn(
+          'card card-hover block w-full p-1.5 text-left',
+          picked &&
+            'border-accent shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)]'
+        )}
+      >
+        <Thumb src={item.thumb} className={cn(shape, 'rounded-[6px]')}>
+          {hover && windowActive && item.preview ? <HoverVideo src={item.preview} /> : null}
+          {item.media === 'video' ? (
+            <span className="absolute top-1 left-1 inline-flex items-center gap-0.5 rounded-[4px] bg-black/55 px-1 py-px font-mono text-[9.5px] text-white tabular-nums backdrop-blur-sm">
+              <Film size={9} strokeWidth={2} />
+              {formatDuration(item.duration ?? 0)}
+            </span>
+          ) : null}
+          <span
+            className={cn(
+              'absolute top-1 right-1 flex size-6 items-center justify-center rounded-full shadow-sm transition-[opacity,transform] duration-150',
+              picked
+                ? 'bg-accent text-accent-fg'
+                : 'scale-90 bg-white/90 text-[#111] opacity-0 group-hover:scale-100 group-hover:opacity-100'
+            )}
+          >
+            {picked ? <Check size={13} strokeWidth={2.5} /> : <Plus size={13} strokeWidth={2.25} />}
           </span>
-        ) : null}
-        <span
-          className={cn(
-            'absolute top-1 right-1 flex size-6 items-center justify-center rounded-full shadow-sm transition-[opacity,transform] duration-150',
-            picked
-              ? 'bg-accent text-accent-fg'
-              : 'scale-90 bg-white/90 text-[#111] opacity-0 group-hover:scale-100 group-hover:opacity-100'
-          )}
-        >
-          {picked ? <Check size={13} strokeWidth={2.5} /> : <Plus size={13} strokeWidth={2.25} />}
-        </span>
-      </Thumb>
-      <div className="px-0.5 pt-1.5 pb-0.5">
-        <span className="block truncate text-[11.5px] font-medium text-text">{item.title}</span>
-        <span className="block truncate text-[10.5px] text-text-3">{item.author}</span>
-      </div>
-    </button>
+        </Thumb>
+        <div className={cn('px-0.5 pt-1.5 pb-0.5', onRestyle && 'pr-7')}>
+          <span className="block truncate text-[11.5px] font-medium text-text">{item.title}</span>
+          <span className="block truncate text-[10.5px] text-text-3">{item.author}</span>
+        </div>
+      </button>
+      {onRestyle ? (
+        <Tip label="Restyle it with Gemini: say how it should look">
+          <button
+            type="button"
+            aria-label={`Restyle ${item.title} with Gemini`}
+            onClick={() => onRestyle(item)}
+            className="absolute right-1.5 bottom-2 flex size-6 items-center justify-center rounded-full text-text-3 opacity-0 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-hover hover:text-text focus-visible:opacity-100"
+          >
+            <WandSparkles size={13} strokeWidth={1.9} />
+          </button>
+        </Tip>
+      ) : null}
+    </div>
   )
 }
 
