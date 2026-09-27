@@ -4,6 +4,7 @@ import { captionStyle } from '../../../../shared/captions'
 import type {
   CaptionState,
   CleanStatus,
+  Clip,
   Cut,
   Edl,
   Transcript,
@@ -18,6 +19,7 @@ import { luca } from '../../../lib/luca'
 import { useChat } from '../../../stores/chat'
 import { usePlayer } from '../../../stores/player'
 import { errorMessage, useProject } from '../../../stores/project'
+import { useTimeline } from '../../../stores/timeline'
 import { useUi } from '../../../stores/ui'
 import { AssemblyAiKeyCard } from '../../onboarding/AssemblyAiKeyCard'
 import { EmptyPane } from '../EmptyPane'
@@ -64,6 +66,7 @@ export function TranscriptTab(): ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [captions, setCaptionState] = useState<CaptionState | null>(null)
   const setCaptions = useUi((s) => s.setCaptions)
+  const timeline = useTimeline((s) => s.timeline)
 
   const load = useCallback(async (): Promise<void> => {
     const [t, e, s, k, c] = await Promise.all([
@@ -163,12 +166,28 @@ export function TranscriptTab(): ReactElement {
     const hit = new Set(ws.map((w) => cutIndex.get(w.id)).filter(Boolean))
     void writeEdl(cuts.filter((c) => !hit.has(c)))
   }
-  /** Words keep their original times; the video plays the clean master, where each cut before them is gone. */
-  const onTimeline = (t: number): number =>
-    Math.max(
+  /**
+   * Where a word plays in the video. Words keep their original times; after a clean edit the
+   * video plays the clean master, where every cut before them is gone. Then the clips that play
+   * the speech (moved, trimmed or split) place that moment on the timeline, as captions do.
+   */
+  const onTimeline = (t: number): number => {
+    const clean = Math.max(
       0,
       t - cuts.filter((c) => c.end <= t + 1e-3).reduce((acc, c) => acc + (c.end - c.start), 0)
     )
+    const clips = timeline?.tracks.flatMap((tr) => tr.clips) ?? []
+    const file = (c: Clip): string => (c.src ?? '').split(/[?#]/)[0]
+    const master = clips.filter((c) => /^media\/clean-[0-9a-f]+\.mp4$/.test(file(c)))
+    const raw = clips.filter((c) => file(c).split('/').pop() === project.source)
+    const [pool, at] = master.length ? [master, clean] : [raw, t]
+    const heard = pool.filter((c) => c.kind === 'audio')
+    const hit = (heard.length ? heard : pool).find((c) => {
+      const from = c.mediaStart ?? 0
+      return at >= from - 1e-3 && at < from + c.end - c.start
+    })
+    return hit ? hit.start + at - (hit.mediaStart ?? 0) : clean
+  }
   const addToChat = (): void => {
     const ws = selected()
     if (!ws.length) return

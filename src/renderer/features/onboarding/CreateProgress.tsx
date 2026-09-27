@@ -57,7 +57,7 @@ export function CreateProgressList({
       steps={steps}
       current={current}
       failed={stage === 'error'}
-      progress={progress?.stage === 'media' ? progress.progress : undefined}
+      progress={progress?.progress}
       since={since}
       detail={progress?.message}
     />

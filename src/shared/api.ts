@@ -21,7 +21,9 @@ import type {
   EnvStatus,
   ExportOptions,
   ExportProgress,
+  FootageInfo,
   Look,
+  MediaInput,
   PermissionDecision,
   Project,
   ProjectChanged,
@@ -71,6 +73,15 @@ export type LucaApi = {
     pickMedia: () => Promise<string[]>
     /** Small data-URL preview of a local image or video file. */
     mediaPreview: (path: string) => Promise<string | null>
+    /** A video's shape and length (null when it can't be read), to pick the project's aspect. */
+    probeVideo: (path: string) => Promise<FootageInfo | null>
+    /**
+     * Copy a video, audio file or image into the open project's media/ folder for the chat
+     * (videos made ready to play), as a chip for the message.
+     */
+    addMedia: (file: MediaInput) => Promise<Extract<Chip, { kind: 'media' }>>
+    /** Progress (0..1) of a video addMedia is getting ready. */
+    onMediaProgress: (cb: (p: { name: string; progress: number }) => void) => Unsubscribe
     pickProjectDir: () => Promise<string | null>
     /** Remove from Recent; the folder stays on disk. */
     forget: (dir: string) => Promise<void>
@@ -91,8 +102,9 @@ export type LucaApi = {
   timeline: {
     get: () => Promise<Timeline>
     edit: (edit: TimelineEdit) => Promise<{ ok: boolean; error?: string }>
-    thumbs: () => Promise<{ dir: string; count: number; interval: number }>
-    peaks: () => Promise<{ peaksPerSecond: number; peaks: number[] }>
+    /** Frames and peaks of one clip's media file (project-relative), or of the project's source. */
+    thumbs: (src?: string) => Promise<{ dir: string; count: number; interval: number }>
+    peaks: (src?: string) => Promise<{ peaksPerSecond: number; peaks: number[] }>
     transform: (t: ElementTransform) => Promise<{ ok: boolean; error?: string }>
   }
   agent: {
@@ -141,6 +153,8 @@ export type LucaApi = {
     remove: () => Promise<void>
     /** Pick font files (.ttf/.otf/.woff/.woff2) and add them to the project. */
     addFonts: () => Promise<ProjectFont[]>
+    /** Download a Google Fonts family (a fonts.google.com link, a stylesheet link or a name) into the project. */
+    addGoogleFont: (input: string) => Promise<{ families: string[]; fonts: ProjectFont[] }>
   }
   looks: {
     list: () => Promise<(Look & { thumb: string | null })[]>

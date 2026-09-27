@@ -1,6 +1,16 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
+import {
+  BUILTIN_FONTS,
+  CAPTION_ANIMATIONS,
+  CAPTION_STYLES,
+  captionStyle,
+  configFor,
+  type CaptionAnim
+} from '../shared/captions'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
+import type { CaptionConfig } from '../shared/types'
+import { addGoogleFont, applyCaptions, captionState, hasTranscript, knownFont } from './captions'
 import { library } from './library'
 import { HYPERFRAMES } from './env'
 import { addBackground, hasPexelsKey, searchBackgrounds } from './pexels'
@@ -39,6 +49,38 @@ const categoryIds = CATEGORIES.map((c) => c.id) as [
   LibraryItem['category'],
   ...LibraryItem['category'][]
 ]
+
+const message = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
+// ------------------------------------------------------------------ captions
+
+const styleIds = CAPTION_STYLES.map((s) => s.id) as [string, ...string[]]
+const animationIds = CAPTION_ANIMATIONS.map((a) => a.id) as [CaptionAnim, ...CaptionAnim[]]
+const cssColor = z.string().describe('a CSS color, e.g. "#FFE14D" or "rgba(0,0,0,0.6)"')
+
+const NO_TRANSCRIPT =
+  'This video has no transcript yet, so there are no words to caption. Ask the user, in one short sentence, to open the Transcript tab and click Transcribe (it needs their AssemblyAI key), then ask you again. Do not transcribe it yourself and do not write captions by hand.'
+const NO_SPEECH =
+  'This project has no video or audio with speech, so there is nothing to caption. Offer animated titles or text instead.'
+const OFF_TIMELINE =
+  'The video the transcript belongs to is no longer on the timeline, so there are no words to caption. Tell the user in one short sentence.'
+
+const SIZES: Record<CaptionConfig['size'], string> = { sm: 'small', md: 'medium', lg: 'large' }
+
+/** What the captions look like now, for Luca to put in its own words. */
+function describeCaptions(cfg: CaptionConfig, lines: number): string {
+  const o = cfg.overrides
+  const parts = [
+    `${lines} caption lines in the ${captionStyle(cfg.style).name} style`,
+    `font ${cfg.font}`,
+    `${SIZES[cfg.size]} size`,
+    `${cfg.position} of the frame`,
+    cfg.uppercase ? 'all caps' : '',
+    cfg.accent ? `highlight color ${cfg.accent}` : '',
+    o ? `customized: ${Object.keys(o).join(', ')}` : ''
+  ]
+  return parts.filter(Boolean).join(', ')
+}
 
 /**
  * Set extras up quietly the first time Luca reaches for one: the person only describes what they
@@ -84,14 +126,17 @@ function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown>
   }
 }
 
-/** Luca's in-process MCP server: catalog search plus the remocn tools described in the spec. */
+/**
+ * Luca's in-process MCP server: catalog search, backgrounds, captions and fonts, plus the remocn
+ * tools described in the spec.
+ */
 export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMcpServer> {
   return createSdkMcpServer({
     name: 'luca',
     version: '1.0.0',
     instructions:
       'catalog_search finds ready-made HyperFrames blocks/components and Remocn components by ' +
-      'plain words ("lower third", "text reveal", "captions", "logo intro", "bar chart"). Use it ' +
+      'plain words ("lower third", "text reveal", "logo intro", "bar chart"). Use it ' +
       'before building any visual from scratch; never grep or script the catalog yourself. ' +
       'Remocn components are React/Remotion. Never put React in the HyperFrames HTML. ' +
       'Install with remocn_install, read the returned docs URL, write remocn/<clipId>.tsx in the ' +
@@ -99,7 +144,10 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'then call remocn_place. Re-run remocn_place with the same clipId after editing the wrapper. ' +
       'background_search finds free stock photos and short videos (Pexels) for backgrounds and shows ' +
       'previews of the best ones; background_add downloads the chosen one into media/backgrounds, ' +
-      'sized for this video, and returns the path to use.',
+      'sized for this video, and returns the path to use. ' +
+      'captions_apply puts captions of what is said on the video (from the transcript) and changes ' +
+      'their look; Luca keeps them in sync with every cut, so never write or edit them by hand. ' +
+      'font_add downloads a Google Fonts font into the project so any text can use it offline.',
     tools: [
       tool(
         'catalog_search',
@@ -107,7 +155,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         {
           query: z
             .string()
-            .describe('plain words, e.g. "lower third", "kinetic text", "captions", "logo intro"'),
+            .describe('plain words, e.g. "lower third", "kinetic text", "logo intro"'),
           source: z.enum(['all', 'hyperframes', 'remocn']).optional().describe('default all'),
           category: z
             .enum(categoryIds)
@@ -184,7 +232,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
             })
             return { content }
           } catch (err) {
-            return text({ ok: false, error: err instanceof Error ? err.message : String(err) })
+            return text({ ok: false, error: message(err) })
           }
         }
       ),
@@ -213,7 +261,168 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
                   : 'Put it behind everything as a full-frame image on the lowest track (object-fit: cover) across the scenes it belongs to; a slow push-in or drift keeps it alive. Keep text readable over it with a soft dark or light overlay.'
             })
           } catch (err) {
-            return text({ ok: false, error: err instanceof Error ? err.message : String(err) })
+            return text({ ok: false, error: message(err) })
+          }
+        }
+      ),
+      tool(
+        'captions_apply',
+        [
+          'Put captions of what is said in the video on the timeline, or change how they look. Use it whenever the user asks for captions or subtitles, or to change their style, font, size, position, colors, outline, box, shadow or animation, including matching a reference image they attached: read its text color, highlight, weight, case, outline, box and shadow off the image and pass them as overrides (and the closest style and font).',
+          'The words come from the transcript, cleaned of ums and stutters, and Luca keeps the captions in sync with every cut, trim or move, so never write or edit captions by hand.',
+          'Leave style out to adjust the captions already on the video (only what you pass changes, overrides merge); pass style to start fresh from that look.',
+          'Styles:',
+          ...CAPTION_STYLES.map((s) => `- ${s.id}: ${s.blurb}`)
+        ].join('\n'),
+        {
+          style: z.enum(styleIds).optional().describe('start from this look'),
+          font: z
+            .string()
+            .optional()
+            .describe(
+              `a font family. Built in: ${BUILTIN_FONTS.map((f) => f.family).join(', ')}. Any other Google Fonts family name is downloaded into the project first.`
+            ),
+          size: z.enum(['sm', 'md', 'lg']).optional(),
+          position: z.enum(['bottom', 'middle', 'top']).optional(),
+          wordsPerLine: z
+            .enum(['short', 'normal', 'long'])
+            .optional()
+            .describe('short = 2–3 words per line, normal = 4–5, long = 6–8'),
+          uppercase: z.boolean().optional(),
+          accent: cssColor
+            .optional()
+            .describe('highlight color of the word being spoken (or of its pill)'),
+          clean: z
+            .boolean()
+            .optional()
+            .describe('drop ums, stutters and false starts (default true)'),
+          overrides: z
+            .object({
+              color: cssColor.optional().describe('text color'),
+              activeColor: cssColor
+                .optional()
+                .describe('text color of the spoken word on its highlight pill'),
+              weight: z
+                .number()
+                .int()
+                .min(100)
+                .max(900)
+                .optional()
+                .describe('400 regular, 700 bold, 900 black'),
+              italic: z.boolean().optional(),
+              letterSpacing: z.number().min(-0.1).max(0.5).optional().describe('em, e.g. 0.04'),
+              outline: z
+                .object({
+                  color: cssColor,
+                  width: z.number().min(0).max(24).describe('px at 1080p: thin 3, bold 6, heavy 10')
+                })
+                .nullable()
+                .optional()
+                .describe('outline around the letters; null removes the style’s outline'),
+              box: z
+                .object({
+                  color: cssColor,
+                  opacity: z.number().min(0).max(1).optional(),
+                  radius: z
+                    .number()
+                    .min(0)
+                    .max(999)
+                    .optional()
+                    .describe('corner radius px at 1080p; 999 makes a pill'),
+                  padding: z.number().min(0).max(3).optional().describe('em left and right')
+                })
+                .nullable()
+                .optional()
+                .describe('box behind each line; null removes the style’s box'),
+              shadow: z
+                .object({
+                  color: cssColor,
+                  blur: z.number().min(0).max(80).describe('px at 1080p'),
+                  y: z.number().min(-40).max(40).optional().describe('px down; 0 makes a glow')
+                })
+                .nullable()
+                .optional()
+                .describe('shadow under the letters; null removes the style’s shadow'),
+              animation: z
+                .enum(animationIds)
+                .optional()
+                .describe(CAPTION_ANIMATIONS.map((a) => `${a.id}: ${a.blurb}`).join('; '))
+            })
+            .optional()
+            .describe('a custom look on top of the style; anything set here wins')
+        },
+        async (args) => {
+          const p = readProject(projectDir)
+          if (!p) return text({ ok: false, error: 'No project is open.' })
+          const state = captionState(p)
+          if (!state.words)
+            return text({
+              ok: false,
+              error: hasTranscript(p.dir)
+                ? OFF_TIMELINE
+                : state.hasAudio
+                  ? NO_TRANSCRIPT
+                  : NO_SPEECH
+            })
+          const base: CaptionConfig = args.style
+            ? configFor(args.style, state.applied ?? undefined)
+            : (state.applied ?? configFor(CAPTION_STYLES[0].id))
+          let font = base.font
+          if (args.font) {
+            try {
+              font = knownFont(p.dir, args.font) ?? (await addGoogleFont(p.dir, args.font))[0]
+            } catch (err) {
+              return text({
+                ok: false,
+                error: `Couldn't use the font “${args.font}”: ${message(err)} Pick a built-in font or another Google Fonts family.`
+              })
+            }
+          }
+          const cfg: CaptionConfig = {
+            ...base,
+            font,
+            size: args.size ?? base.size,
+            position: args.position ?? base.position,
+            wordsPerLine: args.wordsPerLine ?? base.wordsPerLine,
+            uppercase: args.uppercase ?? base.uppercase,
+            clean: args.clean ?? base.clean,
+            accent: args.accent ?? base.accent,
+            overrides: args.overrides ? { ...base.overrides, ...args.overrides } : base.overrides
+          }
+          try {
+            // Luca's turn is saved as one version when it ends
+            const res = await applyCaptions(p, cfg, { checkpoint: false })
+            return text({
+              ok: true,
+              captions: describeCaptions(res.config, res.lines),
+              config: res.config,
+              tell: 'Say in a sentence what the captions look like now; the user can fine-tune them with the Captions button in the toolbar.'
+            })
+          } catch (err) {
+            return text({ ok: false, error: message(err) })
+          }
+        }
+      ),
+      tool(
+        'font_add',
+        'Add a font from Google Fonts to the project: downloads its files so captions, titles and any text can use it, and it shows in the preview and exports without internet. Use it before using any font that is not built in, e.g. when the user pastes a Google Fonts link or names a font. Returns the family names to use in font-family.',
+        {
+          font: z
+            .string()
+            .describe(
+              'a fonts.google.com link, a fonts.googleapis.com stylesheet link (or its <link> code), or a family name like "Bebas Neue"'
+            )
+        },
+        async ({ font }) => {
+          try {
+            const families = await addGoogleFont(projectDir, font)
+            return text({
+              ok: true,
+              families,
+              use: `Declared in index.html; use font-family: '${families[0]}'. For captions pass it as font to captions_apply.`
+            })
+          } catch (err) {
+            return text({ ok: false, error: message(err) })
           }
         }
       ),

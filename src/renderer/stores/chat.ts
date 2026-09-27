@@ -1,14 +1,27 @@
-import type { AgentEvent, AgentState, ChatMessage, Chip, PermissionDecision } from '@shared/types'
+import type {
+  AgentEvent,
+  AgentState,
+  ChatMessage,
+  Chip,
+  MediaInput,
+  MediaKind,
+  PermissionDecision
+} from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
-import { useProject } from './project'
-import { useStart } from './start'
+import { errorMessage, useProject } from './project'
+import { attachmentOf, useStart } from './start'
+
+/** A file on its way into the project for the chat; videos can take a moment to get ready. */
+export type PendingMedia = { id: number; name: string; media: MediaKind; progress?: number }
 
 type ChatStore = {
   messages: ChatMessage[]
   state: AgentState
   detail?: string
   chips: Chip[]
+  /** Files being added to the project; they become chips when they are in. */
+  attaching: PendingMedia[]
   draft: string
   error: string | null
   bound: boolean
@@ -34,6 +47,11 @@ type ChatStore = {
   stop: () => Promise<void>
   decide: (id: string, decision: PermissionDecision) => Promise<void>
   addChip: (c: Chip) => void
+  /**
+   * Add files to the open project (dropped, pasted or picked: a File or a path) and attach each
+   * as a chip once it is in. Only videos, audio and images are taken.
+   */
+  attach: (files: (File | string)[]) => Promise<void>
   removeChip: (i: number) => void
   clearChips: () => void
   /** Typing: the draft is now the person's own words. */
@@ -59,6 +77,22 @@ const chipName = (c: Chip): string | undefined =>
 const listOf = (xs: string[]): string =>
   xs.length < 2 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`
 
+let attachSeq = 0
+/** Files go into the project one at a time: preparing two videos at once only slows both. */
+let attachQueue: Promise<void> = Promise.resolve()
+/** The pending file main is working on, the one its progress events are about. */
+let attachingNow = -1
+let progressBound = false
+
+/** A dropped or pasted file as main takes it: its path, or a clipboard picture's bytes. */
+async function mediaInput(file: File | string): Promise<MediaInput | null> {
+  if (typeof file === 'string') return { path: file }
+  const path = luca.project.pathForFile(file)
+  if (path) return { path }
+  if (!file.type.startsWith('image/')) return null
+  return { name: file.name || 'image.png', data: await file.arrayBuffer() }
+}
+
 /** Replace the message with the same id (usually the last one) or add it; others keep identity. */
 function upsert(messages: ChatMessage[], m: ChatMessage): ChatMessage[] {
   const i = messages.findLastIndex((x) => x.id === m.id)
@@ -82,6 +116,7 @@ export const useChat = create<ChatStore>((set, get) => ({
   messages: [],
   state: 'idle',
   chips: [],
+  attaching: [],
   draft: '',
   auto: null,
   error: null,
@@ -101,7 +136,7 @@ export const useChat = create<ChatStore>((set, get) => ({
 
   setProject: (dir) => {
     if (get().projectDir !== dir)
-      set({ projectDir: dir, chips: [], draft: '', auto: null, error: null })
+      set({ projectDir: dir, chips: [], attaching: [], draft: '', auto: null, error: null })
   },
 
   load: async () => {
@@ -154,6 +189,45 @@ export const useChat = create<ChatStore>((set, get) => ({
   stop: () => luca.agent.interrupt(),
   decide: (id, decision) => luca.agent.permission({ id, decision }),
   addChip: (c) => set((s) => ({ chips: [...s.chips, c] })),
+  attach: async (files) => {
+    if (!progressBound) {
+      progressBound = true
+      luca.project.onMediaProgress(({ progress }) =>
+        set((s) => ({
+          attaching: s.attaching.map((a) => (a.id === attachingNow ? { ...a, progress } : a))
+        }))
+      )
+    }
+    const dir = get().projectDir
+    const inputs = (await Promise.all(files.map(mediaInput))).filter((f) => f !== null)
+    const usable = inputs.flatMap((input) => {
+      const media = 'path' in input ? attachmentOf(input.path)?.kind : 'image'
+      if (!media) return []
+      const name = 'path' in input ? (input.path.split('/').pop() ?? input.path) : 'Pasted image'
+      return [{ input, pending: { id: ++attachSeq, name, media } }]
+    })
+    if (usable.length < files.length)
+      set({ error: 'Luca can add videos, audio and images. Other files were left out.' })
+    if (!usable.length) return
+    set((s) => ({ attaching: [...s.attaching, ...usable.map((u) => u.pending)] }))
+    for (const { input, pending } of usable) {
+      attachQueue = attachQueue.then(async () => {
+        try {
+          // the project changed meanwhile: this file isn't for the one open now
+          if (get().projectDir !== dir) return
+          attachingNow = pending.id
+          const chip = await luca.project.addMedia(input)
+          if (get().projectDir === dir) set((s) => ({ chips: [...s.chips, chip] }))
+        } catch (err) {
+          if (get().projectDir === dir)
+            set({ error: `Couldn't add ${pending.name}: ${errorMessage(err)}` })
+        } finally {
+          set((s) => ({ attaching: s.attaching.filter((a) => a.id !== pending.id) }))
+        }
+      })
+    }
+    await attachQueue
+  },
   removeChip: (i) => set((s) => ({ chips: s.chips.filter((_, j) => j !== i) })),
   clearChips: () => set({ chips: [] }),
   setDraft: (draft) => set({ draft, auto: null }),

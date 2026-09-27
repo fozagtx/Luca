@@ -245,6 +245,15 @@ export function describeActivity(
       const what = titleCase(String(input.clipId ?? 'the'))
       return act('render', `Rendering the ${what} animation`, `Placed the ${what} animation`)
     }
+    case 'mcp__luca__captions_apply':
+      return act('edit', 'Styling the captions', 'Styled the captions')
+    case 'mcp__luca__font_add': {
+      // a pasted link says nothing to people; a family name does
+      const font = String(input.font ?? '').trim()
+      return /^[\p{L}\p{N} ]{1,40}$/u.test(font)
+        ? act('add', `Adding the ${font} font`, `Added the ${font} font`)
+        : act('add', 'Adding the font', 'Added the font')
+    }
     default:
       return act('other', 'Working on it', 'Worked on it')
   }

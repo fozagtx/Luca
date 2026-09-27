@@ -65,11 +65,15 @@ export async function readTimeline(dir: string): Promise<Timeline> {
   const width = data.timeline.width ?? Number(/data-width="(\d+)"/.exec(html)?.[1] ?? 1920)
   const height = data.timeline.height ?? Number(/data-height="(\d+)"/.exec(html)?.[1] ?? 1080)
 
-  // clip volumes aren't in the CLI's JSON; read them from the tags
+  // clip volumes and trimmed starts aren't in the CLI's JSON; read them from the tags
   const volumes = new Map<string, number>()
+  const mediaStarts = new Map<string, number>()
   for (const t of findTags(html))
-    if (t.attrs.id && (t.name === 'video' || t.name === 'audio'))
+    if (t.attrs.id && (t.name === 'video' || t.name === 'audio')) {
       volumes.set(t.attrs.id, Number(t.attrs['data-volume'] ?? 1))
+      const ms = Number(t.attrs['data-media-start'])
+      if (ms > 0) mediaStarts.set(t.attrs.id, ms)
+    }
   const byIndex = new Map<number, Track>()
   const seen = new Set<string>()
   const visit = (row: HfRow): void => {
@@ -109,7 +113,10 @@ export async function readTimeline(dir: string): Promise<Timeline> {
         ? { volume: volumes.get(row.elementId) }
         : volumes.has(id)
           ? { volume: volumes.get(id) }
-          : {})
+          : {}),
+      ...(mediaStarts.has(row.elementId ?? id)
+        ? { mediaStart: mediaStarts.get(row.elementId ?? id) }
+        : {})
     }
     track.clips.push(clip)
     if (track.kind !== kind && kind === 'video') track.kind = 'video'

@@ -1,5 +1,5 @@
 import type { Aspect, CreateProgress, Look } from '@shared/types'
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { luca } from '../../lib/luca'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
@@ -66,6 +66,23 @@ function NewProjectForm({
 }): ReactElement {
   const [name, setName] = useState(() => (file.split('/').pop() ?? '').replace(/\.[^.]+$/, ''))
   const [aspect, setAspect] = useState<Aspect>(defaultAspect)
+  // the video's own shape (a phone clip is portrait) until the person picks one
+  const [matched, setMatched] = useState(false)
+  const picked = useRef(false)
+  useEffect(() => {
+    let live = true
+    void luca.project
+      .probeVideo(file)
+      .then((info) => {
+        if (!live || !info || picked.current) return
+        setAspect(info.aspect)
+        setMatched(true)
+      })
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [file])
   const [looks, setLooks] = useState<Look[]>([])
   const [look, setLook] = useState<string>('')
   useEffect(() => {
@@ -118,7 +135,12 @@ function NewProjectForm({
           />
         </label>
         <div className="flex flex-col gap-1">
-          <span className="text-[12px] font-medium text-text-2">Aspect</span>
+          <span className="flex items-baseline justify-between text-[12px] font-medium text-text-2">
+            Aspect
+            {matched ? (
+              <span className="text-[11px] font-normal text-text-3">Matches your video</span>
+            ) : null}
+          </span>
           <div role="radiogroup" className="grid grid-cols-3 gap-2">
             {aspects.map((a) => (
               <button
@@ -127,7 +149,11 @@ function NewProjectForm({
                 role="radio"
                 aria-checked={aspect === a.id}
                 disabled={loading}
-                onClick={() => setAspect(a.id)}
+                onClick={() => {
+                  picked.current = true
+                  setMatched(false)
+                  setAspect(a.id)
+                }}
                 className={cn(
                   'flex flex-col items-center gap-2 rounded-[6px] border px-3 py-3 transition-colors',
                   aspect === a.id

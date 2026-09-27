@@ -12,10 +12,12 @@ type TimelineStore = {
   selected: string | null
   /** pixels per second */
   zoom: number
-  thumbs: { dir: string; count: number; interval: number } | null
-  peaks: { peaksPerSecond: number; peaks: number[] } | null
+  /** Frames and waveform peaks per media file (a clip's src), loaded as clips appear. */
+  thumbs: Record<string, Thumbs>
+  peaks: Record<string, Peaks>
   load: () => Promise<void>
-  loadMedia: () => Promise<void>
+  /** Load frames for `video` files and peaks for `audio` files that aren't loaded yet. */
+  loadMedia: (need: { video: string[]; audio: string[] }) => Promise<void>
   reset: () => void
   select: (ref: string | null) => void
   setZoom: (z: number) => void
@@ -33,7 +35,13 @@ type TimelineStore = {
   edit: (e: TimelineEdit) => Promise<boolean>
 }
 
+export type Thumbs = { dir: string; count: number; interval: number }
+export type Peaks = { peaksPerSecond: number; peaks: number[] }
+
 let loadSeq = 0
+/** Bumped on reset so frames of the previous project never land in the next one. */
+let mediaSeq = 0
+const requested = new Set<string>()
 
 export const useTimeline = create<TimelineStore>((set, get) => ({
   timeline: null,
@@ -41,8 +49,8 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   error: null,
   selected: null,
   zoom: 80,
-  thumbs: null,
-  peaks: null,
+  thumbs: {},
+  peaks: {},
   drag: null,
   setDrag: (drag) => set({ drag }),
   locked: [],
@@ -63,16 +71,37 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
       set({ loading: false, error: err instanceof Error ? err.message : String(err) })
     }
   },
-  loadMedia: async () => {
-    const [thumbs, peaks] = await Promise.all([
-      luca.timeline.thumbs().catch(() => null),
-      luca.timeline.peaks().catch(() => null)
+  loadMedia: async ({ video, audio }) => {
+    const seq = mediaSeq
+    const fresh = (kind: string, srcs: string[]): string[] =>
+      srcs.filter((src) => {
+        const key = `${kind}:${src}`
+        if (requested.has(key)) return false
+        requested.add(key)
+        return true
+      })
+    // nothing back (a file still being written, ffmpeg failing once): try again next time
+    const retry = (kind: string, src: string): void => {
+      if (seq === mediaSeq) requested.delete(`${kind}:${src}`)
+    }
+    await Promise.all([
+      ...fresh('video', video).map(async (src) => {
+        const t = await luca.timeline.thumbs(src).catch(() => null)
+        if (!t?.count) retry('video', src)
+        else if (seq === mediaSeq) set((s) => ({ thumbs: { ...s.thumbs, [src]: t } }))
+      }),
+      ...fresh('audio', audio).map(async (src) => {
+        const p = await luca.timeline.peaks(src).catch(() => null)
+        if (!p?.peaks.length) retry('audio', src)
+        else if (seq === mediaSeq) set((s) => ({ peaks: { ...s.peaks, [src]: p } }))
+      })
     ])
-    set({ thumbs, peaks })
   },
   reset: () => {
     loadSeq++
-    set({ timeline: null, thumbs: null, peaks: null, selected: null, error: null, locked: [] })
+    mediaSeq++
+    requested.clear()
+    set({ timeline: null, thumbs: {}, peaks: {}, selected: null, error: null, locked: [] })
   },
   select: (selected) => set({ selected }),
   setZoom: (zoom) => set({ zoom: Math.min(600, Math.max(10, zoom)) }),

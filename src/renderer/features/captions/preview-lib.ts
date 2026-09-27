@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { googleFontUrl } from '../../../shared/captions'
-import type { CaptionGroup } from '../../../shared/types'
+import type { CaptionGroup, ProjectFontFace } from '../../../shared/types'
 
 // ------------------------------------------------------------------ one clock for every preview
 
@@ -36,19 +36,35 @@ export function useLoopTime(period: number, active = true): number {
 
 const loaded = new Set<string>()
 
-/** Google Fonts stylesheet for a built-in font, or a project font file via the Luca server. */
-export function ensurePreviewFont(family: string, projectId?: string, file?: string): void {
-  const key = `${family}|${file ?? ''}`
-  if (loaded.has(key)) return
-  loaded.add(key)
-  if (file && projectId) {
-    const face = new FontFace(family, `url(/p/${encodeURIComponent(projectId)}/${file})`)
-    void face
-      .load()
-      .then((f) => document.fonts.add(f))
-      .catch(() => loaded.delete(key))
+/**
+ * Google Fonts stylesheet for a built-in font, or a project font's files via the Luca server,
+ * each with its weight, style and characters so the preview picks the same file the video does.
+ */
+export function ensurePreviewFont(
+  family: string,
+  projectId?: string,
+  faces?: ProjectFontFace[]
+): void {
+  if (faces?.length && projectId) {
+    for (const f of faces) {
+      const key = `${family}|${f.file}`
+      if (loaded.has(key)) continue
+      loaded.add(key)
+      const face = new FontFace(family, `url(/p/${encodeURIComponent(projectId)}/${f.file})`, {
+        weight: f.weightMax ? `${f.weight} ${f.weightMax}` : String(f.weight),
+        style: f.italic ? 'italic' : 'normal',
+        ...(f.unicodeRange ? { unicodeRange: f.unicodeRange } : {})
+      })
+      void face
+        .load()
+        .then((x) => document.fonts.add(x))
+        .catch(() => loaded.delete(key))
+    }
     return
   }
+  const key = `${family}|`
+  if (loaded.has(key)) return
+  loaded.add(key)
   const url = googleFontUrl(family)
   if (!url) return
   const link = document.createElement('link')

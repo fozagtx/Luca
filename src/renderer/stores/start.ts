@@ -41,9 +41,13 @@ function nameFrom(prompt: string): string | undefined {
 }
 
 type StartStore = {
+  /** In the order they were added: videos play back to back in this order. */
   files: Attachment[]
   previews: Record<string, string | null>
   aspect: Aspect
+  /** The video the aspect was read from (the first one); whether the person then picked one. */
+  aspectFrom: string | null
+  aspectPicked: boolean
   /** Target length in seconds; null lets Luca decide. */
   duration: number | null
   busy: boolean
@@ -67,10 +71,30 @@ type StartStore = {
 
 let bound = false
 
+/** The first video decides the project's shape (phone footage: portrait) until the person picks. */
+function followFirstVideo(): void {
+  const { files, aspectFrom } = useStart.getState()
+  const first = files.find((f) => f.kind === 'video')?.path ?? null
+  if (first === aspectFrom) return
+  // a shape the person picked stays until they start over with no video at all
+  useStart.setState({ aspectFrom: first, ...(first ? {} : { aspectPicked: false }) })
+  if (!first) return
+  void luca.project
+    .probeVideo(first)
+    .then((info) => {
+      const s = useStart.getState()
+      if (info && s.aspectFrom === first && !s.aspectPicked)
+        useStart.setState({ aspect: info.aspect })
+    })
+    .catch(() => undefined)
+}
+
 export const useStart = create<StartStore>((set, get) => ({
   files: [],
   previews: {},
   aspect: 'landscape',
+  aspectFrom: null,
+  aspectPicked: false,
   duration: null,
   busy: false,
   progress: null,
@@ -82,15 +106,15 @@ export const useStart = create<StartStore>((set, get) => ({
     for (const p of paths) {
       const a = attachmentOf(p)
       if (!a || next.some((f) => f.path === p)) continue
-      // one video or audio file is the whole starting point; images can be many
-      if (a.kind !== 'image') {
-        const keep = next.filter((f) => f.kind === 'image')
-        next.length = 0
-        next.push(...keep)
-      } else if (next.some((f) => f.kind !== 'image')) continue
+      // videos and images add up in the order they come; one audio track at a time
+      if (a.kind === 'audio') {
+        const at = next.findIndex((f) => f.kind === 'audio')
+        if (at >= 0) next.splice(at, 1)
+      }
       next.push(a)
     }
     set({ files: next, error: null })
+    followFirstVideo()
     for (const f of next) {
       if (f.path in get().previews) continue
       set((s) => ({ previews: { ...s.previews, [f.path]: null } }))
@@ -100,14 +124,25 @@ export const useStart = create<StartStore>((set, get) => ({
         .catch(() => undefined)
     }
   },
-  removeFile: (path) => set((s) => ({ files: s.files.filter((f) => f.path !== path) })),
+  removeFile: (path) => {
+    set((s) => ({ files: s.files.filter((f) => f.path !== path) }))
+    followFirstVideo()
+  },
   pickFiles: async () => {
     const paths = await luca.project.pickMedia()
     if (paths.length) get().addFiles(paths)
   },
-  setAspect: (aspect) => set({ aspect }),
+  setAspect: (aspect) => set({ aspect, aspectPicked: true }),
   setDuration: (duration) => set({ duration }),
-  reset: () => set({ files: [], error: null, progress: null, seen: [] }),
+  reset: () =>
+    set({
+      files: [],
+      aspectFrom: null,
+      aspectPicked: false,
+      error: null,
+      progress: null,
+      seen: []
+    }),
 
   create: async (prompt, opts) => {
     if (get().busy) return false
@@ -139,7 +174,7 @@ export const useStart = create<StartStore>((set, get) => ({
         duration: duration ?? undefined
       })
       useProject.setState({ project: res.project, version: 0, previewVersion: 0 })
-      set({ files: [], previews: {} })
+      set({ files: [], previews: {}, aspectFrom: null })
       const chat = useChat.getState()
       // a video with nothing asked is a plain new project; everything else starts Luca working
       if (text || kind === 'images' || kind === 'audio' || background) {
@@ -153,7 +188,9 @@ export const useStart = create<StartStore>((set, get) => ({
             : kind === 'audio'
               ? 'Make a video that goes with my audio'
               : kind === 'video'
-                ? 'Put my video on this background'
+                ? files.filter((f) => f.kind === 'video').length > 1
+                  ? 'Put my videos on this background'
+                  : 'Put my video on this background'
                 : 'Make a video on this background')
         await chat.send(visible, {
           time: 0,
