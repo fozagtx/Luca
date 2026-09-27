@@ -91,6 +91,10 @@ const api: LucaApi = {
     search: (args) => invoke(C.backgroundsSearch, args),
     home: (args) => invoke(C.backgroundsHome, args)
   },
+  gemini: {
+    hasKey: () => invoke(C.geminiHasKey),
+    setKey: (key) => invoke(C.geminiSetKey, key)
+  },
   clean: {
     run: () => invoke(C.cleanRun),
     applyEdl: (edl) => invoke(C.cleanApplyEdl, edl),

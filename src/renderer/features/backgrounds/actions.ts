@@ -27,6 +27,16 @@ export function pickBackground(b: Background): void {
   focus('chat-composer')
 }
 
+/** Have Luca restyle a background with Gemini: the person finishes the sentence with the look. */
+export function restyleBackground(b: Background): void {
+  const chat = useChat.getState()
+  const others = chat.chips.filter((c) => c.kind !== 'background')
+  if (others.length !== chat.chips.length) useChat.setState({ chips: others })
+  useChat.getState().fillDraft('Restyle this background to look like ', backgroundChip(b))
+  if (!useUi.getState().chatOpen) useUi.getState().setChat(true)
+  focus('chat-composer')
+}
+
 /** Ask Luca to find a background that suits the open video. */
 export function askLucaToPick(): void {
   useChat.getState().fillDraft('Find a background that suits this video and put it in ')

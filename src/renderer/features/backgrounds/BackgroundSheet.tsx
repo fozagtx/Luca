@@ -3,9 +3,10 @@ import { Sheet } from '../../components/ui/sheet'
 import { cn } from '../../lib/cn'
 import { useBackgrounds } from '../../stores/backgrounds'
 import { useChat } from '../../stores/chat'
+import { useGemini } from '../../stores/gemini'
 import { useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
-import { pickBackground } from './actions'
+import { pickBackground, restyleBackground } from './actions'
 import { BackgroundBrowser } from './BackgroundBrowser'
 
 /** The background picker opened from the start card (and the command palette). */
@@ -15,6 +16,7 @@ export function BackgroundSheet(): ReactElement {
   const hasProject = useProject((s) => !!s.project)
   const hasKey = useBackgrounds((s) => s.hasKey)
   const picked = useChat((s) => s.chips.find((c) => c.kind === 'background')?.id)
+  const gemini = useGemini((s) => s.hasKey)
   return (
     <Sheet
       open={open}
@@ -43,6 +45,14 @@ export function BackgroundSheet(): ReactElement {
             pickBackground(b)
             setOpen(false)
           }}
+          onRestyle={
+            hasProject && gemini
+              ? (b) => {
+                  restyleBackground(b)
+                  setOpen(false)
+                }
+              : undefined
+          }
         />
       </div>
     </Sheet>
