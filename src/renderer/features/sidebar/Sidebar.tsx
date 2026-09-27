@@ -1,9 +1,10 @@
-import { Captions, Lightbulb, Palette, PanelLeftClose } from 'lucide-react'
+import { Captions, Lightbulb, Palette, PanelLeftClose, Wallpaper } from 'lucide-react'
 import type { ReactElement, ReactNode } from 'react'
 import { ErrorBoundary } from '../../components/ui/error-boundary'
 import { Segmented, type SegmentedItem } from '../../components/ui/segmented'
 import { Tip } from '../../components/ui/tooltip'
 import { useUi, type SidebarTab } from '../../stores/ui'
+import { BackgroundsTab } from './backgrounds/BackgroundsTab'
 import { CatalogTab } from './catalog/CatalogTab'
 import { InspirationTab } from './inspiration/InspirationTab'
 import { LooksTab } from './looks/LooksTab'
@@ -32,6 +33,13 @@ const tabs: (SegmentedItem<SidebarTab> & { title: string })[] = [
     title: 'Looks',
     shortcut: '⌘3',
     icon: <Palette size={15} strokeWidth={1.6} />
+  },
+  {
+    id: 'backgrounds',
+    label: 'Backgrounds',
+    title: 'Backgrounds',
+    shortcut: '⌘4',
+    icon: <Wallpaper size={15} strokeWidth={1.6} />
   }
 ]
 
@@ -76,6 +84,7 @@ export function Sidebar(): ReactElement {
           {tab === 'catalog' && <CatalogTab />}
           {tab === 'transcript' && <TranscriptTab />}
           {tab === 'looks' && <LooksTab />}
+          {tab === 'backgrounds' && <BackgroundsTab />}
         </ErrorBoundary>
       </div>
     </aside>

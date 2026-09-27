@@ -11,6 +11,7 @@ import {
   Scissors,
   ShieldCheck,
   Type,
+  Wallpaper,
   X
 } from 'lucide-react'
 import { useEffect, useState, type ReactElement } from 'react'
@@ -39,6 +40,8 @@ function chipIcon(chip: Chip): ReactElement {
       return <Scissors size={11} />
     case 'transcript':
       return <Type size={11} />
+    case 'background':
+      return <Wallpaper size={11} />
   }
 }
 
@@ -59,6 +62,8 @@ function chipLabel(chip: Chip): string {
       return chip.clipId.replace(/[-_]/g, ' ')
     case 'transcript':
       return `“${chip.text.slice(0, 24)}${chip.text.length > 24 ? '…' : ''}”`
+    case 'background':
+      return `Background: ${chip.title}`
   }
 }
 
@@ -95,9 +100,9 @@ export function ChipPill({
           <X size={10} />
         </button>
       ) : null}
-      {chip.kind === 'frame' ? (
+      {chip.kind === 'frame' || chip.kind === 'background' ? (
         <img
-          src={`data:image/png;base64,${chip.png}`}
+          src={chip.kind === 'frame' ? `data:image/png;base64,${chip.png}` : chip.thumb}
           alt=""
           className="pointer-events-none absolute bottom-7 left-0 z-10 hidden w-40 rounded-[6px] border border-border shadow-md group-hover:block"
         />

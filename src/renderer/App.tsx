@@ -16,6 +16,7 @@ import { CommandPalette } from './features/command/CommandPalette'
 import { GotoSheet } from './features/command/GotoSheet'
 import { ShortcutsSheet } from './features/command/ShortcutsSheet'
 import { useShortcuts } from './features/command/useShortcuts'
+import { BackgroundSheet } from './features/backgrounds/BackgroundSheet'
 import { CaptionStudio } from './features/captions/CaptionStudio'
 import { ExportBar, ExportSheet } from './features/export/ExportSheet'
 import { NewProjectSheet } from './features/onboarding/NewProjectSheet'
@@ -215,6 +216,7 @@ export default function App(): ReactElement {
       <GotoSheet />
       <ShortcutsSheet />
       <CaptionStudio />
+      <BackgroundSheet />
       <Toaster
         position="top-center"
         offset={60}

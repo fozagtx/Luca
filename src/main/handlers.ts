@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type {
   Aspect,
+  BackgroundSearch,
   CaptionConfig,
   Chip,
   CreateProgress,
@@ -39,6 +40,7 @@ import { Channels, broadcast, handle, listen } from './ipc'
 import { invalidateLibrary } from './library'
 import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
+import { hasPexelsKey, homeBackground, savePexelsKey, searchBackgrounds } from './pexels'
 import {
   AUDIO_EXT,
   forgetRecent,
@@ -276,6 +278,14 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.catalogRemocnPreview, () => null)
   handle(Channels.catalogRemocnStudioStatus, () => studioStatus())
   handle(Channels.catalogRemocnSetup, () => setupStudio())
+
+  // backgrounds (Pexels)
+  handle(Channels.backgroundsHasKey, hasPexelsKey)
+  handle(Channels.backgroundsSetKey, (key: string) => savePexelsKey(key))
+  handle(Channels.backgroundsSearch, (args: BackgroundSearch) => searchBackgrounds(args))
+  handle(Channels.backgroundsHome, (args?: { shuffle?: boolean }) =>
+    homeBackground(!!args?.shuffle)
+  )
 
   // clean
   handle(Channels.cleanRun, () => runCleanEdit(requireProject()))

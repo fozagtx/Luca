@@ -1,5 +1,5 @@
 import { Menu } from '@base-ui/react/menu'
-import type { Aspect } from '@shared/types'
+import type { Aspect, Chip } from '@shared/types'
 import {
   AudioLines,
   Clapperboard,
@@ -9,6 +9,7 @@ import {
   MoreHorizontal,
   Paperclip,
   Trash2,
+  Wallpaper,
   X
 } from 'lucide-react'
 import {
@@ -31,6 +32,8 @@ import { luca } from '../../lib/luca'
 import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
 import { kindOf, useStart, type Attachment } from '../../stores/start'
+import { useUi } from '../../stores/ui'
+import { HomeBackdrop } from '../backgrounds/HomeBackdrop'
 import { ChipPill } from '../chat/Message'
 import { CreateProgressList } from './CreateProgress'
 
@@ -55,11 +58,14 @@ const IDEAS = [
 
 export function EmptyState(): ReactElement {
   return (
-    <div className="scroll h-full">
-      <div className="flex min-h-full flex-col items-center px-8 py-10">
-        <div className="my-auto flex w-full max-w-[760px] flex-col gap-10">
-          <StartCard />
-          <Recent />
+    <div className="relative h-full">
+      <HomeBackdrop />
+      <div className="scroll relative h-full">
+        <div className="flex min-h-full flex-col items-center px-8 py-10">
+          <div className="my-auto flex w-full max-w-[760px] flex-col gap-10">
+            <StartCard />
+            <Recent />
+          </div>
         </div>
       </div>
     </div>
@@ -73,13 +79,16 @@ function StartCard(): ReactElement {
   const setDraft = useChat((s) => s.setDraft)
   const chips = useChat((s) => s.chips)
   const removeChip = useChat((s) => s.removeChip)
+  const setBackgrounds = useUi((s) => s.setBackgrounds)
   const openProject = useProject((s) => s.open)
   const loading = useProject((s) => s.loading)
   const [over, setOver] = useState(false)
   const [since, setSince] = useState<number | undefined>()
   const ref = useRef<HTMLTextAreaElement>(null)
   const kind = kindOf(files)
-  const canGo = !busy && (draft.trim().length > 0 || files.length > 0)
+  const bgAt = chips.findIndex((c) => c.kind === 'background')
+  const background = bgAt < 0 ? null : (chips[bgAt] as Extract<Chip, { kind: 'background' }>)
+  const canGo = !busy && (draft.trim().length > 0 || files.length > 0 || !!background)
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -184,8 +193,15 @@ function StartCard(): ReactElement {
           </div>
         ) : (
           <div className={cn('flex flex-col', over && 'opacity-0')}>
-            {files.length > 0 ? (
+            {files.length > 0 || background ? (
               <div className="flex flex-wrap gap-2 px-4 pt-4">
+                {background ? (
+                  <BackgroundTile
+                    chip={background}
+                    onChange={() => setBackgrounds(true)}
+                    onRemove={() => removeChip(bgAt)}
+                  />
+                ) : null}
                 {files.map((f) => (
                   <AttachmentTile
                     key={f.path}
@@ -235,6 +251,22 @@ function StartCard(): ReactElement {
                   Add media
                 </button>
               </Tip>
+              <Tip label="A photo or short video from Pexels to put behind your video">
+                <button
+                  type="button"
+                  onClick={() => setBackgrounds(true)}
+                  aria-pressed={!!background}
+                  className={cn(
+                    'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-medium transition-[border-color,color,transform] duration-150 active:scale-[0.97]',
+                    background
+                      ? 'border-secondary-border bg-secondary text-secondary-fg'
+                      : 'border-border bg-bg text-text-2 hover:border-border-strong hover:text-text'
+                  )}
+                >
+                  <Wallpaper size={13} strokeWidth={1.9} />
+                  Background
+                </button>
+              </Tip>
               {kind === 'images' || kind === 'scratch' ? (
                 <>
                   <Segmented
@@ -260,7 +292,9 @@ function StartCard(): ReactElement {
               ) : null}
               <GenerateButton
                 className="ml-auto"
-                label={kind === 'video' && !draft.trim() ? 'Open in Luca' : 'Create video'}
+                label={
+                  kind === 'video' && !draft.trim() && !background ? 'Open in Luca' : 'Create video'
+                }
                 generatingLabel="Creating"
                 generating={busy}
                 disabled={!canGo}
@@ -300,6 +334,48 @@ function StartCard(): ReactElement {
         </div>
       ) : null}
     </section>
+  )
+}
+
+/** The background picked for the new video: click to change it. */
+function BackgroundTile({
+  chip,
+  onChange,
+  onRemove
+}: {
+  chip: Extract<Chip, { kind: 'background' }>
+  onChange: () => void
+  onRemove: () => void
+}): ReactElement {
+  return (
+    <div className="pop-in group relative">
+      <button type="button" onClick={onChange} title={`${chip.title} · click to change`}>
+        <Thumb
+          src={chip.thumb}
+          lazy={false}
+          className="h-16 w-28 rounded-[10px] ring-1 ring-border"
+          fallback={
+            <div className="flex h-full w-full items-center justify-center text-text-3">
+              <Wallpaper size={18} strokeWidth={1.6} />
+            </div>
+          }
+        >
+          <span className="absolute inset-x-1 bottom-1 truncate rounded-[4px] bg-black/60 px-1 py-px text-[9.5px] text-white">
+            {chip.media === 'video'
+              ? `Background · ${formatDuration(chip.duration ?? 0)}`
+              : 'Background photo'}
+          </span>
+        </Thumb>
+      </button>
+      <button
+        type="button"
+        aria-label="Remove the background"
+        onClick={onRemove}
+        className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-bg text-text-2 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:text-text"
+      >
+        <X size={11} />
+      </button>
+    </div>
   )
 }
 

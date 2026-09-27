@@ -82,6 +82,12 @@ const api: LucaApi = {
     remocnStudioStatus: () => invoke(C.catalogRemocnStudioStatus),
     remocnSetup: () => invoke(C.catalogRemocnSetup)
   },
+  backgrounds: {
+    hasKey: () => invoke(C.backgroundsHasKey),
+    setKey: (key) => invoke(C.backgroundsSetKey, key),
+    search: (args) => invoke(C.backgroundsSearch, args),
+    home: (args) => invoke(C.backgroundsHome, args)
+  },
   clean: {
     run: () => invoke(C.cleanRun),
     applyEdl: (edl) => invoke(C.cleanApplyEdl, edl),

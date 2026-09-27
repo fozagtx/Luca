@@ -2,7 +2,7 @@ import type { Theme } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 
-export type SidebarTab = 'inspiration' | 'catalog' | 'transcript' | 'looks'
+export type SidebarTab = 'inspiration' | 'catalog' | 'transcript' | 'looks' | 'backgrounds'
 
 type UiStore = {
   sidebarOpen: boolean
@@ -19,6 +19,8 @@ type UiStore = {
   fullscreen: boolean
   captionsOpen: boolean
   shortcutsOpen: boolean
+  /** The background picker sheet. */
+  backgroundsOpen: boolean
   theme: Theme
   setTheme: (t: Theme, persist?: boolean) => void
   toggleTheme: () => void
@@ -29,6 +31,7 @@ type UiStore = {
   setFullscreen: (fullscreen: boolean) => void
   setCaptions: (open: boolean) => void
   setShortcuts: (open: boolean) => void
+  setBackgrounds: (open: boolean) => void
   setTab: (t: SidebarTab) => void
   setPalette: (open: boolean) => void
   setHistory: (open: boolean) => void
@@ -53,6 +56,7 @@ export const useUi = create<UiStore>((set, get) => ({
   fullscreen: false,
   captionsOpen: false,
   shortcutsOpen: false,
+  backgroundsOpen: false,
   theme: 'light',
   setTheme: (theme, persist = true) => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
@@ -67,6 +71,7 @@ export const useUi = create<UiStore>((set, get) => ({
   setFullscreen: (fullscreen) => set({ fullscreen }),
   setCaptions: (captionsOpen) => set({ captionsOpen }),
   setShortcuts: (shortcutsOpen) => set({ shortcutsOpen }),
+  setBackgrounds: (backgroundsOpen) => set({ backgroundsOpen }),
   setTab: (tab) => set({ tab, sidebarOpen: true }),
   setPalette: (paletteOpen) => set({ paletteOpen }),
   setHistory: (historyOpen) => set({ historyOpen }),
