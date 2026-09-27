@@ -21,7 +21,7 @@ import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
 import { stopLuca, useQueue, type QueueItem } from '../../stores/queue'
 import { ChipPill } from './Message'
-import { activityOf } from './activity'
+import { nowOf } from './activity'
 
 const EASE = [0.2, 0.8, 0.2, 1] as const
 
@@ -162,27 +162,6 @@ function NowRow(): ReactElement {
 function waitingOnPermission(messages: ChatMessage[]): boolean {
   const m = messages[messages.length - 1]
   return !!m?.pending && !!m.parts?.some((p) => p.type === 'permission' && !p.resolved)
-}
-
-function nowOf(messages: ChatMessage[]): { asked: string; doing: string } {
-  let asked = ''
-  let doing = 'Luca is thinking…'
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m.role === 'assistant' && m.pending) {
-      const parts = m.parts ?? []
-      const last = parts[parts.length - 1]
-      if (last?.type === 'text') doing = 'Luca is writing back…'
-      else if (last?.type === 'permission' && !last.resolved)
-        doing = 'Waiting for your OK in the chat'
-      else if (last?.type === 'tool') doing = `${activityOf(last).active}…`
-    }
-    if (m.role === 'user') {
-      asked = m.text
-      break
-    }
-  }
-  return { asked, doing }
 }
 
 /** Approved and waiting its turn. */

@@ -2,6 +2,7 @@ import type { Aspect, CreateProgress, StartKind } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 import { useChat } from './chat'
+import { useMaking } from './making'
 import { errorMessage, useProject } from './project'
 import { useUi } from './ui'
 
@@ -192,11 +193,14 @@ export const useStart = create<StartStore>((set, get) => ({
                   ? 'Put my videos on this background'
                   : 'Put my video on this background'
                 : 'Make a video on this background')
-        await chat.send(visible, {
+        // the preview shows Luca at work instead of the blank starter until this turn ends
+        useMaking.getState().begin(res.project.id, kind, duration)
+        const sent = await chat.send(visible, {
           time: 0,
           note: res.brief,
           ...(opts?.spoken ? { voice: true } : {})
         })
+        if (!sent) useMaking.getState().cancel()
       }
       return true
     } catch (err) {
