@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { GrabOverlay } from './GrabOverlay'
+import { MakingOverlay } from './MakingOverlay'
 import { TransformOverlay } from './TransformOverlay'
 
 declare module 'react' {
@@ -144,6 +145,7 @@ export function Player(): ReactElement | null {
         />
         <TransformOverlay player={el} />
         <GrabOverlay player={el} />
+        <MakingOverlay />
       </div>
     </div>
   )

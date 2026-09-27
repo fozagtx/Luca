@@ -766,6 +766,132 @@ body.inactive ::selection {
   }
 }
 
+/*
+ * Luca at work: blue-violet light circling an element's edges (after Gemini's edge-to-edge
+ * overlay). `.edge-glow-inset` bleeds in from the edges of the video frame; `.edge-glow-halo`
+ * glows outward behind a box (its parent needs `isolation: isolate`). Off, it fades out and stops.
+ */
+.edge-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.edge-glow-inset {
+  overflow: hidden;
+}
+.edge-glow-halo {
+  inset: -1px;
+}
+.edge-glow-soft,
+.edge-glow-line {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transition:
+    opacity 500ms ease-out,
+    visibility 0s;
+}
+.edge-glow-line,
+.edge-glow-soft::before {
+  background: conic-gradient(
+    from var(--glow-angle),
+    #3d8bff,
+    #6a6cff 18%,
+    #a46bff 34%,
+    #ff7bc4 48%,
+    #a46bff 60%,
+    #5b7bff 78%,
+    #3d8bff
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: glow-spin 4.5s linear infinite;
+}
+.edge-glow-line {
+  padding: 1.5px;
+}
+.edge-glow-soft::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.edge-glow-inset .edge-glow-soft {
+  filter: blur(16px);
+  opacity: 0.55;
+}
+.edge-glow-inset .edge-glow-soft::before {
+  padding: 12px;
+}
+.edge-glow-inset.edge-glow-strong .edge-glow-soft {
+  filter: blur(22px);
+  opacity: 0.95;
+}
+.edge-glow-inset.edge-glow-strong .edge-glow-soft::before {
+  padding: 20px;
+}
+.edge-glow-inset.edge-glow-strong .edge-glow-line {
+  padding: 2.5px;
+}
+.edge-glow-halo .edge-glow-soft {
+  z-index: -1;
+  filter: blur(10px);
+  opacity: 0.6;
+}
+.edge-glow-halo .edge-glow-soft::before {
+  padding: 4px;
+}
+.edge-glow.edge-glow-off .edge-glow-soft,
+.edge-glow.edge-glow-off .edge-glow-line {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 500ms ease-out,
+    visibility 0s 500ms;
+}
+.edge-glow.edge-glow-off .edge-glow-line,
+.edge-glow.edge-glow-off .edge-glow-soft::before {
+  animation-play-state: paused;
+}
+
+/* The veil over a video Luca is still making: its own frame, blurred, under slow coloured light */
+.making-veil {
+  background: rgba(8, 10, 22, 0.58);
+  backdrop-filter: blur(26px) saturate(1.25);
+}
+.making-aurora {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 42% at 30% 35%, rgba(61, 139, 255, 0.34), transparent 70%),
+    radial-gradient(34% 40% at 70% 60%, rgba(164, 107, 255, 0.3), transparent 70%),
+    radial-gradient(26% 30% at 55% 25%, rgba(255, 123, 196, 0.16), transparent 70%);
+  animation: aurora-drift 14s ease-in-out infinite alternate;
+}
+@keyframes aurora-drift {
+  0% {
+    transform: translate(-4%, -3%) rotate(0deg) scale(1);
+  }
+  50% {
+    transform: translate(3%, 2%) rotate(8deg) scale(1.06);
+  }
+  100% {
+    transform: translate(5%, -2%) rotate(-6deg) scale(1.02);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edge-glow-line,
+  .edge-glow-soft::before,
+  .making-aurora {
+    animation: none !important;
+  }
+}
+
 input.volume {
   accent-color: var(--accent);
 }
