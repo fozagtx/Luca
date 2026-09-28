@@ -41,6 +41,7 @@ import {
 } from './clean'
 import { cancelExport, startExport } from './export'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
+import { applyColor, colorState, removeColor } from './color'
 import { addMedia, footageInfo } from './footage'
 import { addCatalogItem, catalog, readTimeline } from './hyperframes'
 import { remocnCatalog, setupStudio, studioStatus } from './remocn'
@@ -367,6 +368,13 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.captionsWords, () => captionWords(requireProject()))
   handle(Channels.captionsApply, (cfg: CaptionConfig) => applyCaptions(requireProject(), cfg))
   handle(Channels.captionsRemove, () => removeCaptions(requireProject()))
+
+  // color grade (a LUT that comes with Luca, on the footage)
+  handle(Channels.colorState, () => colorState(requireProject()))
+  handle(Channels.colorApply, (grade: { lut: string; intensity: number }, checkpoint?: boolean) =>
+    applyColor(requireProject(), grade, { checkpoint })
+  )
+  handle(Channels.colorRemove, () => removeColor(requireProject()))
   handle(Channels.fontsAdd, async () => {
     const p = requireProject()
     const res = await openDialog(getWin(), {

@@ -18,6 +18,7 @@ import { ShortcutsSheet } from './features/command/ShortcutsSheet'
 import { useShortcuts } from './features/command/useShortcuts'
 import { BackgroundSheet } from './features/backgrounds/BackgroundSheet'
 import { CaptionStudio } from './features/captions/CaptionStudio'
+import { ColorStudio } from './features/color/ColorStudio'
 import { ExportBar, ExportSheet } from './features/export/ExportSheet'
 import { NewProjectSheet } from './features/onboarding/NewProjectSheet'
 import { Sidebar } from './features/sidebar/Sidebar'
@@ -237,6 +238,7 @@ export default function App(): ReactElement {
       <GotoSheet />
       <ShortcutsSheet />
       <CaptionStudio />
+      <ColorStudio />
       <BackgroundSheet />
       <UpdatesSheet />
       <Toaster

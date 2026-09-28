@@ -61,7 +61,8 @@ export function buildAppMenu(): void {
         { label: 'Delete Clip', click: () => send('delete-clip') },
         { type: 'separator' },
         { label: 'Clean Edit…', accelerator: 'Cmd+Shift+E', click: () => send('clean-edit') },
-        { label: 'Captions…', click: () => send('captions') }
+        { label: 'Captions…', click: () => send('captions') },
+        { label: 'Color…', accelerator: 'Cmd+Shift+L', click: () => send('color') }
       ]
     },
     {

@@ -6,6 +6,7 @@ import type {
   BackgroundSearch,
   CaptionConfig,
   CaptionState,
+  ColorState,
   CreateProgress,
   ElementTransform,
   ProjectFont,
@@ -175,6 +176,11 @@ export type LucaApi = {
     addFonts: () => Promise<ProjectFont[]>
     /** Download a Google Fonts family (a fonts.google.com link, a stylesheet link or a name) into the project. */
     addGoogleFont: (input: string) => Promise<{ families: string[]; fonts: ProjectFont[] }>
+  }
+  color: {
+    state: () => Promise<ColorState>
+    apply: (grade: { lut: string; intensity: number }, checkpoint?: boolean) => Promise<ColorState>
+    remove: () => Promise<ColorState>
   }
   looks: {
     list: () => Promise<(Look & { thumb: string | null })[]>

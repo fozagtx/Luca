@@ -10,7 +10,9 @@ import {
   type CaptionAnim
 } from '../shared/captions'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
+import { BUNDLED_LUTS } from '../shared/luts'
 import type { CaptionConfig } from '../shared/types'
+import { applyColor, removeColor } from './color'
 import {
   addFontByName,
   addGoogleFont,
@@ -189,6 +191,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'their look; Luca keeps them in sync with every cut, so never write or edit them by hand. ' +
       'font_add adds a font that comes with Luca, or downloads a Google Fonts font, into the project ' +
       'so any text can use it offline. ' +
+      'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it. ' +
       'video_generate makes a new video clip with Gemini Omni, or edits or continues a clip in the ' +
       'project, and saves it in media/generated.',
     tools: [
@@ -389,7 +392,29 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
               animation: z
                 .enum(animationIds)
                 .optional()
-                .describe(CAPTION_ANIMATIONS.map((a) => `${a.id}: ${a.blurb}`).join('; '))
+                .describe(CAPTION_ANIMATIONS.map((a) => `${a.id}: ${a.blurb}`).join('; ')),
+              layout: z
+                .enum(['line', 'scatter'])
+                .optional()
+                .describe('line = centered lines; scatter = words spread across the frame'),
+              hero: z
+                .object({
+                  scale: z
+                    .number()
+                    .min(1.5)
+                    .max(8)
+                    .describe('× the caption size; the one key word per phrase drawn huge'),
+                  weight: z.number().int().min(100).max(900).optional(),
+                  font: z.string().max(60).optional().describe('display font for the hero word'),
+                  uppercase: z.boolean().optional(),
+                  color: cssColor.optional(),
+                  letterSpacing: z.number().min(-0.1).max(0.5).optional().describe('em')
+                })
+                .nullable()
+                .optional()
+                .describe(
+                  'hero = the one key word per phrase drawn huge; scale 1.5–8. Only for scatter layouts; null removes it'
+                )
             })
             .optional()
             .describe('a custom look on top of the style; anything set here wins')
@@ -464,6 +489,44 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
               families,
               use: `Declared in index.html; use font-family: '${families[0]}'. For captions pass it as font to captions_apply.`
             })
+          } catch (err) {
+            return text({ ok: false, error: message(err) })
+          }
+        }
+      ),
+      tool(
+        'lut_apply',
+        [
+          "Grade the user's own footage with a LUT that comes with Luca (a color look), or remove it.",
+          'Use it when the user asks for a look, a mood, a cinematic/film/moody/warm/cool/black-and-white feel, or names a LUT.',
+          'LUTs:',
+          ...BUNDLED_LUTS.map((l) => `- ${l.id}: ${l.name} — ${l.note}`)
+        ].join('\n'),
+        {
+          lut: z
+            .enum(['none', ...BUNDLED_LUTS.map((l) => l.id)] as [string, ...string[]])
+            .describe('the LUT id, or "none" to remove the grade'),
+          intensity: z
+            .number()
+            .min(0)
+            .max(1)
+            .optional()
+            .describe('how strong the look is, 0–1; default 0.85, lower for subtle')
+        },
+        async ({ lut, intensity }) => {
+          try {
+            const p = readProject(projectDir)
+            if (!p) return text({ ok: false, error: 'No project' })
+            if (lut === 'none') {
+              await removeColor(p)
+              return text('Removed the color grade')
+            }
+            const info = BUNDLED_LUTS.find((l) => l.id === lut)
+            const level = intensity ?? 0.85
+            const state = await applyColor(p, { lut, intensity: level })
+            return text(
+              `Applied ${info?.name ?? lut} at ${Math.round(level * 100)}% to ${state.targets} clip${state.targets === 1 ? '' : 's'}`
+            )
           } catch (err) {
             return text({ ok: false, error: message(err) })
           }

@@ -120,6 +120,11 @@ const api: LucaApi = {
     addFonts: () => invoke(C.fontsAdd),
     addGoogleFont: (input) => invoke(C.fontsAddGoogle, input)
   },
+  color: {
+    state: () => invoke(C.colorState),
+    apply: (grade, checkpoint) => invoke(C.colorApply, grade, checkpoint),
+    remove: () => invoke(C.colorRemove)
+  },
   looks: {
     list: () => invoke(C.looksList),
     save: (name) => invoke(C.looksSave, name),

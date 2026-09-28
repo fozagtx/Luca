@@ -437,6 +437,20 @@ export type CaptionGroup = {
   words: { text: string; start: number; end: number }[]
 }
 
+/** How the caption engine lays a line out: centered lines today, or words scattered with a hero. */
+export type CaptionLayout = 'line' | 'scatter'
+
+/** The one key word of a scatter phrase, drawn huge on its own row. */
+export type CaptionHero = {
+  /** Multiplies the style's font size (1.5–8). */
+  scale: number
+  weight?: number
+  font?: string
+  uppercase?: boolean
+  color?: string
+  letterSpacing?: number
+}
+
 export type CaptionConfig = {
   style: string
   /** Font family; a built-in HyperFrames font or one added to the project. */
@@ -478,6 +492,10 @@ export type CaptionOverrides = {
   /** Shadow under the letters (a glow with `y` 0); null removes the style's shadow. */
   shadow?: { color: string; blur: number; y?: number } | null
   animation?: CaptionAnimation
+  /** Line layout: centered lines or words scattered with one hero word. */
+  layout?: CaptionLayout
+  /** The hero word's look in a scatter layout; null removes the style's hero. */
+  hero?: CaptionHero | null
 }
 
 export type ProjectFont = {
@@ -507,6 +525,13 @@ export type CaptionState = {
   fonts: ProjectFont[]
   /** The project has audio worth transcribing. */
   hasAudio: boolean
+}
+
+/** The color grade on the footage (which LUT that comes with Luca, at what strength) or none. */
+export type ColorState = {
+  grade: import('./luts').ColorGrade
+  /** Footage <video> clips the grade applies to. */
+  targets: number
 }
 
 export type BackgroundMedia = 'photo' | 'video'

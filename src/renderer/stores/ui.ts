@@ -18,6 +18,7 @@ type UiStore = {
   /** macOS fullscreen: the traffic lights are gone, so the toolbar drops its inset. */
   fullscreen: boolean
   captionsOpen: boolean
+  colorOpen: boolean
   shortcutsOpen: boolean
   /** The background picker sheet. */
   backgroundsOpen: boolean
@@ -30,6 +31,7 @@ type UiStore = {
   setChat: (open: boolean) => void
   setFullscreen: (fullscreen: boolean) => void
   setCaptions: (open: boolean) => void
+  setColor: (open: boolean) => void
   setShortcuts: (open: boolean) => void
   setBackgrounds: (open: boolean) => void
   setTab: (t: SidebarTab) => void
@@ -56,6 +58,7 @@ export const useUi = create<UiStore>((set, get) => ({
   windowActive: true,
   fullscreen: false,
   captionsOpen: false,
+  colorOpen: false,
   shortcutsOpen: false,
   backgroundsOpen: false,
   theme: 'light',
@@ -71,6 +74,7 @@ export const useUi = create<UiStore>((set, get) => ({
   setChat: (chatOpen) => set({ chatOpen }),
   setFullscreen: (fullscreen) => set({ fullscreen }),
   setCaptions: (captionsOpen) => set({ captionsOpen }),
+  setColor: (colorOpen) => set({ colorOpen }),
   setShortcuts: (shortcutsOpen) => set({ shortcutsOpen }),
   setBackgrounds: (backgroundsOpen) => set({ backgroundsOpen }),
   setTab: (tab) => set({ tab, sidebarOpen: true }),

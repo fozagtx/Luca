@@ -1,7 +1,7 @@
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
 import { basename, extname, join } from 'node:path'
-import { bundledFontsDir } from './captions'
+import { bundledFontsDir, bundledLutsDir } from './resources'
 import { registerHandlers } from './handlers'
 import { Channels, broadcast } from './ipc'
 import { buildAppMenu } from './menu'
@@ -20,7 +20,8 @@ export const server = new LucaServer(
     const p = currentProject()
     return p && p.id === id ? p.dir : null
   },
-  bundledFontsDir()
+  bundledFontsDir(),
+  bundledLutsDir()
 )
 
 let mainWindow: BrowserWindow | null = null

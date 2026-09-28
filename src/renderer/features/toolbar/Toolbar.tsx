@@ -1,5 +1,6 @@
 import {
   Captions,
+  Contrast,
   Crosshair,
   House,
   MessageSquare,
@@ -91,6 +92,7 @@ export function Toolbar(): ReactElement {
   const setChat = useUi((s) => s.setChat)
   const setExport = useUi((s) => s.setExport)
   const setCaptions = useUi((s) => s.setCaptions)
+  const setColor = useUi((s) => s.setColor)
   const fullscreen = useUi((s) => s.fullscreen)
   const grab = usePlayer((s) => s.grab)
   const toggleGrab = usePlayer((s) => s.toggleGrab)
@@ -163,6 +165,17 @@ export function Toolbar(): ReactElement {
           >
             <Captions size={15} strokeWidth={1.75} />
             Captions
+          </Button>
+        </Tip>
+        <Tip label="Color: LUTs for your footage">
+          <Button
+            variant="ghost"
+            disabled={!project}
+            onClick={() => setColor(true)}
+            aria-label="Color"
+          >
+            <Contrast size={15} strokeWidth={1.75} />
+            Color
           </Button>
         </Tip>
         <HistoryPopover />

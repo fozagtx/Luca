@@ -2,6 +2,7 @@ import { Command } from 'cmdk'
 import {
   AudioLines,
   Clock,
+  Contrast,
   Crosshair,
   FolderOpen,
   History,
@@ -90,6 +91,13 @@ export function CommandPalette(): ReactElement {
       label: 'Apply Look…',
       icon: <Palette size={14} strokeWidth={1.5} />,
       run: () => ui.setTab('looks'),
+      needsProject: true
+    },
+    {
+      id: 'color',
+      label: 'Color…',
+      icon: <Contrast size={14} strokeWidth={1.5} />,
+      run: () => ui.setColor(true),
       needsProject: true
     },
     {

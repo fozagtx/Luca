@@ -76,7 +76,9 @@ export class LucaServer {
     private uiDir: string | null,
     private resolveProject: ProjectResolver,
     /** The fonts that come with Luca, for previews outside a project. */
-    private fontsDir: string | null = null
+    private fontsDir: string | null = null,
+    /** The LUTs that come with Luca, for previews outside a project. */
+    private lutsDir: string | null = null
   ) {}
 
   get baseUrl(): string {
@@ -171,6 +173,12 @@ export class LucaServer {
     if (url.pathname.startsWith('/fonts/') && this.fontsDir) {
       const rel = decodeURIComponent(url.pathname.slice('/fonts/'.length))
       this.sendFile(req, res, this.fontsDir, rel, {})
+      return
+    }
+
+    if (url.pathname.startsWith('/luts/') && this.lutsDir) {
+      const rel = decodeURIComponent(url.pathname.slice('/luts/'.length))
+      this.sendFile(req, res, this.lutsDir, rel, {})
       return
     }
 

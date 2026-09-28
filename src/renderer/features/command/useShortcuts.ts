@@ -257,6 +257,9 @@ export function useShortcuts(): void {
         case 'captions':
           if (proj.project) ui.setCaptions(true)
           break
+        case 'color':
+          if (proj.project) ui.setColor(true)
+          break
         case 'claude-login':
           await luca.env.openClaudeLogin()
           break

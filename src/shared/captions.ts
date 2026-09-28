@@ -2,6 +2,8 @@ import type {
   CaptionAnimation,
   CaptionConfig,
   CaptionGroup,
+  CaptionHero,
+  CaptionLayout,
   CaptionOverrides,
   ProjectFontFace
 } from './types'
@@ -41,6 +43,10 @@ export type CaptionStyle = {
   shadow?: string
   anim: CaptionAnim
   words: CaptionConfig['wordsPerLine']
+  /** Line layout; absent means centered lines. */
+  layout?: CaptionLayout
+  /** The hero word's look for a scatter layout (scale × `size`). */
+  hero?: CaptionHero | null
 }
 
 export const CAPTION_STYLES: CaptionStyle[] = [
@@ -57,6 +63,61 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     shadow: '0 4px 18px rgba(0,0,0,0.55)',
     anim: 'slide',
     words: 'normal'
+  },
+  {
+    id: 'scatter',
+    name: 'Scatter',
+    blurb: 'Words land one by one across the frame; the key word goes huge. Travel-vlog energy.',
+    font: 'Gontserrat',
+    weight: 500,
+    size: 38,
+    uppercase: false,
+    color: '#FFFFFF',
+    accent: '#FFFFFF',
+    shadow: '0 2px 12px rgba(0,0,0,0.5)',
+    anim: 'fade',
+    words: 'normal',
+    layout: 'scatter',
+    hero: { scale: 4.2, weight: 900, letterSpacing: -0.03 }
+  },
+  {
+    id: 'poster',
+    name: 'Poster',
+    blurb: 'Scattered small words with the key word in tall poster caps.',
+    font: 'Gontserrat',
+    weight: 500,
+    size: 38,
+    uppercase: false,
+    color: '#FFFFFF',
+    accent: '#FFFFFF',
+    shadow: '0 2px 12px rgba(0,0,0,0.5)',
+    anim: 'fade',
+    words: 'normal',
+    layout: 'scatter',
+    hero: { scale: 5.2, font: 'Bebas Neue', weight: 400, uppercase: true, letterSpacing: 0.01 }
+  },
+  {
+    id: 'editorial',
+    name: 'Editorial',
+    blurb: 'Magazine cut: small words spread wide, the key word in red serif caps.',
+    font: 'Red Hat Display',
+    weight: 500,
+    size: 36,
+    uppercase: false,
+    color: '#FFFFFF',
+    accent: '#FFFFFF',
+    shadow: '0 3px 16px rgba(0,0,0,0.62)',
+    anim: 'fade',
+    words: 'normal',
+    layout: 'scatter',
+    hero: {
+      scale: 4.6,
+      font: 'Cralika',
+      weight: 400,
+      uppercase: true,
+      color: '#D4141C',
+      letterSpacing: 0.02
+    }
   },
   {
     id: 'bold-pop',
@@ -235,6 +296,10 @@ export type CaptionLook = {
   shadow: string | null
   /** `radius` in px for a 1080 px short side (999 is a pill); `padding` is CSS. */
   box: { bg: string; radius: number; padding: string } | null
+  /** 'line' is the classic centered line; 'scatter' spreads the words with a hero. */
+  layout: CaptionLayout
+  /** The hero word's resolved look for a scatter layout; null means no hero. */
+  hero: CaptionHero | null
 }
 
 const OUTLINE = 'rgba(0,0,0,0.92)'
@@ -260,6 +325,9 @@ export function captionLook(
     const pill = s.box.radius === 999
     box = { bg: s.box.bg, radius: s.box.radius, padding: pill ? '0.28em 0.9em' : '0.2em 0.55em' }
   }
+  const mergedHero = { ...(s.hero ?? {}), ...(o.hero ?? {}) }
+  const hero: CaptionHero | null =
+    o.hero === null || !mergedHero.scale ? null : { ...mergedHero, scale: mergedHero.scale }
   return {
     anim,
     slow: s.id === 'cinematic' && anim === 'fade',
@@ -279,7 +347,9 @@ export function captionLook(
       o.shadow !== undefined
         ? o.shadow && `0 ${o.shadow.y ?? 0}px ${o.shadow.blur}px ${o.shadow.color}`
         : (s.shadow ?? null),
-    box
+    box,
+    layout: o.layout ?? s.layout ?? 'line',
+    hero
   }
 }
 
@@ -388,6 +458,27 @@ export function cleanOverrides(raw: unknown): CaptionOverrides | undefined {
   }
   const anim = CAPTION_ANIMATIONS.find((a) => a.id === r.animation)
   if (anim) out.animation = anim.id
+  if (r.layout === 'line' || r.layout === 'scatter') out.layout = r.layout
+  if (r.hero === null) out.hero = null
+  else if (obj(r.hero)) {
+    const h = obj(r.hero)!
+    const scale = clamp(h.scale, 1.5, 8)
+    if (scale !== undefined) {
+      const hero: CaptionHero = { scale: round(scale) }
+      const weight = clamp(h.weight, 100, 900)
+      if (weight !== undefined) hero.weight = Math.round(weight)
+      if (typeof h.font === 'string') {
+        const font = h.font.trim().replace(/\s+/g, ' ')
+        if (font && font.length <= 60) hero.font = font
+      }
+      if (typeof h.uppercase === 'boolean') hero.uppercase = h.uppercase
+      const color = safeColor(h.color)
+      if (color) hero.color = color
+      const spacing = clamp(h.letterSpacing, -0.1, 0.5)
+      if (spacing !== undefined) hero.letterSpacing = round(spacing)
+      out.hero = hero
+    }
+  }
   return Object.keys(out).length ? out : undefined
 }
 
@@ -824,4 +915,273 @@ export function placeWords(words: TimedWord[], clips: SpeechClip[]): TimedWord[]
   return out
     .sort((a, b) => a.start - b.start || a.i - b.i)
     .map(({ text, start, end }) => ({ text, start, end }))
+}
+
+// ------------------------------------------------------------------ the scatter layout
+
+/** Where one word of a scattered phrase lands: anchor and size (px for a 1080 px short side). */
+export type ScatterWord = {
+  /** Anchor point, as a fraction of the frame. */
+  x: number
+  y: number
+  hero: boolean
+  size: number
+  align: 'left' | 'center' | 'right'
+}
+
+const SCATTER_STOPWORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'and',
+  'but',
+  'or',
+  'so',
+  'i',
+  "i'm",
+  'it',
+  "it's",
+  'is',
+  'was',
+  'are',
+  'to',
+  'of',
+  'in',
+  'on',
+  'at',
+  'for',
+  'my',
+  'me',
+  'we',
+  'you',
+  'this',
+  'that',
+  'there',
+  'then',
+  'when',
+  'what',
+  'with',
+  'just',
+  'like',
+  'very',
+  'really',
+  'kind',
+  'sort',
+  'yeah',
+  'okay',
+  'um',
+  'uh'
+])
+
+const heroBare = (t: string): string => t.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+
+/** A word's hero score: its length, a boost for digits, -100 for stopwords. */
+const heroScore = (text: string): number => {
+  const word = heroBare(text)
+  if (!word) return -Infinity
+  return SCATTER_STOPWORDS.has(word) ? -100 : word.length + (/\d/.test(word) ? 3 : 0)
+}
+
+/**
+ * The index of the phrase's key word: the highest score wins, ties go to the earlier word, and a
+ * numeral with a unit word ("28 hours") scores as one hero of two words — then `heroPair` is its
+ * second index. -1 (and null) when nothing qualifies.
+ */
+export function heroIndex(words: { text: string }[]): { index: number; pair: number | null } {
+  let best = -1
+  let bestScore = -Infinity
+  let pairAt = -1
+  let pairScore = -Infinity
+  words.forEach((w, i) => {
+    const score = heroScore(w.text)
+    if (score > bestScore) {
+      bestScore = score
+      best = i
+    }
+    // "28 hours" reads as one hero: the numeral plus the word it counts
+    if (/\d/.test(w.text) && i + 1 < words.length && heroScore(w.text) > -100) {
+      const two = heroScore(w.text) + heroScore(words[i + 1].text)
+      if (heroScore(words[i + 1].text) > -100 && two > pairScore) {
+        pairScore = two
+        pairAt = i
+      }
+    }
+  })
+  if (pairScore > bestScore) return { index: pairAt, pair: pairAt + 1 }
+  return bestScore <= -100 ? { index: -1, pair: null } : { index: best, pair: null }
+}
+
+/** Deterministic 0–1 noise, one stream per seed (mulberry32). */
+function mulberry32(seed: number): () => number {
+  let a = seed | 0
+  return () => {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/** Rough text width in px for the width checks (average glyph advance ≈ 0.58 em). */
+const textWidth = (text: string, size: number): number => text.length * size * 0.58
+
+/**
+ * Where every word of a scattered phrase lands: small words spread in rows across a band of the
+ * frame (in reading order), one hero word huge on its own row. Positions are fractions of the
+ * frame (0–1); `size` is px for a 1080 px short side. Same inputs, same output — `seed` is the
+ * group index.
+ */
+export function scatterLayout(
+  group: CaptionGroup,
+  look: CaptionLook,
+  cfg: Pick<CaptionConfig, 'position'>,
+  d: { w: number; h: number },
+  seed: number
+): ScatterWord[] {
+  const words = group.words
+  if (!words.length) return []
+  const portrait = d.h > d.w
+  const short = Math.min(d.w, d.h)
+  /** 1080-short-side px → fraction of the frame height. */
+  const hFrac = (px: number): number => (px * (short / 1080)) / d.h
+  const wFrac = (px: number): number => (px * (short / 1080)) / d.w
+  const rng = mulberry32(seed * 31 + 7)
+  const jitter = (amount: number): number => (rng() * 2 - 1) * amount
+
+  // the hero: the scored winner (or numeral pair, "28 hours" reads as one hero)
+  const pick = look.hero ? heroIndex(words) : { index: -1, pair: null }
+  const heroAt = pick.index
+  const heroPair = pick.pair
+  const isHero = (i: number): boolean => i === heroAt || i === heroPair
+  const small = look.size
+  let heroSize = look.hero ? small * look.hero.scale : small
+
+  // cap the hero so its text fits the frame width
+  if (heroAt >= 0) {
+    const len =
+      heroPair != null
+        ? words[heroAt].text.length + words[heroPair].text.length + 1
+        : words[heroAt].text.length
+    const max = (0.9 * d.w) / wFrac(1) / (len * 0.58)
+    heroSize = Math.min(heroSize, max)
+  }
+
+  // rows: hero words take a row alone, small words fill `cols` per row in order
+  const cols = portrait ? 3 : 4
+  type Row = { idx: number[]; hero: boolean }
+  const rows: Row[] = []
+  let cur: Row = { idx: [], hero: false }
+  words.forEach((_, i) => {
+    if (isHero(i)) {
+      if (cur.idx.length) {
+        rows.push(cur)
+        cur = { idx: [], hero: false }
+      }
+      // the pair (or the single hero) already opened a hero row; the second half joins it
+      if (i === heroPair && rows.length && rows[rows.length - 1].hero) {
+        rows[rows.length - 1].idx.push(i)
+      } else {
+        rows.push({ idx: [i], hero: true })
+      }
+      return
+    }
+    if (cur.idx.length >= cols) {
+      rows.push(cur)
+      cur = { idx: [], hero: false }
+    }
+    cur.idx.push(i)
+  })
+  if (cur.idx.length) rows.push(cur)
+
+  // the band the rows live in (fractions of the frame height)
+  const bands = portrait
+    ? { top: [0.12, 0.5], middle: [0.3, 0.7], bottom: [0.5, 0.85] }
+    : { top: [0.1, 0.45], middle: [0.28, 0.72], bottom: [0.55, 0.88] }
+  const [bandTop, bandBottom] = bands[cfg.position as keyof typeof bands] ?? bands.bottom
+  const bandH = bandBottom - bandTop
+
+  // row heights in 1080 px; shrink the row gap first (small rows are 1.15 text + 0.75 gap),
+  // then the sizes themselves, so the phrase stays inside its band
+  const basePx = rows.reduce((a, r) => a + (r.hero ? heroSize : small) * 1.15, 0)
+  const gapPx = rows.reduce((a, r) => a + (r.hero ? 0 : small * 0.75), 0)
+  const bandPx = bandH / hFrac(1)
+  const gapK = basePx + gapPx <= bandPx ? 1 : Math.max(0, (bandPx - basePx) / (gapPx || 1))
+  const sizeScale = basePx + gapPx * gapK <= bandPx ? 1 : bandPx / basePx
+  const rowH = (r: Row): number =>
+    (r.hero ? heroSize * 1.15 : small * (1.15 + 0.75 * gapK)) * sizeScale
+  const smallSize = small * sizeScale
+  const bigSize = heroSize * sizeScale
+
+  // x slots inside the band's width (fractions of the frame)
+  const [xLo, xHi] = portrait ? [0.08, 0.92] : [0.1, 0.9]
+  const slot = (f: number): number => xLo + f * (xHi - xLo)
+  const slots = (n: number): number[] => {
+    if (n === 1) return [slot([0.15, 0.5, 0.85][Math.floor(rng() * 3)])]
+    if (n === 2) return [slot(0.25), slot(0.75)]
+    if (n === 3) return [slot(0.15), slot(0.5), slot(0.85)]
+    return [slot(0.12), slot(0.38), slot(0.62), slot(0.88)]
+  }
+
+  const out = new Array<ScatterWord>(words.length)
+  let y = bandTop
+  rows.forEach((row) => {
+    const cy = y + hFrac(rowH(row) / 2)
+    y += hFrac(rowH(row))
+    if (row.hero) {
+      // the hero (or numeral pair) sits as one centered block on its row
+      if (row.idx.length === 2) {
+        const [a, b] = row.idx
+        const gap = wFrac(bigSize * 0.3)
+        out[a] = {
+          x: 0.5 - gap / 2 + jitter(0.02),
+          y: cy,
+          hero: true,
+          size: bigSize,
+          align: 'right'
+        }
+        out[b] = {
+          x: 0.5 + gap / 2 + jitter(0.02),
+          y: cy,
+          hero: true,
+          size: bigSize,
+          align: 'left'
+        }
+      } else {
+        out[row.idx[0]] = {
+          x: 0.5 + jitter(0.02),
+          y: cy,
+          hero: true,
+          size: bigSize,
+          align: 'center'
+        }
+      }
+      return
+    }
+    const xs = slots(row.idx.length)
+    row.idx.forEach((wi, j) => {
+      out[wi] = {
+        x: xs[j] + jitter(0.03),
+        y: cy + jitter(0.012),
+        hero: false,
+        size: smallSize,
+        align: 'center'
+      }
+    })
+    // no two neighbours on a row may overlap: push apart symmetrically, inside the band
+    for (let j = 1; j < row.idx.length; j++) {
+      const prev = out[row.idx[j - 1]]
+      const cur2 = out[row.idx[j]]
+      const minGap =
+        (wFrac(textWidth(words[row.idx[j - 1]].text, smallSize)) +
+          wFrac(textWidth(words[row.idx[j]].text, smallSize))) /
+          2 +
+        0.02
+      const overlap = minGap - (cur2.x - prev.x)
+      if (overlap > 0) {
+        prev.x = Math.max(xLo, prev.x - overlap / 2)
+        cur2.x = Math.min(xHi, cur2.x + overlap / 2)
+      }
+    }
+  })
+  return out.map((w) => ({ ...w, x: round(w.x), y: round(w.y), size: Math.round(w.size) }))
 }

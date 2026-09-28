@@ -1,4 +1,3 @@
-import { is } from '@electron-toolkit/utils'
 import { createHash } from 'node:crypto'
 import {
   copyFileSync,
@@ -13,6 +12,7 @@ import { basename, extname, join } from 'node:path'
 import {
   bundledFont,
   BUNDLED_FONTS,
+  captionLook,
   captionStyle,
   cleanCaptionConfig,
   cleanWords,
@@ -48,6 +48,7 @@ import {
   upsertHeadBlock
 } from './html'
 import { AUDIO_EXT, VIDEO_EXT, lucaDir } from './projects'
+import { bundledResourcesDir } from './resources'
 import { checkpoint } from './versions'
 
 const HOST_ID = CAPTIONS_ID
@@ -296,11 +297,10 @@ export async function addFonts(p: Project, files: string[]): Promise<ProjectFont
 // ------------------------------------------------------------------ fonts that come with Luca
 
 /** resources/fonts/: in the repo while developing, unpacked next to the app once packaged. */
-export function bundledFontsDir(): string {
-  return is.dev
-    ? join(__dirname, '../../resources/fonts')
-    : join(process.resourcesPath, 'app.asar.unpacked/resources/fonts')
-}
+export const bundledFontsDir = (): string => bundledResourcesDir('fonts')
+
+/** resources/luts/: same layout as the fonts — .cube files that come with Luca. */
+export const bundledLutsDir = (): string => bundledResourcesDir('luts')
 
 /**
  * Copies a font that comes with Luca into the project the way a font added from a file goes in
@@ -577,8 +577,11 @@ export async function applyCaptions(
   opts: { checkpoint?: boolean } = {}
 ): Promise<{ lines: number; config: CaptionConfig }> {
   const cfg = cleanCaptionConfig(config)
-  // a font that comes with Luca goes into the project before the captions use it
+  // a font that comes with Luca goes into the project before the captions use it (the scatter
+  // hero's display font too)
   installBundledFont(p.dir, cfg.font)
+  const heroFont = captionLook(cfg).hero?.font
+  if (heroFont) installBundledFont(p.dir, heroFont)
   const indexFile = join(p.dir, 'index.html')
   const html = readFileSync(indexFile, 'utf8')
   const built = buildCaptions(p, cfg, html)

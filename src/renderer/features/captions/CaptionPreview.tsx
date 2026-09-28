@@ -1,10 +1,14 @@
 import type { CSSProperties, ReactElement } from 'react'
-import { captionLook, captionTextShadow } from '../../../shared/captions'
+import { captionLook, captionTextShadow, scatterLayout } from '../../../shared/captions'
 import type { CaptionConfig, CaptionGroup, ProjectFontFace } from '../../../shared/types'
 import { cn } from '../../lib/cn'
 import { useLoopTime } from './preview-lib'
 
 // ------------------------------------------------------------------ the preview
+
+/** The frame the preview stands in for, in 1080-short-side units (only the aspect matters). */
+const frameDims = (portrait: boolean): { w: number; h: number } =>
+  portrait ? { w: (1080 * 9) / 16, h: 1080 } : { w: (1080 * 16) / 9, h: 1080 }
 
 /**
  * Plays caption lines in a style, the way the composition Luca writes will: the same look (style
@@ -62,6 +66,8 @@ export function CaptionPreview({
     textAlign: 'center'
   }
   const activeWord = g ? g.words.reduce((a, w, j) => (t >= w.start ? j : a), -1) : -1
+  const scatter =
+    look.layout === 'scatter' && g ? scatterLayout(g, look, cfg, frameDims(portrait), gi) : null
   const pos =
     cfg.position === 'top'
       ? 'items-start'
@@ -86,7 +92,41 @@ export function CaptionPreview({
         className={cn('absolute inset-0 flex justify-center', pos)}
         style={{ paddingTop: pad, paddingBottom: pad, paddingLeft: '6%', paddingRight: '6%' }}
       >
-        {g ? (
+        {g && scatter ? (
+          <div className="absolute inset-0">
+            {g.words.map((w, j) => {
+              const p = scatter[j]
+              if (!p) return null
+              const hero = look.hero
+              const ws: CSSProperties = {
+                position: 'absolute',
+                left: `${p.x * 100}%`,
+                top: `${p.y * 100}%`,
+                transform:
+                  p.align === 'left'
+                    ? 'translate(0,-50%)'
+                    : p.align === 'right'
+                      ? 'translate(-100%,-50%)'
+                      : 'translate(-50%,-50%)',
+                whiteSpace: 'nowrap',
+                fontFamily: `'${p.hero ? (hero?.font ?? cfg.font) : cfg.font}', Inter, sans-serif`,
+                fontWeight: p.hero ? (hero?.weight ?? 900) : look.weight,
+                fontStyle: look.italic ? 'italic' : 'normal',
+                fontSize: Math.max(7, p.size * k),
+                lineHeight: p.hero ? 0.95 : 1.1,
+                letterSpacing: p.hero ? `${hero?.letterSpacing ?? -0.02}em` : 0,
+                color: p.hero ? (hero?.color ?? look.color) : look.color,
+                textTransform: (p.hero ? hero?.uppercase : cfg.uppercase) ? 'uppercase' : 'none',
+                textShadow: shadow || undefined
+              }
+              return (
+                <span key={j} style={ws}>
+                  {w.text}
+                </span>
+              )
+            })}
+          </div>
+        ) : g ? (
           <div key={gi} className={`cap-enter cap-enter-${look.anim}`} style={lineStyle}>
             {g.words.map((w, j) => {
               const on = j === activeWord

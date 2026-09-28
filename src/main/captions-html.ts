@@ -4,6 +4,7 @@ import {
   captionStyle,
   captionTextShadow,
   round,
+  scatterLayout,
   type CaptionLook,
   type SpeechClip
 } from '../shared/captions'
@@ -53,13 +54,39 @@ function css(look: CaptionLook, cfg: CaptionConfig, d: { w: number; h: number })
         ${box ? `background: ${box.bg}; border-radius: ${radius}; padding: ${box.padding};` : ''}
         overflow: visible;
       }
-      ${s} .w { display: inline-block; ${look.wordBox ? 'padding: 0.02em 0.16em; border-radius: 0.2em;' : ''} }`
+      ${s} .w { display: inline-block; ${look.wordBox ? 'padding: 0.02em 0.16em; border-radius: 0.2em;' : ''} }
+      ${scatterCss(look, cfg, d)}
+    `
+}
+
+/** The scatter layout's own rules: each word is a span pinned to its slot on the stage. */
+function scatterCss(look: CaptionLook, cfg: CaptionConfig, d: { w: number; h: number }): string {
+  if (look.layout !== 'scatter') return ''
+  const hero = look.hero
+  const s = `[data-composition-id="${HOST_ID}"]`
+  const shadow = captionTextShadow(look, Math.min(d.w, d.h) / 1080)
+  return `
+      ${s} .w {
+        position: absolute; white-space: nowrap; opacity: 0; line-height: 1.1;
+        font-family: '${cfg.font}', 'Inter', sans-serif; font-weight: ${look.weight};
+        font-style: ${look.italic ? 'italic' : 'normal'}; color: ${look.color};
+        text-transform: ${cfg.uppercase ? 'uppercase' : 'none'};
+        ${shadow ? `text-shadow: ${shadow};` : ''}
+      }
+      ${s} .hw {
+        font-family: '${hero?.font ?? cfg.font}', 'Inter', sans-serif;
+        font-weight: ${hero?.weight ?? 900}; line-height: 0.95;
+        color: ${hero?.color ?? look.color};
+        text-transform: ${hero?.uppercase ? 'uppercase' : 'none'};
+        letter-spacing: ${hero?.letterSpacing ?? -0.02}em;
+      }`
 }
 
 function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: number }): string {
   const data = groups.map((g) => [g.start, g.end, g.words.map((w) => [w.start, w.end])])
   const opts = {
     anim: look.anim,
+    layout: look.layout,
     color: look.color,
     accent: look.accent,
     active: look.activeText,
@@ -73,6 +100,10 @@ function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: nu
         var O = ${JSON.stringify(opts)};
         var tl = gsap.timeline({ paused: true });
         var clear = 'rgba(0,0,0,0)';
+        // scatter words are pinned by left/top; gsap owns their transform (align + animation)
+        root.querySelectorAll('.w[data-align]').forEach(function (w) {
+          gsap.set(w, { xPercent: w.dataset.align === 'left' ? 0 : w.dataset.align === 'right' ? -100 : -50, yPercent: -50 });
+        });
         function mark(words, g, on, off) {
           g[2].forEach(function (w, j) {
             if (!words[j]) return;
@@ -92,7 +123,16 @@ function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: nu
           var line = el.querySelector('.cl');
           var words = el.querySelectorAll('.w');
           tl.set(el, { visibility: 'visible', opacity: 1 }, g[0]);
-          switch (O.anim) {
+          if (O.layout === 'scatter') {
+            g[2].forEach(function (w, j) {
+              var span = words[j];
+              if (!span) return;
+              if (span.classList.contains('hw'))
+                tl.fromTo(span, { opacity: 0, scale: 1.18 }, { opacity: 1, scale: 1, duration: 0.22, ease: 'power3.out' }, w[0]);
+              else
+                tl.fromTo(span, { opacity: 0, y: 10 * O.k }, { opacity: 1, y: 0, duration: 0.12, ease: 'power2.out' }, w[0]);
+            });
+          } else switch (O.anim) {
             case 'slide':
               tl.fromTo(line, { opacity: 0, y: 22 * O.k }, { opacity: 1, y: 0, duration: 0.3, ease: 'power3.out' }, g[0]);
               break;
@@ -144,14 +184,30 @@ export function captionsComposition(
 ): string {
   const style = captionStyle(cfg.style)
   const look = captionLook(cfg, faces)
-  const lines = groups
-    .map(
-      (g, i) =>
-        `      <div class="cg" id="lc-${i}"><div class="cl">${g.words
-          .map((w) => `<span class="w">${esc(w.text)}</span>`)
-          .join(' ')}</div></div>`
-    )
-    .join('\n')
+  const k = Math.min(d.w, d.h) / 1080
+  const lines =
+    look.layout === 'scatter'
+      ? groups
+          .map((g, i) => {
+            const spots = scatterLayout(g, look, cfg, d, i)
+            const spans = g.words
+              .map((w, j) => {
+                const p = spots[j]
+                if (!p) return ''
+                return `<span class="w${p.hero ? ' hw' : ''}" data-align="${p.align}" style="left:${round(p.x * 100)}%;top:${round(p.y * 100)}%;font-size:${Math.max(6, Math.round(p.size * k))}px">${esc(w.text)}</span>`
+              })
+              .join('')
+            return `      <div class="cg" id="lc-${i}">${spans}</div>`
+          })
+          .join('\n')
+      : groups
+          .map(
+            (g, i) =>
+              `      <div class="cg" id="lc-${i}"><div class="cl">${g.words
+                .map((w) => `<span class="w">${esc(w.text)}</span>`)
+                .join(' ')}</div></div>`
+          )
+          .join('\n')
   return `<!-- Captions made by Luca (style: ${style.name}${cfg.overrides ? ', customized' : ''}, font: ${cfg.font}). Luca rebuilds this file from the transcript whenever the captions or the clips under them change, so edits here are lost: change captions with the captions_apply tool. -->
 <template id="${HOST_ID}-template">
   <div
