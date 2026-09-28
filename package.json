@@ -44,6 +44,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "@webgpu/types": "^0.1.74",
     "@xzdarcy/react-timeline-editor": "^1.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -64,7 +65,10 @@
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.3.3",
+    "typegpu": "^0.12.6",
     "typescript": "^5.9.3",
+    "unplugin-typegpu": "^0.12.4",
+    "vgpu": "^0.4.1",
     "vite": "^7.2.6",
     "zustand": "^5.0.15"
   }
