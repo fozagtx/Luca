@@ -103,6 +103,13 @@ export function Toolbar(): ReactElement {
         fullscreen ? 'pl-3' : 'pl-[92px]'
       )}
     >
+      {/* The window's drag area is built in page order, and this title inherits the header's
+          drag: it comes first and only as wide as its text, so it never covers a button's
+          no-drag hole (a full-width title after the left buttons made them unclickable). */}
+      <span className="pointer-events-none absolute inset-x-0 mx-auto w-fit max-w-[40%] truncate text-[13px] font-semibold tracking-[-0.01em] text-text">
+        {project?.name ?? 'Luca'}
+      </span>
+
       <div className="flex items-center gap-1">
         <Tip label="Home: close this project" shortcut="⇧⌘W">
           <Button
@@ -132,12 +139,6 @@ export function Toolbar(): ReactElement {
         <div className="mx-1.5 h-4 w-px bg-border" />
         <GeminiButton />
         <Higgsfield />
-      </div>
-
-      <div className="pointer-events-none absolute inset-x-0 flex justify-center">
-        <span className="max-w-[40%] truncate text-[13px] font-semibold tracking-[-0.01em] text-text">
-          {project?.name ?? 'Luca'}
-        </span>
       </div>
 
       <div className="ml-auto flex items-center gap-1">
