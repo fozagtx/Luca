@@ -3,7 +3,7 @@
  * templates, with what Luca is told for each. Shared by the steps (names and blurbs) and main
  * (the guide that goes in the first request and .luca/STYLE.md).
  */
-import { BUILTIN_FONTS, bundledFont } from './captions'
+import { BUILTIN_FONTS, BUNDLED_FONTS, bundledFont } from './captions'
 import type { Aspect, StartStyle, StyleField } from './types'
 
 export type DesignTheme = {
@@ -132,10 +132,8 @@ export const THEMES: DesignTheme[] = [
   }
 ]
 
-/** What each font on the font step is like, in the order it shows them. */
+/** What each built-in font is like, in the order the font step shows them. */
 const FONT_NOTES: [family: string, note: string][] = [
-  ['Helvetica', 'The Swiss classic, clean and neutral'],
-  ['Helvetica Compressed', 'Ultra-condensed poster caps'],
   ['League Gothic', 'Tall and condensed, TikTok headlines'],
   ['Archivo Black', 'Heavy, poster titles'],
   ['Montserrat', 'Geometric and bold'],
@@ -156,9 +154,13 @@ const FONT_NOTES: [family: string, note: string][] = [
   ['Noto Sans JP', 'Japanese-ready sans']
 ]
 
-export const FONTS: { family: string; note: string }[] = FONT_NOTES.filter(
-  ([f]) => BUILTIN_FONTS.some((b) => b.family === f) || bundledFont(f)
-).map(([family, note]) => ({ family, note }))
+/** The font step's choices: the fonts that come with Luca first, then the built-in ones. */
+export const FONTS: { family: string; note: string }[] = [
+  ...BUNDLED_FONTS.map(({ family, note }) => ({ family, note })),
+  ...FONT_NOTES.filter(([f]) => BUILTIN_FONTS.some((b) => b.family === f)).map(
+    ([family, note]) => ({ family, note })
+  )
+]
 
 export type Motion = { id: string; name: string; blurb: string; guide: string }
 

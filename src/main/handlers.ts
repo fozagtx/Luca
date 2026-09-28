@@ -26,6 +26,7 @@ import {
   captionWords,
   FONT_EXT,
   installBundledFont,
+  installUsedBundledFonts,
   projectFonts,
   refreshCaptions,
   removeCaptions
@@ -95,6 +96,15 @@ function followCaptions(p: Project): void {
   }
 }
 
+/** Fonts that come with Luca that a turn used without adding them go in with that turn's version. */
+function followFonts(p: Project): void {
+  try {
+    installUsedBundledFonts(p.dir)
+  } catch (err) {
+    console.warn('[luca] adding fonts that come with Luca failed', err)
+  }
+}
+
 const openDialog = (
   win: BrowserWindow | null,
   opts: Electron.OpenDialogOptions
@@ -149,6 +159,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     // a stopped turn's edits are kept, so they get a checkpoint too (undo takes back just them)
     if (e.isError && !e.stopped) return
     followCaptions(p)
+    followFonts(p)
     checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72)).catch(
       warnCheckpoint
     )
