@@ -1,7 +1,18 @@
+import { is } from '@electron-toolkit/utils'
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import {
+  bundledFont,
+  BUNDLED_FONTS,
   captionStyle,
   cleanCaptionConfig,
   cleanWords,
@@ -169,12 +180,16 @@ function familyFaces(dir: string, family: string): ProjectFontFace[] {
     .map(faceOf)
 }
 
-/** The family as the project or the built-in list spells it, or null when it has neither. */
+/**
+ * The family as the project, the built-in list or the fonts that come with Luca spell it, or null
+ * when none has it.
+ */
 export function knownFont(dir: string, family: string): string | null {
   const want = family.trim().toLowerCase()
   return (
     readFontFiles(dir).find((f) => f.family.toLowerCase() === want)?.family ??
     BUILTIN_FONTS.find((f) => f.family.toLowerCase() === want)?.family ??
+    bundledFont(family)?.family ??
     null
   )
 }
@@ -276,6 +291,89 @@ export async function addFonts(p: Project, files: string[]): Promise<ProjectFont
   writeFontFiles(p.dir, list)
   await checkpoint(p.dir, `Add font${files.length === 1 ? '' : 's'}`)
   return projectFonts(p.dir)
+}
+
+// ------------------------------------------------------------------ fonts that come with Luca
+
+/** resources/fonts/: in the repo while developing, unpacked next to the app once packaged. */
+export function bundledFontsDir(): string {
+  return is.dev
+    ? join(__dirname, '../../resources/fonts')
+    : join(process.resourcesPath, 'app.asar.unpacked/resources/fonts')
+}
+
+/**
+ * Copies a font that comes with Luca into the project the way a font added from a file goes in
+ * (fonts/, .luca/fonts.json, @font-face in index.html), so the project never needs the app's copy.
+ * Files already there are left alone. Returns the family as Luca spells it, or null when no font
+ * that comes with Luca has that name.
+ */
+export function installBundledFont(dir: string, family: string): string | null {
+  const font = bundledFont(family)
+  if (!font) return null
+  const list = readFontFiles(dir)
+  const faces: FontFile[] = font.faces.map((f) => ({
+    family: font.family,
+    ...f,
+    file: `fonts/${f.file}`
+  }))
+  const missing = faces.filter(
+    (f) => !list.some((x) => x.file === f.file) || !existsSync(join(dir, f.file))
+  )
+  if (!missing.length) return font.family
+  mkdirSync(join(dir, 'fonts'), { recursive: true })
+  for (const f of missing)
+    copyFileSync(join(bundledFontsDir(), basename(f.file)), join(dir, f.file))
+  writeFontFiles(dir, [...list.filter((x) => !missing.some((f) => f.file === x.file)), ...missing])
+  return font.family
+}
+
+/** Adds a font by name: one that comes with Luca is copied in, others come from Google Fonts. */
+export async function addFontByName(dir: string, input: string): Promise<string[]> {
+  const bundled = installBundledFont(dir, input)
+  return bundled ? [bundled] : addGoogleFont(dir, input)
+}
+
+/** Every family the project's HTML asks for (CSS font-family, and fontFamily in its scripts). */
+function usedFamilies(dir: string): Set<string> {
+  const comps = join(dir, 'compositions')
+  const files = [
+    join(dir, 'index.html'),
+    ...(existsSync(comps)
+      ? readdirSync(comps)
+          .filter((f) => f.endsWith('.html'))
+          .map((f) => join(comps, f))
+      : [])
+  ]
+  const names = new Set<string>()
+  for (const file of files) {
+    let text: string
+    try {
+      text = readFileSync(file, 'utf8')
+    } catch {
+      continue
+    }
+    // each name in the list: quoted, or bare words (a style attribute's own quote ends it)
+    for (const m of text.matchAll(/(?:font-family|fontFamily)\s*[:=]\s*([^;{}<>\n]+)/gi))
+      for (const n of m[1].matchAll(/(['"])([^'"]+)\1|([A-Za-z][\w -]*)/g))
+        names.add((n[2] ?? n[3]).trim().toLowerCase())
+  }
+  return names
+}
+
+/**
+ * Copies in every font that comes with Luca that the project's HTML uses but doesn't have yet (Luca
+ * can write one without font_add), so exports show it: HyperFrames renders a family nothing
+ * declares as the font it maps the name to, e.g. Helvetica as Inter. Returns the families added.
+ */
+export function installUsedBundledFonts(dir: string): string[] {
+  const used = usedFamilies(dir)
+  const have = new Set(readFontFiles(dir).map((f) => f.file))
+  return BUNDLED_FONTS.filter(
+    (f) =>
+      used.has(f.family.toLowerCase()) &&
+      f.faces.some((x) => !have.has(`fonts/${x.file}`) || !existsSync(join(dir, 'fonts', x.file)))
+  ).flatMap((f) => installBundledFont(dir, f.family) ?? [])
 }
 
 // ------------------------------------------------------------------ Google Fonts
@@ -479,6 +577,8 @@ export async function applyCaptions(
   opts: { checkpoint?: boolean } = {}
 ): Promise<{ lines: number; config: CaptionConfig }> {
   const cfg = cleanCaptionConfig(config)
+  // a font that comes with Luca goes into the project before the captions use it
+  installBundledFont(p.dir, cfg.font)
   const indexFile = join(p.dir, 'index.html')
   const html = readFileSync(indexFile, 'utf8')
   const built = buildCaptions(p, cfg, html)

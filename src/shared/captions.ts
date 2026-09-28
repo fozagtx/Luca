@@ -9,9 +9,9 @@ import type {
 /**
  * Caption engine shared by main (writes the HyperFrames captions composition) and the renderer
  * (live style previews): the style presets and the custom looks on top of them, the fonts
- * HyperFrames embeds on its own (and reading Google Fonts links for the others), the transcript →
- * caption lines pipeline (clean the noise, then group into readable lines) and where those words
- * land on the timeline.
+ * HyperFrames embeds on its own and the ones that come with Luca (and reading Google Fonts links
+ * for the others), the transcript → caption lines pipeline (clean the noise, then group into
+ * readable lines) and where those words land on the timeline.
  */
 
 export type CaptionAnim = CaptionAnimation
@@ -421,6 +421,63 @@ export function isBuiltinFont(family: string): boolean {
   return BUILTIN_FONTS.some((f) => f.family.toLowerCase() === family.toLowerCase())
 }
 
+/**
+ * Fonts that come with Luca (files in resources/fonts/, served to previews at /fonts/). They are
+ * listed next to the built-in fonts, and a project that uses one gets a copy of its files, like a
+ * font added from a file, so its preview and exports never depend on the app. To add one, put its
+ * files in resources/fonts/ and add it here: what the font step says about it, and each file with
+ * the weight and style it answers to. A family that is also built in (Montserrat, Inter…) would
+ * replace the built-in one in every project using it, so a single weight of one gets a name of its
+ * own ("Montserrat Thin").
+ */
+export const BUNDLED_FONTS: { family: string; note: string; faces: ProjectFontFace[] }[] = [
+  {
+    family: 'Helvetica',
+    note: 'The Swiss classic, clean and neutral',
+    faces: [
+      { file: 'Helvetica-Light.ttf', weight: 300, italic: false },
+      { file: 'Helvetica-Oblique.ttf', weight: 400, italic: true },
+      { file: 'Helvetica-Bold.ttf', weight: 700, italic: false },
+      { file: 'Helvetica-BoldOblique.ttf', weight: 700, italic: true }
+    ]
+  },
+  {
+    family: 'Helvetica Compressed',
+    note: 'Ultra-condensed poster caps',
+    faces: [{ file: 'Helvetica-Compressed.otf', weight: 400, italic: false }]
+  },
+  {
+    family: 'Montserrat Thin',
+    note: 'Hairline geometric, airy and light',
+    faces: [{ file: 'Montserrat-Thin.ttf', weight: 100, italic: false }]
+  },
+  {
+    family: 'Montserrat Medium',
+    note: 'Geometric, a touch heavier than regular',
+    faces: [{ file: 'Montserrat-Medium.ttf', weight: 500, italic: false }]
+  },
+  {
+    family: 'Agraham',
+    note: 'Elegant display serif; its numbers are ornaments',
+    faces: [{ file: 'Agraham.otf', weight: 400, italic: false }]
+  },
+  {
+    family: 'Mermaid',
+    note: 'Bold storybook serif',
+    faces: [{ file: 'Mermaid-Bold.ttf', weight: 700, italic: false }]
+  },
+  {
+    family: 'Mermaid Swash Caps',
+    note: 'Mermaid with flourished capitals, for titles',
+    faces: [{ file: 'MermaidSwashCaps-Bold.ttf', weight: 700, italic: false }]
+  }
+]
+
+export function bundledFont(family: string): (typeof BUNDLED_FONTS)[number] | undefined {
+  const want = family.trim().toLowerCase()
+  return BUNDLED_FONTS.find((f) => f.family.toLowerCase() === want)
+}
+
 /** Google Fonts stylesheet for a built-in font (the preview needs it; the render embeds its own). */
 export function googleFontUrl(family: string): string | null {
   const f = BUILTIN_FONTS.find((x) => x.family.toLowerCase() === family.toLowerCase())
@@ -436,8 +493,8 @@ export function googleFontUrl(family: string): string | null {
 /** The closest weight a font actually ships, so a style never asks for a missing face. */
 export function nearestWeight(family: string, wanted: number): number {
   const f = BUILTIN_FONTS.find((x) => x.family.toLowerCase() === family.toLowerCase())
-  if (!f) return wanted
-  const ws = f.weights.split(';').map(Number)
+  const ws = f ? f.weights.split(';').map(Number) : bundledFont(family)?.faces.map((x) => x.weight)
+  if (!ws?.length) return wanted
   return ws.reduce((best, w) => (Math.abs(w - wanted) < Math.abs(best - wanted) ? w : best))
 }
 

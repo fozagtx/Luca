@@ -74,7 +74,9 @@ export class LucaServer {
   private port = 0
   constructor(
     private uiDir: string | null,
-    private resolveProject: ProjectResolver
+    private resolveProject: ProjectResolver,
+    /** The fonts that come with Luca, for previews outside a project. */
+    private fontsDir: string | null = null
   ) {}
 
   get baseUrl(): string {
@@ -163,6 +165,12 @@ export class LucaServer {
         return
       }
       this.sendFile(req, res, dir, rel, { noStore: true })
+      return
+    }
+
+    if (url.pathname.startsWith('/fonts/') && this.fontsDir) {
+      const rel = decodeURIComponent(url.pathname.slice('/fonts/'.length))
+      this.sendFile(req, res, this.fontsDir, rel, {})
       return
     }
 

@@ -25,6 +25,8 @@ import {
   captionState,
   captionWords,
   FONT_EXT,
+  installBundledFont,
+  installUsedBundledFonts,
   projectFonts,
   refreshCaptions,
   removeCaptions
@@ -94,6 +96,15 @@ function followCaptions(p: Project): void {
   }
 }
 
+/** Fonts that come with Luca that a turn used without adding them go in with that turn's version. */
+function followFonts(p: Project): void {
+  try {
+    installUsedBundledFonts(p.dir)
+  } catch (err) {
+    console.warn('[luca] adding fonts that come with Luca failed', err)
+  }
+}
+
 const openDialog = (
   win: BrowserWindow | null,
   opts: Electron.OpenDialogOptions
@@ -148,6 +159,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     // a stopped turn's edits are kept, so they get a checkpoint too (undo takes back just them)
     if (e.isError && !e.stopped) return
     followCaptions(p)
+    followFonts(p)
     checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72)).catch(
       warnCheckpoint
     )
@@ -158,6 +170,14 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     const report = (p: CreateProgress): void => broadcast(Channels.projectCreateProgress, p)
     try {
       const res = await startProject(args, report)
+      // a font picked on the start steps that comes with Luca is in the project before Luca starts
+      if (args.style?.font) {
+        try {
+          installBundledFont(res.project.dir, args.style.font)
+        } catch (err) {
+          console.warn('[luca] adding the start font failed', err)
+        }
+      }
       // the Look goes in before the project opens, so it opens (repo, watcher, Claude) only once;
       // a Look that only partly applied still opens the project, then reports what failed
       let lookError: unknown = null

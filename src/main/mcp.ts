@@ -2,6 +2,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import {
   BUILTIN_FONTS,
+  BUNDLED_FONTS,
   CAPTION_ANIMATIONS,
   CAPTION_STYLES,
   captionStyle,
@@ -10,7 +11,14 @@ import {
 } from '../shared/captions'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
 import type { CaptionConfig } from '../shared/types'
-import { addGoogleFont, applyCaptions, captionState, hasTranscript, knownFont } from './captions'
+import {
+  addFontByName,
+  addGoogleFont,
+  applyCaptions,
+  captionState,
+  hasTranscript,
+  knownFont
+} from './captions'
 import { library } from './library'
 import { HYPERFRAMES } from './env'
 import {
@@ -179,7 +187,8 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'sized for this video, and returns the path to use. ' +
       'captions_apply puts captions of what is said on the video (from the transcript) and changes ' +
       'their look; Luca keeps them in sync with every cut, so never write or edit them by hand. ' +
-      'font_add downloads a Google Fonts font into the project so any text can use it offline. ' +
+      'font_add adds a font that comes with Luca, or downloads a Google Fonts font, into the project ' +
+      'so any text can use it offline. ' +
       'video_generate makes a new video clip with Gemini Omni, or edits or continues a clip in the ' +
       'project, and saves it in media/generated.',
     tools: [
@@ -314,7 +323,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
             .string()
             .optional()
             .describe(
-              `a font family. Built in: ${BUILTIN_FONTS.map((f) => f.family).join(', ')}. Any other Google Fonts family name is downloaded into the project first.`
+              `a font family. Built in: ${BUILTIN_FONTS.map((f) => f.family).join(', ')}. Comes with Luca: ${BUNDLED_FONTS.map((f) => f.family).join(', ')}. Any other Google Fonts family name is downloaded into the project first.`
             ),
           size: z.enum(['sm', 'md', 'lg']).optional(),
           position: z.enum(['bottom', 'middle', 'top']).optional(),
@@ -439,17 +448,17 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       ),
       tool(
         'font_add',
-        'Add a font from Google Fonts to the project: downloads its files so captions, titles and any text can use it, and it shows in the preview and exports without internet. Use it before using any font that is not built in, e.g. when the user pastes a Google Fonts link or names a font. Returns the family names to use in font-family.',
+        `Add a font to the project so captions, titles and any text can use it, and it shows in the preview and exports without internet: one that comes with Luca (${BUNDLED_FONTS.map((f) => f.family).join(', ')}) is copied in, any other is downloaded from Google Fonts. Use it before using any font that is not built in, e.g. when the user pastes a Google Fonts link or names a font. Returns the family names to use in font-family.`,
         {
           font: z
             .string()
             .describe(
-              'a fonts.google.com link, a fonts.googleapis.com stylesheet link (or its <link> code), or a family name like "Bebas Neue"'
+              'the name of a font that comes with Luca, a fonts.google.com link, a fonts.googleapis.com stylesheet link (or its <link> code), or a family name like "Bebas Neue"'
             )
         },
         async ({ font }) => {
           try {
-            const families = await addGoogleFont(projectDir, font)
+            const families = await addFontByName(projectDir, font)
             return text({
               ok: true,
               families,
