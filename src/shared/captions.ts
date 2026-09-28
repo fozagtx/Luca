@@ -9,9 +9,9 @@ import type {
 /**
  * Caption engine shared by main (writes the HyperFrames captions composition) and the renderer
  * (live style previews): the style presets and the custom looks on top of them, the fonts
- * HyperFrames embeds on its own (and reading Google Fonts links for the others), the transcript →
- * caption lines pipeline (clean the noise, then group into readable lines) and where those words
- * land on the timeline.
+ * HyperFrames embeds on its own and the ones that come with Luca (and reading Google Fonts links
+ * for the others), the transcript → caption lines pipeline (clean the noise, then group into
+ * readable lines) and where those words land on the timeline.
  */
 
 export type CaptionAnim = CaptionAnimation
@@ -421,6 +421,33 @@ export function isBuiltinFont(family: string): boolean {
   return BUILTIN_FONTS.some((f) => f.family.toLowerCase() === family.toLowerCase())
 }
 
+/**
+ * Fonts that come with Luca (files in resources/fonts/, served to previews at /fonts/). They are
+ * listed next to the built-in fonts, and a project that uses one gets a copy of its files, like a
+ * font added from a file, so its preview and exports never depend on the app. To add one, put its
+ * files in resources/fonts/ and list each here with the weight and style it answers to.
+ */
+export const BUNDLED_FONTS: { family: string; faces: ProjectFontFace[] }[] = [
+  {
+    family: 'Helvetica',
+    faces: [
+      { file: 'Helvetica-Light.ttf', weight: 300, italic: false },
+      { file: 'Helvetica-Oblique.ttf', weight: 400, italic: true },
+      { file: 'Helvetica-Bold.ttf', weight: 700, italic: false },
+      { file: 'Helvetica-BoldOblique.ttf', weight: 700, italic: true }
+    ]
+  },
+  {
+    family: 'Helvetica Compressed',
+    faces: [{ file: 'Helvetica-Compressed.otf', weight: 400, italic: false }]
+  }
+]
+
+export function bundledFont(family: string): (typeof BUNDLED_FONTS)[number] | undefined {
+  const want = family.trim().toLowerCase()
+  return BUNDLED_FONTS.find((f) => f.family.toLowerCase() === want)
+}
+
 /** Google Fonts stylesheet for a built-in font (the preview needs it; the render embeds its own). */
 export function googleFontUrl(family: string): string | null {
   const f = BUILTIN_FONTS.find((x) => x.family.toLowerCase() === family.toLowerCase())
@@ -436,8 +463,8 @@ export function googleFontUrl(family: string): string | null {
 /** The closest weight a font actually ships, so a style never asks for a missing face. */
 export function nearestWeight(family: string, wanted: number): number {
   const f = BUILTIN_FONTS.find((x) => x.family.toLowerCase() === family.toLowerCase())
-  if (!f) return wanted
-  const ws = f.weights.split(';').map(Number)
+  const ws = f ? f.weights.split(';').map(Number) : bundledFont(family)?.faces.map((x) => x.weight)
+  if (!ws?.length) return wanted
   return ws.reduce((best, w) => (Math.abs(w - wanted) < Math.abs(best - wanted) ? w : best))
 }
 

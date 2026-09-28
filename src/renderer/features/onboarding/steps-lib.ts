@@ -29,7 +29,7 @@ export function highlightOf(t: DesignTheme): CSSProperties {
 }
 
 /** Tall, condensed display faces read best in capitals, the way short videos use them. */
-const CAPS = new Set(['League Gothic', 'Oswald'])
+const CAPS = new Set(['League Gothic', 'Oswald', 'Helvetica Compressed'])
 
 export function fontStyle(family: string, weight = 800): CSSProperties {
   return {
@@ -39,7 +39,7 @@ export function fontStyle(family: string, weight = 800): CSSProperties {
   }
 }
 
-/** Loads a built-in font for previews (from Google Fonts, like Caption Studio). */
+/** Loads a built-in font (from Google Fonts) or one that comes with Luca, like Caption Studio. */
 export function usePreviewFont(family: string | undefined): void {
   useEffect(() => {
     if (family) ensurePreviewFont(family)

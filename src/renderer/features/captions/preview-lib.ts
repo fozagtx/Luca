@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { googleFontUrl } from '../../../shared/captions'
+import { bundledFont, googleFontUrl } from '../../../shared/captions'
 import type { CaptionGroup, ProjectFontFace } from '../../../shared/types'
 
 // ------------------------------------------------------------------ one clock for every preview
@@ -36,30 +36,42 @@ export function useLoopTime(period: number, active = true): number {
 
 const loaded = new Set<string>()
 
+/** Each face from its URL, with its weight, style and characters. */
+function loadFaces(family: string, faces: ProjectFontFace[], url: (file: string) => string): void {
+  for (const f of faces) {
+    const src = url(f.file)
+    const key = `${family}|${src}`
+    if (loaded.has(key)) continue
+    loaded.add(key)
+    const face = new FontFace(family, `url(${src})`, {
+      weight: f.weightMax ? `${f.weight} ${f.weightMax}` : String(f.weight),
+      style: f.italic ? 'italic' : 'normal',
+      ...(f.unicodeRange ? { unicodeRange: f.unicodeRange } : {})
+    })
+    void face
+      .load()
+      .then((x) => document.fonts.add(x))
+      .catch(() => loaded.delete(key))
+  }
+}
+
 /**
- * Google Fonts stylesheet for a built-in font, or a project font's files via the Luca server,
- * each with its weight, style and characters so the preview picks the same file the video does.
+ * Google Fonts stylesheet for a built-in font, the app's files for a font that comes with Luca, or
+ * a project font's files via the Luca server, each with its weight, style and characters so the
+ * preview picks the same file the video does.
  */
 export function ensurePreviewFont(
   family: string,
   projectId?: string,
   faces?: ProjectFontFace[]
 ): void {
+  const bundled = bundledFont(family)
+  if (bundled) {
+    loadFaces(bundled.family, bundled.faces, (file) => `/fonts/${encodeURIComponent(file)}`)
+    return
+  }
   if (faces?.length && projectId) {
-    for (const f of faces) {
-      const key = `${family}|${f.file}`
-      if (loaded.has(key)) continue
-      loaded.add(key)
-      const face = new FontFace(family, `url(/p/${encodeURIComponent(projectId)}/${f.file})`, {
-        weight: f.weightMax ? `${f.weight} ${f.weightMax}` : String(f.weight),
-        style: f.italic ? 'italic' : 'normal',
-        ...(f.unicodeRange ? { unicodeRange: f.unicodeRange } : {})
-      })
-      void face
-        .load()
-        .then((x) => document.fonts.add(x))
-        .catch(() => loaded.delete(key))
-    }
+    loadFaces(family, faces, (file) => `/p/${encodeURIComponent(projectId)}/${file}`)
     return
   }
   const key = `${family}|`

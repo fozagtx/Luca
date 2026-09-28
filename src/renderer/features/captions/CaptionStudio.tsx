@@ -14,8 +14,10 @@ import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 
 import { toast } from 'sonner'
 import {
   BUILTIN_FONTS,
+  BUNDLED_FONTS,
   CAPTION_STYLES,
   SAMPLE_WORDS,
+  bundledFont,
   captionLook,
   captionStyle,
   cleanWords,
@@ -68,9 +70,10 @@ function splitColor(c: string): { hex: string; alpha: number } {
 }
 
 /**
- * Captions in three moves: scroll the styles and pick one, choose a font (a built-in one or your
- * own file), put them on the timeline. The words come from the transcript, cleaned of fillers,
- * stutters and false starts; Luca writes them as a HyperFrames captions composition.
+ * Captions in three moves: scroll the styles and pick one, choose a font (a built-in one, one that
+ * comes with Luca or your own file), put them on the timeline. The words come from the transcript,
+ * cleaned of fillers, stutters and false starts; Luca writes them as a HyperFrames captions
+ * composition.
  */
 export function CaptionStudio(): ReactElement {
   const open = useUi((s) => s.captionsOpen)
@@ -124,6 +127,7 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
   // every preview font, loaded once
   useEffect(() => {
     for (const s of CAPTION_STYLES) ensurePreviewFont(s.font)
+    for (const f of BUNDLED_FONTS) ensurePreviewFont(f.family)
     for (const f of state?.fonts ?? []) ensurePreviewFont(f.family, project.id, f.faces)
   }, [state, project.id])
 
@@ -286,7 +290,10 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
 
   const set = (patch: Partial<CaptionConfig>): void => setCfg({ ...cfg, ...patch })
   const style = captionStyle(cfg.style)
-  const faces = state.fonts.find((f) => f.family === cfg.font)?.faces
+  // a font that comes with Luca has the same faces before and after it goes into the project
+  const faces =
+    state.fonts.find((f) => f.family === cfg.font)?.faces ?? bundledFont(cfg.font)?.faces
+  const ownFonts = state.fonts.filter((f) => f.file && !bundledFont(f.family))
   const look = captionLook(cfg, faces)
   /** Change one custom value; undefined puts the style's own back. */
   const custom = (patch: CaptionOverrides): void => {
@@ -382,15 +389,22 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
             style={{ fontFamily: `'${cfg.font}', Inter, sans-serif` }}
             className="h-8 min-w-0 flex-1 rounded-[8px] border border-border bg-bg px-2.5 text-[13px] text-text outline-none hover:border-border-strong"
           >
-            {state.fonts.some((f) => f.file) ? (
+            {ownFonts.length ? (
               <optgroup label="Your fonts">
-                {state.fonts
-                  .filter((f) => f.file)
-                  .map((f) => (
-                    <option key={f.family} value={f.family}>
-                      {f.family}
-                    </option>
-                  ))}
+                {ownFonts.map((f) => (
+                  <option key={f.family} value={f.family}>
+                    {f.family}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            {BUNDLED_FONTS.length ? (
+              <optgroup label="Included with Luca">
+                {BUNDLED_FONTS.map((f) => (
+                  <option key={f.family} value={f.family}>
+                    {f.family}
+                  </option>
+                ))}
               </optgroup>
             ) : null}
             <optgroup label="Built in (embedded in exports)">

@@ -1,6 +1,7 @@
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
 import { basename, extname, join } from 'node:path'
+import { bundledFontsDir } from './captions'
 import { registerHandlers } from './handlers'
 import { Channels, broadcast } from './ipc'
 import { buildAppMenu } from './menu'
@@ -13,10 +14,14 @@ import { startUpdates } from './updater'
 import { cancelVoice } from './voice'
 import { stopWatching } from './watcher'
 
-export const server = new LucaServer(is.dev ? null : join(__dirname, '../renderer'), (id) => {
-  const p = currentProject()
-  return p && p.id === id ? p.dir : null
-})
+export const server = new LucaServer(
+  is.dev ? null : join(__dirname, '../renderer'),
+  (id) => {
+    const p = currentProject()
+    return p && p.id === id ? p.dir : null
+  },
+  bundledFontsDir()
+)
 
 let mainWindow: BrowserWindow | null = null
 let pendingOpenFile: string | null = null
