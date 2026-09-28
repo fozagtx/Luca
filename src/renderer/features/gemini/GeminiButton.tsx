@@ -112,7 +112,7 @@ export function GeminiButton(): ReactElement {
         </Popover.Trigger>
       </Tip>
       <Popover.Portal>
-        <Popover.Positioner sideOffset={8} align="start" className="z-50">
+        <Popover.Positioner sideOffset={8} align="start" className="no-drag z-50">
           <Popover.Popup
             className={cn(
               'w-[340px] rounded-[10px] border border-border bg-bg p-3 text-[11.5px] leading-[1.45] text-text-2 shadow-popover outline-none',

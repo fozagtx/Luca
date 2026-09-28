@@ -62,7 +62,7 @@ export function HistoryPopover(): ReactElement {
         </Popover.Trigger>
       </Tip>
       <Popover.Portal>
-        <Popover.Positioner sideOffset={8} align="end" className="z-50">
+        <Popover.Positioner sideOffset={8} align="end" className="no-drag z-50">
           <Popover.Popup
             className={cn(
               'w-[340px] rounded-[10px] border border-border bg-bg shadow-popover outline-none',
