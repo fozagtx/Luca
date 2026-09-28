@@ -33,6 +33,7 @@ import type {
   Timeline,
   TimelineEdit,
   Transcript,
+  UpdateStatus,
   VoiceEvent
 } from './types'
 
@@ -140,6 +141,19 @@ export type LucaApi = {
     hasKey: () => Promise<boolean>
     /** Checks the key with Google and saves it (empty removes it); rejects when Google refuses it. */
     setKey: (key: string) => Promise<boolean>
+  }
+  /** Luca updating itself from its GitHub releases. */
+  updates: {
+    status: () => Promise<UpdateStatus>
+    /** Ask GitHub now (a newer Luca starts downloading at once). */
+    check: () => Promise<UpdateStatus>
+    /** Quit and open the downloaded Luca; rejects while an export or Luca's work is running. */
+    install: () => Promise<void>
+    /** Checks the token with GitHub and saves it (empty removes it); rejects when GitHub refuses it. */
+    setToken: (token: string) => Promise<UpdateStatus>
+    /** Move Luca to Applications (it opens again from there). */
+    moveToApplications: () => Promise<boolean>
+    onStatus: (cb: (s: UpdateStatus) => void) => Unsubscribe
   }
   clean: {
     run: () => Promise<void>

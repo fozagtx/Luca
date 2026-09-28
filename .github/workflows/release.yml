@@ -1,12 +1,22 @@
 name: Release
 
+# Every push to main builds the Mac app and publishes it as the latest release; Luca finds it,
+# downloads it in the background and offers to restart into it (src/main/updater.ts).
 on:
   push:
+    branches: [main]
     tags: ['v*']
+    # only docs changed: nothing to ship (tag pushes build regardless)
+    paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
 
 permissions:
   contents: write
+
+# one release at a time, in order; of several pushes waiting, only the newest is built
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   mac:
@@ -17,20 +27,60 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Version
+        id: version
+        # a v* tag is its own version; main builds count up from package.json's major.minor
+        # (0.1.0 → 0.1.<run>), so every build is newer than the last and Luca offers it
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="$(node -p "require('./package.json').version.split('.').slice(0, 2).join('.')").$GITHUB_RUN_NUMBER"
+          fi
+          npm version "$v" --no-git-tag-version --allow-same-version
+          echo "version=$v" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm run dist
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Update manifest
+        # what Luca reads to update itself: the version, and the zip's size and SHA-512
+        run: |
+          node -e '
+            const fs = require("fs")
+            const crypto = require("crypto")
+            const zip = fs.readdirSync("dist").find((f) => f.endsWith(".zip"))
+            if (!zip) throw new Error("no zip in dist")
+            const buf = fs.readFileSync(`dist/${zip}`)
+            const manifest = {
+              version: process.env.VERSION,
+              file: zip,
+              size: buf.length,
+              sha512: crypto.createHash("sha512").update(buf).digest("hex"),
+              date: new Date().toISOString()
+            }
+            fs.writeFileSync("dist/latest-mac.json", JSON.stringify(manifest, null, 2))
+            console.log(manifest)
+          '
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
       - uses: actions/upload-artifact@v4
         with:
           name: luca-mac-arm64
           path: |
             dist/*.dmg
             dist/*.zip
+            dist/latest-mac.json
+      # a manual run on another branch only builds; releases come from main and v* tags
       - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Luca ${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          generate_release_notes: true
           files: |
             dist/*.dmg
             dist/*.zip
-          generate_release_notes: true
+            dist/latest-mac.json

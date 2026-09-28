@@ -23,6 +23,8 @@ import { NewProjectSheet } from './features/onboarding/NewProjectSheet'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Timeline } from './features/timeline/Timeline'
 import { Toolbar } from './features/toolbar/Toolbar'
+import { UpdatesSheet } from './features/updates/Updates'
+import { useUpdateNotices } from './features/updates/useUpdateNotices'
 import { Transport } from './features/viewer/Transport'
 import { Viewer } from './features/viewer/Viewer'
 import { cn } from './lib/cn'
@@ -100,6 +102,7 @@ export default function App(): ReactElement {
   const projectDir = useProject((s) => s.project?.dir ?? null)
   const hasProject = projectDir !== null
   useShortcuts()
+  useUpdateNotices()
 
   // the chat panel unmounts when hidden, so the draft's project is tracked here
   useEffect(() => {
@@ -235,6 +238,7 @@ export default function App(): ReactElement {
       <ShortcutsSheet />
       <CaptionStudio />
       <BackgroundSheet />
+      <UpdatesSheet />
       <Toaster
         position="top-center"
         offset={60}

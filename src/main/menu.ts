@@ -15,6 +15,7 @@ export function buildAppMenu(): void {
       label: app.name,
       submenu: [
         { role: 'about' },
+        { label: 'Check for Updates…', click: () => send('check-updates') },
         { type: 'separator' },
         { label: 'Settings…', accelerator: 'Cmd+,', click: () => send('settings') },
         { type: 'separator' },

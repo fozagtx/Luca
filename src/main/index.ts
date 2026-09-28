@@ -9,6 +9,7 @@ import { DEV_PORT, LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, setCurrentProject } from './state'
 import { loginShellPath, prewarmHyperframes } from './env'
+import { startUpdates } from './updater'
 import { cancelVoice } from './voice'
 import { stopWatching } from './watcher'
 
@@ -115,6 +116,7 @@ app.whenReady().then(async () => {
   await server.start(is.dev ? DEV_PORT : 0)
   registerHandlers(() => mainWindow, server)
   buildAppMenu()
+  startUpdates()
 
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
 

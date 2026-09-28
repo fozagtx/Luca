@@ -49,6 +49,13 @@ import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
 import { hasGeminiKey, saveGeminiKey } from './gemini'
 import { hasPexelsKey, homeBackground, savePexelsKey, searchBackgrounds } from './pexels'
 import {
+  checkForUpdates,
+  installUpdate,
+  moveToApplications,
+  saveUpdateToken,
+  updateStatus
+} from './updater'
+import {
   AUDIO_EXT,
   forgetRecent,
   IMAGE_EXT,
@@ -311,6 +318,13 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   // video generation (Gemini)
   handle(Channels.geminiHasKey, hasGeminiKey)
   handle(Channels.geminiSetKey, (key: string) => saveGeminiKey(key))
+
+  // updates (GitHub releases)
+  handle(Channels.updatesStatus, updateStatus)
+  handle(Channels.updatesCheck, checkForUpdates)
+  handle(Channels.updatesInstall, installUpdate)
+  handle(Channels.updatesSetToken, (token: string) => saveUpdateToken(token))
+  handle(Channels.updatesMove, moveToApplications)
 
   // backgrounds (Pexels)
   handle(Channels.backgroundsHasKey, hasPexelsKey)

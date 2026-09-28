@@ -31,7 +31,9 @@ npm install -g @anthropic-ai/claude-code
 claude          # then type /login and sign in with your Claude subscription
 ```
 
-Then download the latest `luca-<version>-arm64.dmg` from [Releases](https://github.com/fozagtx/Luca/releases) (Apple silicon, macOS 13+). The build isn’t signed yet: the first time, right-click `Luca.app` → **Open**, or allow it under System Settings → Privacy & Security.
+Then download the latest `luca-<version>-arm64.dmg` from [Releases](https://github.com/fozagtx/Luca/releases) (Apple silicon, macOS 13+) and drag Luca to Applications. The build isn’t signed yet: the first time, right-click `Luca.app` → **Open**, or allow it under System Settings → Privacy & Security.
+
+That’s the only download: Luca keeps itself up to date. It looks for a newer version when it starts, every 15 minutes and when you come back to it, downloads it in the background and says **Luca x.y.z is ready** with a Restart button (or it goes in when you quit). **Luca → Check for Updates…** checks right away. While the repository is private, GitHub shows its releases only with a token: make a [fine-grained token](https://github.com/settings/personal-access-tokens/new) for this repository with read-only Contents and paste it in Check for Updates….
 
 Optional keys, all entered inside the app and kept in the macOS Keychain:
 
@@ -122,6 +124,8 @@ npm run typecheck && npm run lint
 npm run dist       # unsigned .dmg + .zip in dist/
 ```
 
+**Releases.** Every push to `main` (except docs-only changes) builds the app on GitHub Actions and publishes it as the latest release, `v0.1.<run number>`: the dmg, the zip and `latest-mac.json` (the zip’s version, size and SHA-512), which is what running copies update from. A `v*` tag releases that exact version instead. Bump `major.minor` in `package.json` to start a new series; the patch number is the build’s. Updates only reach an installed app: `npm run dev` never updates itself.
+
 <details>
 <summary><b>How it works</b> (for developers)</summary>
 
@@ -136,6 +140,7 @@ The app itself never names the tools below; they are here for people building Lu
 - **Start steps and templates.** The themes, fonts (the built-in HyperFrames fonts), motion styles, keyframe eases and templates live in `src/shared/styles.ts`, with what Luca is told for each. The picks go to `startProject`, which saves them as `.luca/STYLE.md` and adds them to the first request; later turns point Luca back to that file (an applied Look still wins). Template example videos go in `src/renderer/assets/templates/` named after the template's id (`tiktok-viral.mp4`, `explainer-viral.mp4`) and are picked up automatically; see the README there.
 - **Git is the version store.** Each agent turn or manual edit becomes a commit; History restores any checkpoint.
 - **Voice** is AssemblyAI streaming speech-to-text with the Universal-3.5 Pro model (`universal-3-5-pro`) over WebSocket. The renderer captures the mic in an AudioWorklet (16 kHz PCM, 50 ms chunks) and streams it over IPC to main, which holds the socket, so the key never reaches the renderer. Dictation and voice mode both put what was said in the request queue (`src/renderer/stores/queue.ts`) for approval; approved requests go to Luca one at a time when it is free, and in voice mode the reply is read aloud sentence by sentence with the system voice (`src/renderer/lib/speech.ts` is the seam to bring your own TTS). The voice orb is shadercn's ORB-07 on WebGPU (`src/renderer/components/orbs/`, rendered with vgpu and TypeGPU); its shader is by XorDev, for non-commercial use with attribution, and the level meter stands in where WebGPU is unavailable.
+- **Updates** (`src/main/updater.ts`) come from GitHub Releases through the REST API (with the saved token for a private repository; the file downloads go to GitHub’s storage without it). The build isn’t signed, and Electron’s Squirrel updater installs only signed apps, so Luca checks the zip against `latest-mac.json`, unpacks it with `ditto` into `~/Library/Application Support/Luca/updates/` and, once Luca has quit, a small script swaps the app bundle and opens it again (putting the old one back if anything fails; `updates/install.log` says what happened). An app running from the disk image or Downloads is offered a move to Applications first.
 - **Export** runs `@hyperframes/producer` in an Electron `utilityProcess` (parallel workers sized to the Mac, VideoToolbox) and writes `renders/<name>-<date>.mp4`.
 - **UI**: React 19, TypeScript, Tailwind v4, shadcn Base UI, three resizable panes (Inspiration/Catalog/Transcript/Looks · Preview/Timeline · Chat); the sidebar starts hidden (⇧⌘S) and stays hidden on Home, where the start steps take its place. Chat patterns (shimmering status text, steps, prompt input, suggestions, scroll button) are adapted from [prompt-kit](https://www.prompt-kit.com/) (MIT).
 
