@@ -4,6 +4,7 @@ import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { stopLuca } from '../../stores/queue'
 import { useTimeline } from '../../stores/timeline'
+import { useUpdates } from '../../stores/updates'
 import { useVoice } from '../../stores/voice'
 import { useUi, type SidebarTab } from '../../stores/ui'
 import { goHome } from './go-home'
@@ -246,6 +247,9 @@ export function useShortcuts(): void {
           break
         case 'settings':
           ui.setSettings(true)
+          break
+        case 'check-updates':
+          void useUpdates.getState().check()
           break
         case 'clean-edit':
           ui.setTab('transcript')

@@ -95,6 +95,14 @@ const api: LucaApi = {
     hasKey: () => invoke(C.geminiHasKey),
     setKey: (key) => invoke(C.geminiSetKey, key)
   },
+  updates: {
+    status: () => invoke(C.updatesStatus),
+    check: () => invoke(C.updatesCheck),
+    install: () => invoke(C.updatesInstall),
+    setToken: (token) => invoke(C.updatesSetToken, token),
+    moveToApplications: () => invoke(C.updatesMove),
+    onStatus: (cb) => on(C.updatesStatusPush, cb)
+  },
   clean: {
     run: () => invoke(C.cleanRun),
     applyEdl: (edl) => invoke(C.cleanApplyEdl, edl),

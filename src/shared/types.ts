@@ -254,6 +254,36 @@ export type ExportProgress = {
   error?: string
 }
 
+/** Luca updating itself from its GitHub releases. */
+export type UpdateStatus = {
+  /** This Luca's version. */
+  current: string
+  /**
+   * off: a development build (or not a Mac); available: a newer Luca is out but can't be
+   * installed from where this one runs (see needsMove); ready: downloaded, installs on restart.
+   */
+  state: 'off' | 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'
+  /** The newer version found. */
+  version?: string
+  /** 0..1 while downloading. */
+  progress?: number
+  /** What's new in it (the release notes, Markdown). */
+  notes?: string
+  /** The release on GitHub. */
+  url?: string
+  /** Why updates are off, or what went wrong. */
+  message?: string
+  /** GitHub shows the releases only with a token (the repository is private). */
+  needsToken?: boolean
+  /** Luca runs from somewhere it can't replace itself (the disk image, Downloads). */
+  needsMove?: boolean
+  hasToken: boolean
+  /** When GitHub was last asked (ms). */
+  checkedAt?: number
+  /** The version this Luca replaced, on its first start after an update. */
+  updatedFrom?: string
+}
+
 export type EnvStatus = {
   node: { ok: boolean; version: string }
   claude: { ok: boolean; path: string | null; loggedIn: boolean | null }
@@ -275,6 +305,8 @@ export type Settings = {
   window?: { x?: number; y?: number; width: number; height: number }
   panes?: Record<string, number[]>
   alwaysAllow?: Record<string, string[]>
+  /** The version that last ran, to tell when Luca was updated. */
+  lastVersion?: string
 }
 
 export type TimelineEdit =

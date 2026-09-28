@@ -8,6 +8,7 @@ import {
   House,
   Mic,
   Moon,
+  RefreshCw,
   Palette,
   Plus,
   Scissors,
@@ -20,6 +21,7 @@ import { luca } from '../../lib/luca'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
+import { useUpdates } from '../../stores/updates'
 import { useVoice } from '../../stores/voice'
 import { goHome } from './go-home'
 
@@ -147,6 +149,12 @@ export function CommandPalette(): ReactElement {
       icon: <Clock size={14} strokeWidth={1.5} />,
       run: () => ui.setGoto(true),
       needsProject: true
+    },
+    {
+      id: 'updates',
+      label: 'Check for Updates…',
+      icon: <RefreshCw size={14} strokeWidth={1.5} />,
+      run: () => void useUpdates.getState().check()
     }
   ]
 
