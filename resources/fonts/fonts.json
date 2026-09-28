@@ -1,0 +1,47 @@
+{
+  "notes": {
+    "Helvetica": "The Swiss classic, clean and neutral",
+    "Helvetica Compressed": "Ultra-condensed poster caps",
+    "Montserrat Thin": "Hairline geometric, airy and light",
+    "Montserrat Medium": "Geometric, a touch heavier than regular",
+    "Agraham": "Elegant display serif; its numbers are ornaments",
+    "Mermaid": "Bold storybook serif",
+    "Mermaid Swash Caps": "Mermaid with flourished capitals, for titles",
+    "Bebas Neue": "Tall all-caps grotesque, made for headlines",
+    "Cralika": "Sharp editorial serif with a fashion edge",
+    "Gellisto": "Friendly rounded script, hand-lettered feel",
+    "Gontserrat": "Full Montserrat-style geometric family, thin to black",
+    "Helvetica Rounded": "Helvetica's bold cut with softened corners",
+    "Loki Cola": "Spencerian soda-script classic",
+    "Min Sans": "Modern geometric sans, dense and even",
+    "Red Hat Display": "Crisp open sans for titles and big words",
+    "Red Hat Text": "Readable open sans for smaller sizes"
+  },
+  "families": {
+    "Helvetica-Light.ttf": "Helvetica",
+    "Gontserrat-Black.ttf": "Gontserrat",
+    "Gontserrat-BlackItalic.ttf": "Gontserrat",
+    "Gontserrat-ExtraBold.ttf": "Gontserrat",
+    "Gontserrat-ExtraBoldItalic.ttf": "Gontserrat",
+    "Gontserrat-ExtraLight.ttf": "Gontserrat",
+    "Gontserrat-ExtraLightItalic.ttf": "Gontserrat",
+    "Gontserrat-Light.ttf": "Gontserrat",
+    "Gontserrat-LightItalic.ttf": "Gontserrat",
+    "Gontserrat-Medium.ttf": "Gontserrat",
+    "Gontserrat-MediumItalic.ttf": "Gontserrat",
+    "Gontserrat-SemiBold.ttf": "Gontserrat",
+    "Gontserrat-SemiBoldItalic.ttf": "Gontserrat",
+    "Gontserrat-Thin.ttf": "Gontserrat",
+    "Gontserrat-ThinItalic.ttf": "Gontserrat"
+  },
+  "weights": {
+    "Helvetica-Compressed.otf": 400,
+    "Helvetica-Light.ttf": 300,
+    "Montserrat-Thin.ttf": 100,
+    "Mermaid-Regular.ttf": 400,
+    "Gontserrat-Thin.ttf": 100,
+    "Gontserrat-ThinItalic.ttf": 100,
+    "Gontserrat-ExtraLight.ttf": 200,
+    "Gontserrat-ExtraLightItalic.ttf": 200
+  }
+}
