@@ -96,21 +96,16 @@ export function Toolbar(): ReactElement {
   const toggleGrab = usePlayer((s) => s.toggleGrab)
 
   return (
-    <header
-      className={cn(
-        'drag-region relative flex h-[52px] shrink-0 items-center bg-bg pr-3 transition-[padding] duration-200',
-        // room for the traffic lights, which macOS hides in fullscreen
-        fullscreen ? 'pl-3' : 'pl-[92px]'
-      )}
-    >
-      {/* The window's drag area is built in page order, and this title inherits the header's
-          drag: it comes first and only as wide as its text, so it never covers a button's
-          no-drag hole (a full-width title after the left buttons made them unclickable). */}
-      <span className="pointer-events-none absolute inset-x-0 mx-auto w-fit max-w-[40%] truncate text-[13px] font-semibold tracking-[-0.01em] text-text">
-        {project?.name ?? 'Luca'}
-      </span>
-
-      <div className="flex items-center gap-1">
+    // Three columns so the title never lies over a button. An element on top of a button that
+    // carries the bar's window-drag region makes macOS drag the window instead of clicking it.
+    <header className="drag-region grid h-[52px] shrink-0 grid-cols-[1fr_auto_1fr] items-center bg-bg">
+      <div
+        className={cn(
+          'flex items-center gap-1 transition-[padding] duration-200',
+          // room for the traffic lights, which macOS hides in fullscreen
+          fullscreen ? 'pl-3' : 'pl-[92px]'
+        )}
+      >
         <Tip label="Home: close this project" shortcut="⇧⌘W">
           <Button
             variant="icon"
@@ -141,7 +136,11 @@ export function Toolbar(): ReactElement {
         <Higgsfield />
       </div>
 
-      <div className="ml-auto flex items-center gap-1">
+      <span className="max-w-[40vw] min-w-0 truncate px-3 text-[13px] font-semibold tracking-[-0.01em] text-text">
+        {project?.name ?? 'Luca'}
+      </span>
+
+      <div className="flex items-center justify-end gap-1 pr-3">
         <Tip label="Grab an element or frame" shortcut="G">
           <Button
             variant="ghost"
