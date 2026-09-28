@@ -96,14 +96,16 @@ export function Toolbar(): ReactElement {
   const toggleGrab = usePlayer((s) => s.toggleGrab)
 
   return (
-    <header
-      className={cn(
-        'drag-region relative flex h-[52px] shrink-0 items-center bg-bg pr-3 transition-[padding] duration-200',
-        // room for the traffic lights, which macOS hides in fullscreen
-        fullscreen ? 'pl-3' : 'pl-[92px]'
-      )}
-    >
-      <div className="flex items-center gap-1">
+    // Three columns so the title never lies over a button. An element on top of a button that
+    // carries the bar's window-drag region makes macOS drag the window instead of clicking it.
+    <header className="drag-region grid h-[52px] shrink-0 grid-cols-[1fr_auto_1fr] items-center bg-bg">
+      <div
+        className={cn(
+          'flex items-center gap-1 transition-[padding] duration-200',
+          // room for the traffic lights, which macOS hides in fullscreen
+          fullscreen ? 'pl-3' : 'pl-[92px]'
+        )}
+      >
         <Tip label="Home: close this project" shortcut="⇧⌘W">
           <Button
             variant="icon"
@@ -134,13 +136,11 @@ export function Toolbar(): ReactElement {
         <Higgsfield />
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 flex justify-center">
-        <span className="max-w-[40%] truncate text-[13px] font-semibold tracking-[-0.01em] text-text">
-          {project?.name ?? 'Luca'}
-        </span>
-      </div>
+      <span className="max-w-[40vw] min-w-0 truncate px-3 text-[13px] font-semibold tracking-[-0.01em] text-text">
+        {project?.name ?? 'Luca'}
+      </span>
 
-      <div className="ml-auto flex items-center gap-1">
+      <div className="flex items-center justify-end gap-1 pr-3">
         <Tip label="Grab an element or frame" shortcut="G">
           <Button
             variant="ghost"
