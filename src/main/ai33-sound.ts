@@ -31,7 +31,7 @@ import {
   type Ai33ErrorKind
 } from './ai33-client'
 import type { MakeCtx, ProgressFn, SpendCtx } from './ai33-ctx'
-import { find, inflight } from './ai33-jobs'
+import { find, inflight, markCollected } from './ai33-jobs'
 import { holdSpend, lostRecently, mayHaveBeenCharged, settleSpend } from './ai33-spend'
 import { findTags } from './html'
 import {
@@ -452,6 +452,11 @@ export async function makeMusic(
       }
     }
     if (!takes.length) throw failedAfterDone(firstError, 'music', credits, false)
+    // the files are saved, so the ledger no longer needs to hand this job out
+    markCollected(
+      out.jobId,
+      takes.map((t) => t.rel)
+    )
   }
 
   const left = await creditsLeft(balance)
@@ -649,6 +654,7 @@ async function makeOne(
         hash: job.hash,
         prompt: job.what
       })
+      markCollected(out.jobId, [file.rel])
       return { file, credits, balance: out.balance }
     } catch (e) {
       throw failedAfterDone(e, 'a sound effect', credits, stopped(c))

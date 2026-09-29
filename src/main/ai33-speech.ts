@@ -40,6 +40,7 @@ import {
   type JobSpec
 } from './ai33-client'
 import type { ProgressFn, SpendCtx } from './ai33-ctx'
+import { markCollected } from './ai33-jobs'
 import {
   chunkDialogue,
   chunkScript,
@@ -51,6 +52,7 @@ import {
   rulesHash8,
   speakersUsed,
   stripLabels,
+  TIMING_FILE_MAX_BYTES,
   timingLadder,
   wholeHash,
   worstTier,
@@ -70,8 +72,8 @@ export { timingLadder, wordsFromScript }
 
 /** A recorded part is ai33's audio, whole: the biggest a download may be. */
 const AUDIO_MAX_BYTES = 300 * 1024 * 1024
-/** The transcript and subtitle files that come with a recorded part are small. */
-const TEXT_MAX_BYTES = 20 * 1024 * 1024
+/** The transcript and subtitle files that come with a recorded part are small: the timing code caps them too. */
+const TEXT_MAX_BYTES = TIMING_FILE_MAX_BYTES
 /** How long the background poller keeps going for one part. */
 const PART_DEADLINE_MS = 10 * 60_000
 /** Parts recorded at the same time. */
@@ -749,6 +751,8 @@ export async function makeSpeech(req: SpeechReq, c: SpeechCtx): Promise<SpeechRe
       // the mp3 is renamed last, so a part that exists is a part that is complete
       writeFileSync(metaFile(key.hash), JSON.stringify(meta))
       renameSync(tmp, partFile(key.hash))
+      // the part is safely in the cache, so the ledger no longer needs to hand it out
+      markCollected(outcome.jobId)
       // an identical job made before (kept in the ledger) is not paid for again
       return {
         key,
