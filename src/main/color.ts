@@ -24,7 +24,7 @@ const readIndex = (dir: string): string => readFileSync(join(dir, 'index.html'),
  */
 export function footageVideos(html: string): TagMatch[] {
   return findTags(html, 'video').filter((t) => {
-    const src = (t.attrs.src ?? '').replace(/^\.\//, '')
+    const src = (t.attrs.src ?? '').replace(/^\.\//, '').split(/[?#]/)[0]
     return (
       (src.startsWith('media/') || /^[^/:]+$/.test(src)) &&
       !src.startsWith('media/broll/') &&
