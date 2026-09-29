@@ -264,12 +264,12 @@ function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown>
 
 /**
  * Luca's in-process MCP server: the words and the clean edit, catalog search, B-roll, captions and
- * fonts, plus the remocn tools described in the spec, and (when the agent gives it its ai33
- * context) the tools that make voiceover, music and sound effects.
+ * fonts, plus the remocn tools described in the spec, and the tools that make voiceover, music and
+ * sound effects (they need the agent's ai33 context: where to ask the person and report progress).
  */
 export function lucaMcpServer(
   projectDir: string,
-  ctx?: Ai33Ctx
+  ctx: Ai33Ctx
 ): ReturnType<typeof createSdkMcpServer> {
   return createSdkMcpServer({
     name: 'luca',
@@ -295,7 +295,14 @@ export function lucaMcpServer(
       'so any text can use it offline. ' +
       'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it. ' +
       'video_generate makes a new video clip with Gemini Omni, or edits or continues a clip in the ' +
-      'project, and saves it in media/generated.',
+      'project, and saves it in media/generated. ' +
+      'speech_generate records words as a voiceover, a line or a conversation and places it (it ' +
+      'never changes the video’s words or captions); voice_search lists voices the user can listen ' +
+      'to; music_generate makes instrumental music (two takes) and puts it under the video; ' +
+      'sfx_generate makes short sound effects at given times; audio_place puts a saved sound on the ' +
+      'timeline or swaps it for free; ai33_status shows credits and saved files and collects a job ' +
+      'that finished late. speech_generate, music_generate and sfx_generate spend the user’s ai33 ' +
+      'credits: they ask the user when it is a lot, and you never retry them.',
     tools: [
       tool(
         'transcribe',
@@ -854,7 +861,7 @@ export function lucaMcpServer(
         async ({ clipId, start, track }) =>
           text(await placeComponent(projectDir, { clipId, start, track }))
       ),
-      ...(ctx ? ai33Tools(ctx, projectDir) : [])
+      ...ai33Tools(ctx, projectDir)
     ]
   })
 }

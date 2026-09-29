@@ -1,12 +1,15 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- stub: the owning slice writes the function bodies and drops this line */
 /**
  * What every ai33 tool shares: the wrapper that checks the key, joins the abort signals and never
  * throws; the spend gate; the result helpers; and the words tools use to refuse or fail. They
  * live here (not in mcp-ai33.ts) because that file imports the tool files.
  */
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
-import { formatCredits, type Grant, type SpendReq } from '../../shared/ai33'
+import { BrowserWindow } from 'electron'
+import type { Grant, SpendReq } from '../../shared/ai33'
+import { hasAi33Key } from '../ai33-account'
+import { notEnough, plainError, refundLine } from '../ai33-client'
 import type { Ai33Ctx, SpendCtx, ToolName } from '../ai33-ctx'
+import { gateSpend } from '../ai33-spend'
 
 /** One block of a tool result. */
 export type ToolContent = { type: 'text'; text: string }
@@ -20,23 +23,85 @@ export type Guard = {
   progress: (p: { pct: number | null; note?: string }) => void
 }
 
+/** A refusal a tool body throws when the person said no (the ask it was waiting on was declined). */
+export class Declined extends Error {
+  constructor(readonly tell: string = SPEND_DECLINED) {
+    super(tell)
+    this.name = 'Declined'
+  }
+}
+
+/** The tool call that is reporting progress right now, so the agent can tie the report to its step. */
+let reporting: symbol | null = null
+export const reportingCall = (): symbol | null => reporting
+
+const hasWindow = (): boolean => BrowserWindow.getAllWindows().some((w) => !w.isDestroyed())
+
+/**
+ * The person said no: not an error (the step reads "stopped", not "didn't work"), and Luca is
+ * told to say so and stop.
+ */
+export function declined(tell: string): CallToolResult {
+  return okJson({ ok: false, declined: true, tell })
+}
+
+/** A failure as the person and Luca should read it: no claim about credits that isn't certain. */
+function failure(err: unknown): CallToolResult {
+  if (err instanceof Declined) return declined(err.tell)
+  const e = plainError(err)
+  // Stop needs no advice; everything else says whether a retry would be charged again
+  if (e.kind === 'stopped') return fail(e.userMessage)
+  if (e.charged === false)
+    return fail(
+      /nothing was charged/i.test(e.userMessage)
+        ? e.userMessage
+        : `${e.userMessage} Nothing was charged.`
+    )
+  return fail(`${e.userMessage} ${DO_NOT_RETRY}`)
+}
+
 /**
  * Runs a tool's body: waits for a key (asking for one in the chat) when there is none, turns a
  * failure into a plain error result, a declined ask into the declined result, and never throws.
  * `extra` is the second argument the SDK gives every tool handler.
  */
-export function guarded(
-  _ctx: Ai33Ctx,
-  _tool: ToolName,
-  _extra: unknown,
-  _body: (g: Guard) => Promise<CallToolResult>
+export async function guarded(
+  ctx: Ai33Ctx,
+  tool: ToolName,
+  extra: unknown,
+  body: (g: Guard) => Promise<CallToolResult>
 ): Promise<CallToolResult> {
-  throw new Error('not implemented')
+  try {
+    if (!hasAi33Key()) {
+      // with no window there is nowhere to show the key card
+      if (!hasWindow()) return fail(NO_AI33)
+      if (!(await ctx.connect())) return declined(NO_AI33_DECLINED)
+    }
+    const turn = ctx.turn()
+    const call = Symbol(tool)
+    // the SDK's own signal only ever detaches: only the turn's stop cancels a job at ai33
+    const own = (extra as { signal?: AbortSignal } | null | undefined)?.signal
+    return await body({
+      signal: AbortSignal.any([turn.stop, turn.detach, ...(own ? [own] : [])]),
+      stop: turn.stop,
+      progress: (p) => {
+        reporting = call
+        try {
+          ctx.progress(tool, p)
+        } finally {
+          reporting = null
+        }
+      }
+    })
+  } catch (err) {
+    return failure(err)
+  }
 }
 
 /** The spend gate for a tool: a Grant to settle after the job, or the result to return instead. */
-export function spend(_ctx: SpendCtx, _req: SpendReq): Promise<Grant | CallToolResult> {
-  throw new Error('not implemented')
+export async function spend(ctx: SpendCtx, req: SpendReq): Promise<Grant | CallToolResult> {
+  const r = await gateSpend(ctx, req)
+  return r.go ? r.grant : r.result
 }
 
 /** A failed call: shown red in the chat and told to Luca in plain words. */
@@ -66,8 +131,8 @@ export const NO_AI33 =
 export const SPEND_DECLINED =
   'The user chose not to spend credits on this. Say so in one short sentence and do not try again.'
 
-export const NOT_ENOUGH = (balance: number, need: number): string =>
-  `There aren’t enough ai33 credits for this (${formatCredits(balance)} left, it needs about ${formatCredits(need)}). Tell the user in one short sentence they can add credits with ai33, then ask again. Do not make it another way.`
+/** The client words it too (it explains a refused request); this is the same text. */
+export const NOT_ENOUGH = (balance: number, need: number): string => notEnough(balance, need)
 
 /** A job still running when the tool's wait ran out (a non-error result). */
 export const STILL_WORKING =
@@ -77,9 +142,4 @@ export const OVERLOADED =
   'The voice service is busy right now, so Luca didn’t start it. Nothing was charged. Tell the user in one short sentence to try again in a few minutes or pick a Standard voice. Do not retry.'
 
 /** After a task fails, from the balance before and after: whether the credits came back. One place to blank it. */
-export const REFUND_LINE = (before: number | null, after: number | null): string => {
-  if (after === null) return ''
-  return before !== null && Math.abs(after - before) <= Math.max(1, before * 0.01)
-    ? `Your credits are back (${formatCredits(after)} left).`
-    : `ai33 returns credits for a job that fails. You have ${formatCredits(after)} credits.`
-}
+export const REFUND_LINE = refundLine

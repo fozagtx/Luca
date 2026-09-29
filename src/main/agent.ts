@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
+import type { Ai33Ask, ToolProgress } from '../shared/ai33'
 import type {
   AgentEvent,
   AgentState,
@@ -20,7 +21,10 @@ import type {
   PermissionDecision,
   Project
 } from '../shared/types'
-import { alwaysAllowRule, describeActivity } from '../shared/activity'
+import { alwaysAllowRule, describeActivity, describeResult } from '../shared/activity'
+import { hasAi33Key, onKeyConnected } from './ai33-account'
+import type { Ai33Ctx, Ai33Turn, ToolName } from './ai33-ctx'
+import { ASK_TIMEOUT_MS } from './ai33-spend'
 import { childEnv, HYPERFRAMES, run, which } from './env'
 import { Channels, broadcast, notifyInBackground } from './ipc'
 import { catalogTitle } from './library'
@@ -28,6 +32,7 @@ import { lucaMcpServer } from './mcp'
 import { describeMedia } from './footage'
 import { lucaDir } from './projects'
 import { getSettings, updateSettings } from './settings'
+import { reportingCall } from './tools/common'
 
 const SYSTEM_RULES = [
   'You are Luca, the editing agent inside Luca, a video editor for creators built on HyperFrames HTML compositions. People bring their own footage (talking-head clips, faceless explainers with a voiceover or a screen recording, founder videos, product demos), short or long, portrait or landscape, and you edit it for them.',
@@ -40,6 +45,9 @@ const SYSTEM_RULES = [
   '7. Captions of what is said in the video always go through captions_apply: adding them and every change to their style, font, size, position, colors, outline, box or animation (to match a reference image, read its look and pass it as overrides). Never write or edit the captions file by hand; Luca rebuilds it from the transcript and keeps it in sync with every cut. For a font that is not built in (one that comes with Luca, or a Google Fonts link or name the user gives), call font_add first.',
   '7b. A color look on the footage itself (cinematic, moody, warm, cool, black and white, or a named LUT) goes through lut_apply — never write data-color-grading attributes by hand.',
   '8. Footage nobody filmed (a shot, a scene, a clip of anything) and changes to how a clip looks (restyle, relight, add or remove something in it, change the weather, continue it) are made with video_generate (Gemini). It spends the user’s Gemini credits and takes a few minutes: use it only when they ask for a generated or edited clip, never for what a title, effect or B-roll already does. Say in one short line that it takes a few minutes before you call it, then put the result in the video yourself. You may tell the user a clip was made with Gemini.',
+  '9. Sound nobody recorded is made with speech_generate (a voiceover from words, a spoken line, or a conversation between voices), music_generate (music under the video) and sfx_generate (a whoosh, a hit, an ambience). They spend the user’s ai33 credits and take from seconds to a few minutes: use them only when the user asks or the edit plan in .luca/EDIT.md switches them on, one item per request unless they ask for more (music already comes with a second take; sfx_generate takes several effects in one call), and say in one short line what you are about to make, and that it takes a minute or two when it does, before you call. The tools place the result on the timeline themselves at a good level: never write audio tags by hand and never change a level the user set. You cannot hear: report what you made, where it plays and how long it is, never how it sounds, and offer one next step (the other take, a different voice or mood). Music is instrumental and sits quietly under the voice, made after the cuts and titles so it fits the final length; a sound effect marks one moment (a title landing, a hit, a turn) and is never a texture under everything. The user’s own music always wins over making some.',
+  '10. The tools ask the user themselves before anything that costs a lot, so do not ask permission; for a batch (many effects) say the rough total in one short line first. If a tool says the user declined, has not connected ai33, has too few credits, or failed, say what it tells you in one plain sentence and stop: never call it again for the same thing, never make it another way, never blame the user. If it says a job is still working, tell the user it will be ready in a few minutes and do not start it again; when asked, call ai33_status. After an undo the files are still saved: look with ai33_status (saved) and use audio_place before making anything again. Say credits (never dollars) when a tool tells you to. You may say ai33 when the key, the credits or an error make it useful; never name the companies behind the voices or music, never say a voice or music is royalty free or safe to sell (if asked, say ai33’s terms apply).',
+  '11. Voices: when the user names a tone or a kind of person (calm, warm, a deep man), let speech_generate pick and go ahead; when they want to hear, browse or change the voice, call voice_search, say one short line and stop so they can listen and pick. Read a script exactly as written; names, brands and acronyms that need a special sound go in say, with one line telling the user how you will say them. Never clone or imitate a real person’s voice. When a video already has a voice, a line made with speech_generate needs a start time and the captions still follow the original recording. A voiceover Luca recorded from the user’s script has exact words and times already: call transcribe to read them (it is free and sends nothing anywhere), never pass force, and never call clean_edit on it; to change its voice or speed, tell the user it means starting again from the script (parts already recorded are not paid for twice).',
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
   'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a cut, zoom, title, caption, B-roll, animation, effect, transition) and use the plain-English title of anything you added, not its id.',
   'Keep replies short: say what you changed and why, no preamble.'
@@ -62,6 +70,8 @@ type Pending = {
   resolve: (r: PermissionResult) => void
   /** The always-allow rule, or null when this request may only be allowed once. */
   rule: string | null
+  /** Set for a question one of Luca's own tools asks (connect ai33, spend credits). */
+  ask?: Ai33Ask
 }
 
 type TurnOutcome = { isError: boolean; error?: string }
@@ -88,6 +98,29 @@ const PLAIN_ERRORS: Record<string, string> = {
 }
 
 type ToolPart = Extract<ChatContentPart, { type: 'tool' }>
+
+/** Luca's ai33 tools as the SDK names them: the steps a question of theirs stops. */
+const AI33_STEPS = new Set<string>(
+  (
+    [
+      'speech_generate',
+      'voice_search',
+      'music_generate',
+      'sfx_generate',
+      'audio_place',
+      'ai33_status'
+    ] satisfies ToolName[]
+  ).map((t) => `mcp__luca__${t}`)
+)
+
+/** The card a tool shows when it needs an ai33 key (the key card itself is the renderer's). */
+const CONNECT_ASK: Ai33Ask = {
+  kind: 'connect',
+  title: 'Luca needs an ai33 key',
+  detail:
+    'Connect your ai33 account and Luca can record a voiceover from your script, make music and sound effects. ai33 is a separate paid service: you buy credits from ai33, and every job uses them. Luca asks before spending a lot. The key stays on this Mac.',
+  labels: { allow: 'Connect', deny: 'Not now' }
+}
 
 function summarize(name: string, input: Record<string, unknown>): string {
   const rel = (p: unknown): string =>
@@ -169,6 +202,18 @@ export class ProjectAgent {
   private interrupted = false
   private starting: Promise<void> | null = null
   private abort = new AbortController()
+  /** What the ai33 tools are given for the turn being answered (one per turn, so its id tells turns apart). */
+  private aiTurn: Ai33Turn | null = null
+  private aiTurnCount = 0
+  /** Aborted by Stop: the turn's ai33 jobs are cancelled at ai33 too. */
+  private stopTurn = new AbortController()
+  /** Which step each tool call reports progress to (a call is bound at its first report). */
+  private bound = new Map<symbol, ToolPart>()
+  private claimed = new WeakSet<ToolPart>()
+  private progressAt = new WeakMap<ToolPart, number>()
+  /** Progress waiting for its second to be up, and the timers that will show it. */
+  private heldProgress = new Map<ToolPart, ToolProgress>()
+  private holds = new Map<ToolPart, NodeJS.Timeout>()
 
   constructor(readonly project: Project) {
     mkdirSync(lucaDir(project.dir), { recursive: true })
@@ -292,7 +337,7 @@ export class ProjectAgent {
       systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_RULES },
       permissionMode: 'acceptEdits',
       allowedTools: ALLOWED_TOOLS,
-      mcpServers: { luca: lucaMcpServer(this.project.dir) },
+      mcpServers: { luca: lucaMcpServer(this.project.dir, this.ai33Ctx()) },
       canUseTool: this.canUseTool,
       includePartialMessages: true,
       abortController: this.abort,
@@ -394,6 +439,8 @@ export class ProjectAgent {
     this.turnStartedAt = Date.now()
     this.streamedText = ''
     this.tools.clear()
+    this.bound.clear()
+    this.aiTurn = this.newAiTurn()
     this.current = {
       id: randomUUID(),
       role: 'assistant',
@@ -489,7 +536,11 @@ export class ProjectAgent {
   /** Stop the current turn. Messages sent while it ran stay queued and are answered next. */
   async interrupt(): Promise<void> {
     // messages queued meanwhile stay queued and are answered next ("Luca will read this next")
-    if (this.working) this.interrupted = true
+    if (this.working) {
+      this.interrupted = true
+      // the person's Stop is the one thing that cancels an ai33 job at ai33
+      this.stopTurn.abort()
+    }
     // answer any open permission card now, so the turn isn't left waiting on it
     this.cancelPending('Stopped')
     try {
@@ -547,6 +598,9 @@ export class ProjectAgent {
   decide(id: string, decision: PermissionDecision): void {
     const p = this.pending.get(id)
     if (!p) return
+    // a request for the ai33 key is answered by the key, never by a click: an allow while there is
+    // none changes nothing and the card stays
+    if (p.ask?.kind === 'connect' && decision !== 'deny' && !hasAi33Key()) return
     this.pending.delete(id)
     // a request that can't be always-allowed is allowed once, whatever was clicked
     if (decision === 'allow-always' && !p.rule) decision = 'allow'
@@ -569,6 +623,140 @@ export class ProjectAgent {
     }
     // Luca keeps its own always-allow list; the SDK's suggested rules can be broader than the card says
     p.resolve({ behavior: 'allow' })
+  }
+
+  // ---------------------------------------------------------------- ai33 tools
+
+  private newAiTurn(): Ai33Turn {
+    this.stopTurn = new AbortController()
+    return {
+      id: ++this.aiTurnCount,
+      stop: this.stopTurn.signal,
+      // the session ending (project closed, restart) stops polling but leaves the job running
+      detach: this.abort.signal,
+      spent: { credits: 0, paid: 0, byKind: {} }
+    }
+  }
+
+  /** What Luca's ai33 tools are given: where to report progress, and how to ask the person. */
+  private ai33Ctx(): Ai33Ctx {
+    return {
+      projectDir: this.project.dir,
+      projectId: this.project.id,
+      progress: (tool, p) => this.reportProgress(tool, p),
+      ask: (ask) => this.openAsk(ask).answer,
+      connect: () => this.askForKey(),
+      turn: () => (this.aiTurn ??= this.newAiTurn())
+    }
+  }
+
+  /** The step a tool call reports to: the one it is bound to, else the oldest of its name no call has claimed. */
+  private stepFor(tool: ToolName): ToolPart | undefined {
+    const call = reportingCall()
+    const bound = call ? this.bound.get(call) : undefined
+    if (bound) return bound
+    const name = `mcp__luca__${tool}`
+    const open = [...this.tools.values()].filter((t) => t.name === name && t.status === 'running')
+    const part = open.find((t) => !this.claimed.has(t)) ?? (call ? undefined : open[0])
+    if (part && call) {
+      this.bound.set(call, part)
+      this.claimed.add(part)
+    }
+    return part
+  }
+
+  /**
+   * Percent, a note and the time it began, on the running step. A new note (a phase) goes out at
+   * once; percent moves are held to one a second, and the latest one is shown when the second is up.
+   */
+  private reportProgress(tool: ToolName, p: { pct: number | null; note?: string }): void {
+    const part = this.stepFor(tool)
+    if (!part || part.status !== 'running') return
+    const shown = part.progress
+    const next: ToolProgress = {
+      pct: p.pct,
+      ...(p.note ? { note: p.note } : {}),
+      since: shown?.since ?? Date.now()
+    }
+    const last = this.heldProgress.get(part) ?? shown
+    if (last && last.pct === next.pct && last.note === next.note) return
+    const wait = 1000 - (Date.now() - (this.progressAt.get(part) ?? 0))
+    if (shown && shown.note === next.note && wait > 0) {
+      this.heldProgress.set(part, next)
+      if (!this.holds.has(part)) {
+        const timer = setTimeout(() => {
+          this.holds.delete(part)
+          const held = this.heldProgress.get(part)
+          if (held && part.status === 'running') this.showProgress(part, held)
+        }, wait)
+        timer.unref()
+        this.holds.set(part, timer)
+      }
+      return
+    }
+    this.showProgress(part, next)
+  }
+
+  private showProgress(part: ToolPart, next: ToolProgress): void {
+    this.heldProgress.delete(part)
+    part.progress = next
+    this.progressAt.set(part, Date.now())
+    this.emit(part)
+    this.pushMessage(this.current)
+  }
+
+  /** A step that ended shows no progress, and none held back may appear after it. */
+  private dropProgress(part: ToolPart): void {
+    clearTimeout(this.holds.get(part))
+    this.holds.delete(part)
+    this.heldProgress.delete(part)
+    part.progress = undefined
+  }
+
+  /**
+   * A question one of Luca's own tools asks: a card in the chat that the tool waits on. Stop, a
+   * restart, the project closing or ASK_TIMEOUT_MS answer it 'deny'.
+   */
+  private openAsk(ask: Ai33Ask): { id: string; answer: Promise<'allow' | 'deny'> } {
+    const id = randomUUID()
+    // the step it stops: the oldest ai33 step still running
+    const step = [...this.tools.values()].find(
+      (t) => t.status === 'running' && AI33_STEPS.has(t.name)
+    )
+    const tool = step?.name ?? 'mcp__luca__ai33'
+    const part: ChatContentPart = { type: 'permission', id, tool, input: {}, ask }
+    this.current?.parts?.push(part)
+    this.pushMessage(this.current)
+    this.emit({ type: 'permission', id, tool, input: {}, ask })
+    if (ask.kind === 'connect')
+      notifyInBackground('Luca needs your ai33 key', 'Open Luca to connect it.')
+    else notifyInBackground('Luca needs your OK', ask.title)
+    const answer = new Promise<'allow' | 'deny'>((resolveAsk) => {
+      const timer = setTimeout(() => this.decide(id, 'deny'), ASK_TIMEOUT_MS)
+      timer.unref()
+      this.pending.set(id, {
+        rule: null,
+        ask,
+        resolve: (r) => {
+          clearTimeout(timer)
+          resolveAsk(r.behavior === 'allow' ? 'allow' : 'deny')
+        }
+      })
+    })
+    return { id, answer }
+  }
+
+  /** Ask for an ai33 key in the chat; true once one is saved, false on Not now, Stop or a timeout. */
+  private async askForKey(): Promise<boolean> {
+    if (hasAi33Key()) return true
+    const { id, answer } = this.openAsk(CONNECT_ASK)
+    // saving the key (here or in Connections) is what answers this card
+    const off = onKeyConnected(() => this.decide(id, 'allow'))
+    try {
+      return (await answer) === 'allow' && hasAi33Key()
+    } finally {
+      off()
+    }
   }
 
   /** Answer every open permission request with deny (the turn it belongs to is over). */
@@ -668,6 +856,7 @@ export class ProjectAgent {
             const part = this.tools.get(b.tool_use_id)
             if (!part) continue
             part.status = b.is_error ? (this.interrupted ? 'stopped' : 'error') : 'done'
+            this.dropProgress(part)
             const out = Array.isArray(b.content)
               ? (b.content as { type: string; text?: string }[]).map((c) => c.text ?? '').join('\n')
               : typeof b.content === 'string'
@@ -675,6 +864,12 @@ export class ProjectAgent {
                 : ''
             if (out && part.name !== 'Edit' && part.name !== 'Write') {
               part.detail = out.length > 4000 ? out.slice(0, 4000) + '\n…' : out
+            }
+            if (!b.is_error && part.activity && part.name.startsWith('mcp__luca__')) {
+              // what a voiceover, music or sound effect step made and cost, or that the person said no
+              const r = describeResult(part.name, out.split('\n')[0])
+              if (r.done) part.activity = { ...part.activity, done: r.done }
+              if (r.status) part.status = r.status
             }
             if (part.name === 'mcp__luca__broll_search' && !b.is_error && part.activity) {
               try {
@@ -766,6 +961,7 @@ export class ProjectAgent {
     for (const p of this.current.parts ?? []) {
       if (p.type === 'tool' && p.status === 'running') {
         p.status = stopped ? 'stopped' : 'error'
+        this.dropProgress(p)
         this.emit(p)
       } else if (p.type === 'permission' && !p.resolved) {
         p.resolved = 'deny'
