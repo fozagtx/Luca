@@ -11,15 +11,22 @@
 
 # <img src="docs/logo.png" alt="" width="36" align="top" /> Luca
 
-Luca is a video editor you talk to. Say or type what you want (“put my name in a lower third at 2s”, “cut the ums”, “make the title pop”), approve it, and watch the preview change in real time. Built for founders, creators and small teams who need a launch video, a product demo or a TikTok shipped today, not next week.
+Luca edits your videos for you. Drop in what you filmed (a phone clip, a long recording, a screen recording or a voiceover, portrait or landscape), say what kind of video it is, and Luca cuts the ums and pauses, adds captions, zooms, a hook and B-roll. Then keep talking to change anything: “make the captions yellow”, “zoom in when I say the price”, “show our logo at the end”.
+
+Built for people who make content and don’t want to spend the evening editing it:
+
+- **Creators** who film themselves: TikToks, Reels, Shorts and YouTube videos.
+- **Faceless channels** and YouTube automation: explainers made from a voiceover or a screen recording.
+- **Founders**: updates, stories and pitches, plus short product and launch videos.
 
 ## Why Luca
 
+- **Drop it in, get an edit.** Pick what kind of video it is and Luca does the first edit on its own: no timeline skills needed.
 - **Talk instead of keyframing.** Describe the change in plain words, or click anything in the preview and say what should change right there. Luca does the editing and asks before anything unusual.
 - **Watch it change live.** The preview plays exactly what will export and updates within a second of every edit, without losing your place.
 - **Nothing is ever lost.** Every change, Luca’s or yours, is saved as a version you can restore or undo with ⌘Z. Your original footage is never modified.
 - **Your Mac, your subscription.** Luca runs on your own Claude subscription through Claude Code and never sees your credentials. Projects are plain folders on your disk.
-- **A real editor underneath.** Timeline with trim, split and snapping, Caption Studio, clean edits that cut ums and retakes, stock backgrounds, clips made with Gemini, voice control and MP4 export.
+- **A real editor underneath.** Timeline with trim, split and snapping, Caption Studio, clean edits that cut ums and retakes, color grades, B-roll, voice control and MP4 export.
 
 ## Installation
 
@@ -37,20 +44,16 @@ That’s the only download: Luca keeps itself up to date. It looks for a newer v
 
 Optional keys, all entered inside the app and kept in the macOS Keychain:
 
-- [AssemblyAI](https://www.assemblyai.com/) for Clean edit, captions from speech and voice input.
-- [Pexels](https://www.pexels.com/api/) (free) for photo and video backgrounds.
+- [AssemblyAI](https://www.assemblyai.com/) so Luca can hear what’s said: cutting ums and pauses, captions, B-roll that matches your words, and voice input. Strongly recommended; without it Luca can still zoom, title and grade.
+- [Pexels](https://www.pexels.com/api/) (free) for B-roll: photos and short clips of what you talk about.
 - [Gemini](https://aistudio.google.com/apikey) for making and editing video clips (Gemini in the toolbar). Generation is billed to the key’s Google Cloud project, so a key made in a project with Google Cloud credits uses them.
 
-## Make your first video
+## Edit your first video
 
-You need two things: Luca and an idea.
-
-1. **Open Luca and describe the video**, for example “a 15-second TikTok about our launch”. Or drop in a video, a few photos or a song.
-2. **Pick a look.** Luca asks a few quick questions (theme, font, background, motion) with live previews. Skip any and Luca decides.
-3. **Watch it build, then keep talking.** “Put my name in a lower third at 2s.” “Make the captions bigger.” Press **G** to grab anything in the preview and comment on it.
+1. **Drop your video on Luca.** One clip or several (they play back to back), short or long, portrait or landscape. Faceless? Drop your voiceover. A logo or screenshots can come along too.
+2. **Say what kind of video it is:** Talking video, Faceless explainer, Founder video or Product video. Luca switches on the edits that suit it (cut ums & pauses, hook title, punch-in zooms, B-roll, name title, ending card, captions); change any of them, add a note (“I’m Sam, founder of Acme”) and pick the shape (turn a landscape video into a vertical short).
+3. **Watch Luca edit it, then keep talking.** “Make the captions bigger.” “Cut the part where I cough.” Press **G** to grab anything in the preview and comment on it.
 4. **Export.** Press ⌘E for an MP4, rendered in the background.
-
-Stuck on a blank page? Start from a **Viral TikTok** or **Viral explainer** template, or pick an idea from Inspiration (⌘1).
 
 ## Built with
 
@@ -70,7 +73,7 @@ Luca is free and MIT-licensed. It stands on these tools, and couldn’t exist wi
     </tr>
     <tr>
       <td colspan="4" width="170" align="center"><a href="https://www.assemblyai.com/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/assemblyai-dark.png" /><img src="docs/logos/assemblyai.png" alt="AssemblyAI" height="26" align="middle" /></picture></a><br /><sub>Transcripts and voice</sub></td>
-      <td colspan="4" width="170" align="center"><a href="https://www.pexels.com/"><img src="docs/logos/pexels.svg" alt="" height="30" align="middle" /> <b>Pexels</b></a><br /><sub>Backgrounds</sub></td>
+      <td colspan="4" width="170" align="center"><a href="https://www.pexels.com/"><img src="docs/logos/pexels.svg" alt="" height="30" align="middle" /> <b>Pexels</b></a><br /><sub>B-roll</sub></td>
       <td colspan="4" width="170" align="center"><a href="https://www.electronjs.org/"><img src="docs/logos/electron.svg" alt="" height="30" align="middle" /> <b>Electron</b></a><br /><sub>The Mac app</sub></td>
       <td colspan="4" width="170" align="center"><a href="https://ffmpeg.org/"><img src="docs/logos/ffmpeg.svg" alt="" height="30" align="middle" /> <b>FFmpeg</b></a><br /><sub>Footage and audio</sub></td>
       <td colspan="4" width="170" align="center"><a href="https://ui.shadcn.com/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/logos/shadcnui-dark.svg" /><img src="docs/logos/shadcnui.svg" alt="" height="30" align="middle" /></picture> <b>shadcn/ui</b></a><br /><sub>Interface</sub></td>
