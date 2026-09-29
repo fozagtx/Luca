@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { simpleGit, type SimpleGit } from 'simple-git'
 import type { Checkpoint } from '../shared/types'
@@ -24,10 +24,31 @@ node_modules/
 .DS_Store
 `
 
+/** A pattern with the slashes that don't change what it ignores taken off, to compare two spellings. */
+const pattern = (line: string): string => line.trim().replace(/^\/+|\/+$/g, '')
+
+/**
+ * What `.gitignore` should hold after Luca has looked at it: the whole default when there is none,
+ * else the file plus the default's lines it lacks (a file written by another tool, like
+ * `hyperframes init`, would otherwise leave generated sound tracked, and undo would delete it).
+ * Null when nothing is missing.
+ */
+export function toppedUpGitignore(existing: string | null): string | null {
+  if (existing === null) return GITIGNORE
+  const has = new Set(existing.split('\n').map(pattern).filter(Boolean))
+  const missing = GITIGNORE.split('\n').filter((l) => l.trim() && !has.has(pattern(l)))
+  if (!missing.length) return null
+  const lead = existing.length && !existing.endsWith('\n') ? '\n' : ''
+  return `${existing}${lead}${existing.trim() ? '\n# Added by Luca\n' : ''}${missing.join('\n')}\n`
+}
+
+/** Left out of git's environment: hooks and helpers a project ships run in it, and none may see the ai33 key. */
+const NOT_FOR_GIT = new Set(['EDITOR', 'VISUAL', 'AI33_API_KEY', 'AI33_BASE_URL'])
+
 function git(dir: string): SimpleGit {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && !k.startsWith('GIT_') && k !== 'EDITOR' && k !== 'VISUAL') env[k] = v
+    if (v !== undefined && !k.startsWith('GIT_') && !NOT_FOR_GIT.has(k)) env[k] = v
   }
   return simpleGit({
     baseDir: dir,
@@ -58,11 +79,32 @@ export function ensureRepo(dir: string): Promise<void> {
   return serial(dir, () => ensureRepoNow(dir))
 }
 
+/**
+ * Keep generated sound out of git. A `.gitignore` another tool wrote is the person's own: it is
+ * only added to once this project has generated sound that would otherwise be tracked (opening
+ * a project never makes a version), and that can start at any time, so every place that saves
+ * sound or makes a version calls this first. Undo deletes what a version tracked and its
+ * predecessor did not, so a generated file that slipped in would be lost. Idempotent.
+ */
+export function ignoreGenerated(dir: string): void {
+  const gi = join(dir, '.gitignore')
+  const existing = existsSync(gi) ? readFileSync(gi, 'utf8') : null
+  const generated = [
+    join('media', 'generated'),
+    join('.luca', 'ai33.json'),
+    join('.luca', 'script.json')
+  ]
+  const topped =
+    existing === null || generated.some((f) => existsSync(join(dir, f)))
+      ? toppedUpGitignore(existing)
+      : null
+  if (topped !== null) writeFileSync(gi, topped)
+}
+
 async function ensureRepoNow(dir: string): Promise<void> {
   const g = git(dir)
   if (!existsSync(join(dir, '.git'))) await g.init()
-  const gi = join(dir, '.gitignore')
-  if (!existsSync(gi)) writeFileSync(gi, GITIGNORE)
+  ignoreGenerated(dir)
   const fresh = (await g.raw(['rev-list', '--count', 'HEAD']).catch(() => '0')).trim() === '0'
   await g.add(['-A'])
   const st = await g.status()
@@ -76,6 +118,8 @@ export function checkpoint(dir: string, message: string): Promise<string | null>
 
 async function checkpointNow(dir: string, message: string): Promise<string | null> {
   const g = git(dir)
+  // sound made since the project was opened (its .gitignore may be another tool's)
+  ignoreGenerated(dir)
   await g.add(['-A'])
   const st = await g.status()
   if (st.files.length === 0) return null
@@ -114,10 +158,14 @@ export function restore(dir: string, sha: string): Promise<void> {
 
 async function restoreNow(dir: string, sha: string): Promise<void> {
   const g = git(dir)
+  ignoreGenerated(dir)
   await g.add(['-A'])
   if ((await g.status()).files.length > 0) await g.commit('Before restore')
   // `git read-tree -u --reset <sha>` also removes files added since `sha`.
   await g.raw(['read-tree', '-u', '--reset', sha])
+  // the older version's `.gitignore` is back: without this its generated sound would be added
+  // (and tracked) by the next line, then deleted by the next undo
+  ignoreGenerated(dir)
   await g.add(['-A'])
   if ((await g.status()).files.length > 0) {
     await g.commit(`Restore to ${sha.slice(0, 7)}`)

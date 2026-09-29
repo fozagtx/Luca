@@ -40,6 +40,7 @@ const api: LucaApi = {
     current: () => invoke(C.projectCurrent),
     recent: () => invoke(C.projectRecent),
     start: (args) => invoke(C.projectStart, args),
+    cancelStart: () => invoke(C.projectStartCancel),
     pickMedia: () => invoke(C.projectPickMedia),
     mediaPreview: (path) => invoke(C.projectMediaPreview, path),
     probeVideo: (path) => invoke(C.projectProbeVideo, path),
@@ -79,6 +80,19 @@ const api: LucaApi = {
     hasKey: () => invoke(C.brollHasKey),
     setKey: (key) => invoke(C.brollSetKey, key),
     search: (args) => invoke(C.brollSearch, args)
+  },
+  ai33: {
+    hasKey: () => invoke(C.ai33HasKey),
+    status: () => invoke(C.ai33Status),
+    setKey: (key) => invoke(C.ai33SetKey, key),
+    voices: (q) => invoke(C.ai33Voices, q),
+    voicePreview: (voiceId) => invoke(C.ai33VoicePreview, voiceId),
+    estimate: (req) => invoke(C.ai33Estimate, req),
+    askReply: (id, decision) => invoke(C.ai33AskReply, id, decision),
+    isScriptProject: () => invoke(C.ai33IsScript),
+    onAsk: (cb) => on(C.ai33Ask, cb),
+    onAskClosed: (cb) => on<{ id: string }>(C.ai33AskClosed, (p) => cb(p.id)),
+    onNotice: (cb) => on(C.ai33Notice, cb)
   },
   updates: {
     status: () => invoke(C.updatesStatus),

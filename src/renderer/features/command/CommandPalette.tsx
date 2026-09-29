@@ -4,6 +4,7 @@ import {
   Clock,
   Contrast,
   Crosshair,
+  FileText,
   FolderOpen,
   History,
   House,
@@ -12,6 +13,7 @@ import {
   Moon,
   RefreshCw,
   Palette,
+  Plug,
   Plus,
   Scissors,
   Sun,
@@ -34,6 +36,8 @@ type Item = {
   icon: ReactElement
   run: () => void
   needsProject?: boolean
+  /** Other words that find it. */
+  keywords?: string[]
 }
 
 export function CommandPalette(): ReactElement {
@@ -53,6 +57,19 @@ export function CommandPalette(): ReactElement {
       run: async () => {
         const paths = await luca.project.pickMedia()
         if (paths.length) await useStart.getState().startFrom(paths)
+      }
+    },
+    {
+      id: 'script',
+      label: 'Start from a script…',
+      icon: <FileText size={14} strokeWidth={1.5} />,
+      keywords: ['voiceover', 'record', 'narration', 'no footage', 'explainer'],
+      run: async () => {
+        // it belongs on the start card: Home first, unless they choose to let Luca finish
+        await goHome()
+        const { busy, setScriptMode } = useStart.getState()
+        if (useProject.getState().project || busy) return
+        setScriptMode(true)
       }
     },
     {
@@ -165,6 +182,14 @@ export function CommandPalette(): ReactElement {
       needsProject: true
     },
     {
+      id: 'connect-ai33',
+      label: 'Connections…',
+      shortcut: '⌘,',
+      icon: <Plug size={14} strokeWidth={1.5} />,
+      keywords: ['ai33', 'connect', 'settings', 'key', 'credits', 'voices', 'music', 'sound'],
+      run: () => ui.setSettings(true)
+    },
+    {
       id: 'updates',
       label: 'Check for Updates…',
       icon: <RefreshCw size={14} strokeWidth={1.5} />,
@@ -192,6 +217,7 @@ export function CommandPalette(): ReactElement {
           <Command.Item
             key={it.id}
             value={it.label}
+            keywords={it.keywords}
             disabled={it.needsProject && !project}
             onSelect={() => {
               setOpen(false)

@@ -22,44 +22,73 @@ const STEPS: Record<StartKind, Step[]> = {
   ]
 }
 
+/** A script has no file to copy: the voiceover is recorded first, then the project is built. */
+const SCRIPT_STEPS: Step[] = [
+  { id: 'voiceover', label: 'Recording your voiceover' },
+  { id: 'scaffolding', label: 'Building the timeline' },
+  { id: 'starting', label: 'Opening the project' }
+]
+
+/** Where the stages main reports land in a script's shorter list. */
+const SCRIPT_STAGE: Partial<Record<CreateProgress['stage'], string>> = {
+  preparing: 'voiceover',
+  voiceover: 'voiceover',
+  copying: 'scaffolding',
+  scaffolding: 'scaffolding',
+  media: 'scaffolding',
+  // a reference is studied after the project is built, script or not
+  studying: 'studying',
+  starting: 'starting'
+}
+
 /** Shown only when a reference is being studied, before the project opens. */
 const STUDYING: Step = { id: 'studying', label: 'Studying your reference' }
 
 /** The real stages of making a project, as main reports them. */
 export function CreateProgressList({
   kind,
+  script = false,
   progress,
   seen = [],
   since
 }: {
   kind: StartKind
+  /** The voiceover is being recorded from a script, so the steps are its own. */
+  script?: boolean
   progress: CreateProgress | null
   /** Stages reached so far; an error marks the last of them. */
   seen?: CreateProgress['stage'][]
   since?: number
 }): ReactElement {
-  const base = STEPS[kind]
+  const base = script ? SCRIPT_STEPS : STEPS[kind]
   const steps = seen.includes('studying')
     ? [...base.slice(0, -1), STUDYING, base[base.length - 1]]
     : base
   const stage = progress?.stage ?? 'preparing'
-  const known = (id: string): boolean => steps.some((s) => s.id === id)
+  // the stage as a step of this list: a script folds several stages into one step
+  const stepOf = (s: CreateProgress['stage']): string | undefined =>
+    script ? SCRIPT_STAGE[s] : steps.find((x) => x.id === s)?.id
   const current =
     stage === 'done'
       ? null
       : stage === 'error'
-        ? ([...seen].reverse().find(known) ?? steps[0].id)
-        : known(stage)
-          ? stage
-          : 'preparing'
+        ? ([...seen].reverse().map(stepOf).find(Boolean) ?? steps[0].id)
+        : (stepOf(stage) ?? steps[0].id)
+  const label = steps.find((s) => s.id === current)?.label
   return (
-    <StepList
-      steps={steps}
-      current={current}
-      failed={stage === 'error'}
-      progress={progress?.progress}
-      since={since}
-      detail={progress?.message}
-    />
+    <div>
+      {/* said once per step, not on every percent: the list below moves all the time */}
+      <span role="status" className="sr-only">
+        {label ? `${label}${progress?.message ? `, ${progress.message}` : ''}` : ''}
+      </span>
+      <StepList
+        steps={steps}
+        current={current}
+        failed={stage === 'error'}
+        progress={progress?.progress}
+        since={since}
+        detail={progress?.message}
+      />
+    </div>
   )
 }

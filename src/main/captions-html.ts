@@ -9,7 +9,8 @@ import {
   type SpeechClip
 } from '../shared/captions'
 import type { CaptionConfig, CaptionGroup, ProjectFontFace } from '../shared/types'
-import { findTags } from './html'
+import { findTags, type TagMatch } from './html'
+import { unescapeAttr } from './timeline-read'
 
 /**
  * The captions sub-composition Luca writes: static caption lines (so every frame is
@@ -236,6 +237,28 @@ ${lines}
 const CLEAN_MASTER = /(^|\/)media\/clean-[0-9a-f]+\.mp4$/
 
 /**
+ * The file a clip plays: without a query or fragment, and with the entities of the markup undone
+ * (the tag parser hands back what is written, so "Q&amp;A.mp3" must be read as "Q&A.mp3").
+ */
+export const clipSrc = (t: TagMatch): string => unescapeAttr(t.attrs.src ?? '').split(/[?#]/)[0]
+
+/**
+ * The tags in index.html that play the transcribed media: the clean master once a clean edit
+ * replaced the source, else the source file (by name, then by name without its extension).
+ */
+export function sourceTags(html: string, source: string): TagMatch[] {
+  const media = [...findTags(html, 'video'), ...findTags(html, 'audio')]
+  const src = clipSrc
+  const stem = (f: string): string => basename(f, extname(f))
+  let hits = media.filter((t) => CLEAN_MASTER.test(src(t)))
+  if (!hits.length && source) {
+    hits = media.filter((t) => basename(src(t)) === basename(source))
+    if (!hits.length) hits = media.filter((t) => stem(src(t)) === stem(source))
+  }
+  return hits
+}
+
+/**
  * Every clip in index.html that plays the transcribed media: the clean master once a clean edit
  * replaced the source (the transcript then follows it), else the source file. Clips you can hear
  * win over muted ones, so a video piece moved away from its own sound doesn't take the captions
@@ -244,14 +267,7 @@ const CLEAN_MASTER = /(^|\/)media\/clean-[0-9a-f]+\.mp4$/
 export function speechClips(html: string, source: string): SpeechClip[] {
   const root = findTags(html).find((t) => t.attrs['data-composition-id'] !== undefined)
   const total = Number(root?.attrs['data-duration'] ?? 0) || 0
-  const media = [...findTags(html, 'video'), ...findTags(html, 'audio')]
-  const src = (t: (typeof media)[number]): string => (t.attrs.src ?? '').split(/[?#]/)[0]
-  const stem = (f: string): string => basename(f, extname(f))
-  let hits = media.filter((t) => CLEAN_MASTER.test(src(t)))
-  if (!hits.length && source) {
-    hits = media.filter((t) => basename(src(t)) === basename(source))
-    if (!hits.length) hits = media.filter((t) => stem(src(t)) === stem(source))
-  }
+  const hits = sourceTags(html, source)
   const heard = hits.filter((t) => t.name === 'audio' || !('muted' in t.attrs))
   return (heard.length ? heard : hits)
     .map((t) => {

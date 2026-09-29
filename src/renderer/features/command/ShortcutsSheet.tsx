@@ -45,7 +45,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       ['⇧⌘W', 'Home: close the project'],
       ['⇧⌘R', 'Show the project in Finder'],
       ['⇧⌘E', 'Clean edit'],
-      ['⌘Y', 'Versions']
+      ['⌘Y', 'Versions'],
+      ['⌘,', 'Connections']
     ]
   },
   {
@@ -53,7 +54,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     rows: [
       ['⌘K', 'Search commands'],
       ['⌘E', 'Export'],
-      ['⌘1 – ⌘3', 'Transcript, B-roll, Looks'],
+      ['⌘1 – ⌘4', 'Transcript, B-roll, Looks, Sound'],
       ['⇧⌘S  ⇧⌘C', 'Show or hide the sidebar and the chat'],
       ['⇧⌘D', 'Light or dark'],
       ['?  ⌘/', 'This list']

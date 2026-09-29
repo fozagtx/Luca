@@ -23,8 +23,9 @@ export function targetClip(arg?: unknown): Clip | null {
   return findClip(ref)
 }
 
+/** What a clip is called: the title Luca gave it, else its id made readable. */
 export function clipName(c: Clip): string {
-  return c.label.replace(/^#/, '').replace(/[-_]+/g, ' ')
+  return c.title?.trim() || c.label.replace(/^#/, '').replace(/[-_]+/g, ' ')
 }
 
 /** A video's own sound: an audio clip from the same file covering the same stretch. */

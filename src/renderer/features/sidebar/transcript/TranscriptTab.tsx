@@ -62,6 +62,8 @@ export function TranscriptTab(): ReactElement {
   const [edl, setEdl] = useState<Edl | null>(null)
   const [status, setStatus] = useState<CleanStatus>({ stage: 'idle' })
   const [hasKey, setHasKey] = useState<boolean | null>(null)
+  // recorded from a script: the words are exact, so there is nothing to transcribe or clean
+  const [exact, setExact] = useState(false)
   const [sel, setSel] = useState<{ a: number; b: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [captions, setCaptionState] = useState<CaptionState | null>(null)
@@ -69,18 +71,20 @@ export function TranscriptTab(): ReactElement {
   const timeline = useTimeline((s) => s.timeline)
 
   const load = useCallback(async (): Promise<void> => {
-    const [t, e, s, k, c] = await Promise.all([
+    const [t, e, s, k, c, x] = await Promise.all([
       luca.clean.transcript(),
       luca.clean.edl(),
       luca.clean.status(),
       luca.env.hasAssemblyAiKey(),
-      luca.captions.state().catch(() => null)
+      luca.captions.state().catch(() => null),
+      luca.ai33.isScriptProject().catch(() => false)
     ])
     setTranscript(t)
     setEdl(e)
     setStatus(s)
     setHasKey(k)
     setCaptionState(c)
+    setExact(x)
   }, [])
 
   useEffect(() => {
@@ -211,7 +215,7 @@ export function TranscriptTab(): ReactElement {
         ) : null}
       </PaneHead>
       <div className="flex flex-col gap-3 border-b border-border p-3">
-        {hasKey === false ? (
+        {hasKey === false && !exact ? (
           <AssemblyAiKeyCard onSaved={setHasKey}>
             Luca sends the audio (not the video) and any key terms you added to AssemblyAI for
             transcription, then deletes the transcript there. Your key stays in the macOS Keychain.
@@ -245,6 +249,11 @@ export function TranscriptTab(): ReactElement {
               detail={status.message}
             />
           </div>
+        ) : exact ? (
+          <p className="text-[11px] leading-[1.5] text-text-3">
+            Recorded from your script. The words are exact, so there is nothing to transcribe or
+            clean.
+          </p>
         ) : (
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -320,7 +329,11 @@ export function TranscriptTab(): ReactElement {
       {!transcript ? (
         <EmptyPane
           title="No transcript yet"
-          hint="Clean edit transcribes your video word by word, suggests cuts for ums, pauses and retakes, lets Luca pick the best takes and gives you a clean master clip."
+          hint={
+            exact
+              ? 'The words from your script show up here.'
+              : 'Clean edit transcribes your video word by word, suggests cuts for ums, pauses and retakes, lets Luca pick the best takes and gives you a clean master clip.'
+          }
         />
       ) : (
         <>

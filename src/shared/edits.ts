@@ -14,6 +14,8 @@ export type EditStep = {
   needsWords: boolean
   /** Works on footage of a person or a screen; left out when there is only a voiceover. */
   needsPicture: boolean
+  /** Makes something with ai33 (spends the person's credits), so it needs a connected key. */
+  needsAi33?: boolean
   /** For Luca: what to do. */
   guide: string
 }
@@ -73,6 +75,16 @@ export const EDIT_STEPS: EditStep[] = [
     needsPicture: false,
     guide:
       'An ending card for the last 2–3 s: the product or channel name (or the logo, if the user added one) and one call to action taken from what is said or the notes.'
+  },
+  {
+    id: 'music',
+    name: 'Music',
+    blurb: 'Quiet music under your voice',
+    needsWords: false,
+    needsPicture: false,
+    needsAi33: true,
+    guide:
+      'Music, after the cuts and titles and before the captions: call music_generate once, instrumental, calm and fitting the video type and what is said, under the whole video and quiet behind the voice. The user switched this step on, so do not ask; offer the second take in your reply.'
   },
   {
     id: 'captions',
@@ -235,33 +247,80 @@ export function editStep(id: EditStepId): EditStep {
 }
 
 /**
+ * The steps in the order the type puts them. A step switched off and on again on the start card
+ * lands at the end of the list, and a step the type doesn't switch on (music) always does; music
+ * is made after the cuts and titles, so it goes before the sound, the captions or the review,
+ * whichever the video has first.
+ */
+export function orderedSteps(edit: Pick<StartEdit, 'type' | 'style' | 'steps'>): EditStepId[] {
+  const listed = videoType(edit.type).steps[styleOf(edit.style).id]
+  const known = edit.steps.filter((id) => EDIT_STEPS.some((s) => s.id === id))
+  const out = listed.filter((id) => known.includes(id))
+  for (const id of known) {
+    if (out.includes(id)) continue
+    const before = (['sound', 'captions', 'critique'] as const)
+      .map((next) => out.indexOf(next))
+      .find((at) => at >= 0)
+    out.splice(before ?? out.length, 0, id)
+  }
+  return out
+}
+
+/** What a plan is written for: what can hear, what can make things, and where the words come from. */
+export type EditPlanOptions = {
+  canTranscribe: boolean
+  voiceOnly: boolean
+  /** The words are exact already (a voiceover recorded from a script): nothing to cut, and nothing to transcribe. */
+  scripted?: boolean
+  /** ai33 is connected, so the steps that make sound can run. */
+  canGenerate?: boolean
+}
+
+/**
  * The steps that can run, in the order the type puts them, without the ones that need words
- * when nothing can transcribe, or a picture when there is only a voiceover.
+ * when nothing can transcribe, a picture when there is only a voiceover, or ai33 when it
+ * isn't connected. A scripted video has its words and no ums to cut: `cut` is dropped and the
+ * steps that need words can run.
  */
 export function runnableSteps(
   steps: EditStepId[],
-  opts: { canTranscribe: boolean; voiceOnly: boolean }
+  opts: EditPlanOptions
 ): { run: EditStep[]; skipped: EditStep[] } {
   const run: EditStep[] = []
   const skipped: EditStep[] = []
+  const canTranscribe = opts.canTranscribe || !!opts.scripted
   for (const id of steps) {
     const s = editStep(id)
+    if (opts.scripted && s.id === 'cut') continue
     if (s.needsPicture && opts.voiceOnly) continue
-    if (s.needsWords && !opts.canTranscribe) skipped.push(s)
+    if ((s.needsWords && !canTranscribe) || (s.needsAi33 && !opts.canGenerate)) skipped.push(s)
     else run.push(s)
   }
   return { run, skipped }
 }
 
+/**
+ * What a step tells Luca. The sound step is written for files the user gives; with ai33 connected
+ * it says what to do about a track Luca made or could make, so it never contradicts the Music step
+ * or the rule that generated sound keeps the level it was placed at. It only ever offers: the
+ * tools ask before spending, and nothing here switches them on.
+ */
+function stepGuide(step: EditStep, run: EditStep[], opts: EditPlanOptions): string {
+  if (step.id !== 'sound' || !opts.canGenerate) return step.guide
+  return run.some((s) => s.id === 'music')
+    ? `${step.guide} The Music step made the track with music_generate: it is the music, so do not make another. It is already at a good level under the voice: use sound_mix only for music the user gave. You cannot hear where its beat and drop are, so plan on the 120 BPM grid. Effects still come from the user’s files, or from sfx_generate if they ask for them.`
+    : `${step.guide} ai33 is connected: instead of only asking for files you may offer to make the music (music_generate) and the effects (sfx_generate) with their credits, and make them only if they say yes.`
+}
+
 /** The words on the first request, e.g. "Make my product launch: beat map & stills first, …". */
 export function editRequest(
   edit: StartEdit,
-  opts: { voiceOnly: boolean; brief?: boolean }
+  opts: { voiceOnly: boolean; brief?: boolean; scripted?: boolean }
 ): string {
   const type = videoType(edit.type)
-  const steps = edit.steps
+  const steps = orderedSteps(edit)
     .map(editStep)
-    .filter((s) => !(s.needsPicture && opts.voiceOnly))
+    .filter((s) => !(s.needsPicture && opts.voiceOnly) && !(opts.scripted && s.id === 'cut'))
     .map((s) => s.name.toLowerCase())
   // Luca builds motion films and briefs; it edits classic footage and voiceovers
   const what = `${edit.style === 'motion' || opts.brief ? 'Make' : 'Edit'} my ${type.name.toLowerCase()}`
@@ -274,11 +333,11 @@ export function editRequest(
  */
 export function editGuide(
   edit: StartEdit,
-  opts: { canTranscribe: boolean; voiceOnly: boolean; hearNothing?: boolean }
+  opts: EditPlanOptions & { hearNothing?: boolean }
 ): string {
   const type = videoType(edit.type)
   const style = styleOf(edit.style)
-  const { run, skipped } = runnableSteps(edit.steps, opts)
+  const { run, skipped } = runnableSteps(orderedSteps(edit), opts)
   const out = [
     '# How the user wants this video edited',
     `The user picked these when they described their video. Keep every later edit in line with it unless they ask for something else.`,
@@ -293,7 +352,7 @@ export function editGuide(
   if (run.length) {
     out.push(
       '## The first edit, in this order',
-      ...run.map((s, i) => `${i + 1}. ${s.name}: ${s.guide}`),
+      ...run.map((s, i) => `${i + 1}. ${s.name}: ${stepGuide(s, run, opts)}`),
       ''
     )
   } else {
@@ -303,11 +362,24 @@ export function editGuide(
       ''
     )
   }
-  if (skipped.length)
+  if (opts.scripted)
+    out.push(
+      'The voiceover was recorded from the user’s script; its words and times are already exact in transcript.json. Call transcribe to read them (free); never pass force and never call clean_edit. The script is in .luca/SCRIPT.md.',
+      ''
+    )
+  const names = (list: EditStep[]): string => list.map((s) => s.name.toLowerCase()).join(', ')
+  const noWords = skipped.filter((s) => !s.needsAi33)
+  const noAi33 = skipped.filter((s) => s.needsAi33)
+  if (noWords.length)
     out.push(
       opts.hearNothing
-        ? `Left out, as this video has no voice or footage sound to hear: ${skipped.map((s) => s.name.toLowerCase()).join(', ')}.`
-        : `Skipped because Luca can’t hear the words yet (no AssemblyAI key): ${skipped.map((s) => s.name.toLowerCase()).join(', ')}. Say so in one sentence and that they can connect AssemblyAI in the Transcript tab to get them.`,
+        ? `Left out, as this video has no voice or footage sound to hear: ${names(noWords)}.`
+        : `Skipped because Luca can’t hear the words yet (no AssemblyAI key): ${names(noWords)}. Say so in one sentence and that they can connect AssemblyAI in the Transcript tab to get them.`,
+      ''
+    )
+  if (noAi33.length)
+    out.push(
+      `Skipped because ai33 isn’t connected: ${names(noAi33)}. Say so in one sentence and that they can connect it under Connections (Cmd+,).`,
       ''
     )
   const notes = edit.notes?.trim()

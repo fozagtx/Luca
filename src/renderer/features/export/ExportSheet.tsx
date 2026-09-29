@@ -154,8 +154,11 @@ export function ExportBar(): ReactElement | null {
   return (
     <div
       className={cn(
-        'rise-in flex h-8 shrink-0 items-center gap-2 border-b border-border px-3 text-[11px]',
-        p.status === 'error' ? 'bg-danger/10 text-danger' : 'bg-bg-subtle text-text-2'
+        'rise-in flex shrink-0 items-center gap-2 border-b border-border px-3 text-[11px]',
+        // a failure is a sentence that says what to do next: let it wrap instead of cutting it off
+        p.status === 'error'
+          ? 'min-h-8 bg-danger/10 py-1.5 text-danger'
+          : 'h-8 bg-bg-subtle text-text-2'
       )}
     >
       {p.status === 'done' ? (
@@ -163,7 +166,12 @@ export function ExportBar(): ReactElement | null {
           <CheckDraw className="size-3" />
         </span>
       ) : null}
-      <span className="min-w-0 flex-1 truncate">
+      <span
+        className={cn(
+          'min-w-0 flex-1',
+          p.status === 'error' ? 'selectable max-h-20 overflow-y-auto' : 'truncate'
+        )}
+      >
         {p.status === 'done'
           ? `Exported ${p.outputPath?.split('/').slice(-2).join('/') ?? ''}`
           : p.status === 'cancelled'

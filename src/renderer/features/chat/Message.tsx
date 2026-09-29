@@ -1,3 +1,4 @@
+import { formatCredits, type Ai33Ask } from '@shared/ai33'
 import type { ChatContentPart, ChatMessage, Chip } from '@shared/types'
 import {
   AudioLines,
@@ -25,10 +26,13 @@ import { Button } from '../../components/ui/button'
 import { cn } from '../../lib/cn'
 import { formatDuration } from '../../lib/format'
 import { clock } from '../../lib/timecode'
+import { useAi33 } from '../../stores/ai33'
 import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
 import { stopLuca } from '../../stores/queue'
-import type { ToolPart } from './activity'
+import { Ai33KeyCard } from '../ai33/Ai33KeyCard'
+import { AudioPreview } from '../ai33/AudioPreview'
+import { activityOf, lowerFirst, type ToolPart } from './activity'
 import { Steps } from './Steps'
 
 // ------------------------------------------------------------------------------------ chips
@@ -163,22 +167,48 @@ export function UserMessage({ m, animate }: { m: ChatMessage; animate: boolean }
 
 // ------------------------------------------------------------------------------------ assistant
 
+type PermissionPart = Extract<ChatContentPart, { type: 'permission' }>
+
 type Group =
   | { kind: 'steps'; parts: ToolPart[] }
   | { kind: 'text'; text: string }
-  | { kind: 'permission'; part: Extract<ChatContentPart, { type: 'permission' }> }
+  /** `after`: the step that raised the card (a tool's own question). */
+  | { kind: 'permission'; part: PermissionPart; after?: ToolPart }
+
+/**
+ * The step a card came from. Main puts that step's own name in the card's `tool`; tools can run
+ * in parallel, so the last step started is not necessarily the one that asked. The nearest step of
+ * that name before the card is, and with none the last step stands in.
+ */
+function raisedBy(tools: ToolPart[], card: PermissionPart): ToolPart | undefined {
+  for (let i = tools.length - 1; i >= 0; i--) if (tools[i].name === card.tool) return tools[i]
+  return tools[tools.length - 1]
+}
 
 function group(parts: ChatContentPart[]): Group[] {
   const out: Group[] = []
+  const tools: ToolPart[] = []
   for (const p of parts) {
     const last = out[out.length - 1]
     if (p.type === 'tool') {
+      tools.push(p)
       if (last?.kind === 'steps') last.parts.push(p)
       else out.push({ kind: 'steps', parts: [p] })
     } else if (p.type === 'text') {
       if (!p.text.trim()) continue
       out.push({ kind: 'text', text: p.text })
-    } else out.push({ kind: 'permission', part: p })
+    } else out.push({ kind: 'permission', part: p, after: raisedBy(tools, p) })
+  }
+  return out
+}
+
+/** The question cards a run of steps raised: the ones right after it, in the order they came up. */
+function cardsAfter(groups: Group[], i: number): Extract<Group, { kind: 'permission' }>[] {
+  const out: Extract<Group, { kind: 'permission' }>[] = []
+  for (let j = i + 1; j < groups.length; j++) {
+    const g = groups[j]
+    if (g.kind !== 'permission') break
+    if (g.part.ask) out.push(g)
   }
   return out
 }
@@ -255,7 +285,11 @@ export function AssistantMessage({
   return (
     <div className={cn('group/msg flex flex-col gap-2.5', animate && 'msg-in')}>
       {groups.map((g, i) => {
-        if (g.kind === 'steps')
+        if (g.kind === 'steps') {
+          // a tool that asked a question of its own is stopped on the cards that follow it: it may
+          // ask to connect first and then to spend, so it waits on the first one still open
+          const asked = cardsAfter(groups, i)
+          const open = asked.find((c) => !c.part.resolved)
           return (
             <Steps
               key={i}
@@ -263,11 +297,28 @@ export function AssistantMessage({
               live={!!m.pending}
               stopped={!!m.stopped}
               animate={anim}
+              waiting={
+                open
+                  ? open.part.ask?.kind === 'connect'
+                    ? 'Waiting for your ai33 key'
+                    : 'Waiting for your OK'
+                  : undefined
+              }
+              // the step that asked, when it can be told apart by name (else the first one running)
+              waitingOn={open && open.after?.name === open.part.tool ? open.after.id : undefined}
+              declined={asked.some((c) => c.part.resolved === 'deny')}
             />
           )
+        }
         if (g.kind === 'permission')
           return (
-            <PermissionCard key={g.part.id} part={g.part} stopped={!!m.stopped} animate={anim} />
+            <PermissionCard
+              key={g.part.id}
+              part={g.part}
+              after={g.after}
+              stopped={!!m.stopped}
+              animate={anim}
+            />
           )
         return (
           <Markdown
@@ -326,6 +377,19 @@ export function AssistantMessage({
 
 // ------------------------------------------------------------------------------------ permission
 
+/**
+ * A text field with words in it, where ⌘↩ belongs to the field. An empty message box (where the
+ * caret usually is) is not typing, so the shortcut on a card still works from it. A key being
+ * pasted, or any field in a sheet, is left alone: allowing a step is never a side effect of that.
+ */
+function isTyping(t: HTMLElement | null): boolean {
+  if (!t) return false
+  if (t.isContentEditable) return true
+  if (t.tagName !== 'TEXTAREA' && t.tagName !== 'INPUT') return false
+  const field = t as HTMLInputElement | HTMLTextAreaElement
+  return field.value.trim() !== '' || field.type === 'password' || !!t.closest('[role="dialog"]')
+}
+
 /** What "Always allow" would permit. Only plain read-only commands get a rule (see canUseTool). */
 function allowScope(rule: string): string {
   const bash = /^Bash\((.+)\)$/.exec(rule)
@@ -334,38 +398,53 @@ function allowScope(rule: string): string {
 
 function PermissionCard({
   part,
+  after,
   stopped,
   animate
 }: {
-  part: Extract<ChatContentPart, { type: 'permission' }>
+  part: PermissionPart
+  /** The step that was running when the card came up, which names what a tool's own question is about. */
+  after?: ToolPart
   /** The turn was stopped, so an unanswered card was closed by Stop, not by the person. */
   stopped: boolean
   animate: boolean
 }): ReactElement {
   const decide = useChat((s) => s.decide)
+  const credits = useAi33((s) => s.credits)
+  const fullAccess = useProject((s) => s.settings?.approvals === 'full')
   const [details, setDetails] = useState(false)
   const input = (part.input ?? {}) as Record<string, unknown>
-  const activity = describeActivity(part.tool, input)
+  const ask = part.ask
+  const activity = ask && after ? activityOf(after) : describeActivity(part.tool, input)
   const bash = part.tool === 'Bash'
   const exact = bash ? String(input.command ?? '') : JSON.stringify(input, null, 2)
   const scope = part.rule ? allowScope(part.rule) : null
+  const askKind = ask?.kind
 
   // ⌘↩ allows once, ⇧⌘↩ always (when offered): Luca is blocked until you answer, so this comes
   // before the queue
   useEffect(() => {
-    if (part.resolved) return
+    // the key card takes a pasted key, so no shortcut may answer it
+    if (part.resolved || askKind === 'connect') return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing) return
+      // a cost card has no "always": ⇧⌘↩ is not a way to spend
+      if (askKind && e.shiftKey) return
       // typing a message: ⌘↩ sends it rather than allowing the step
       const t = e.target as HTMLElement | null
-      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return
+      // only an ai33 card treats an empty message box as "not typing"; every other permission
+      // card keeps the strict rule that any field means the person is typing
+      const typing = askKind
+        ? isTyping(t)
+        : !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)
+      if (typing) return
       e.preventDefault()
       e.stopImmediatePropagation()
       void decide(part.id, e.shiftKey && scope ? 'allow-always' : 'allow')
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [part.id, part.resolved, scope, decide])
+  }, [part.id, part.resolved, scope, askKind, decide])
 
   if (part.resolved) {
     const denied = part.resolved === 'deny'
@@ -379,22 +458,27 @@ function PermissionCard({
           <Check size={12} className="shrink-0 text-success" />
         )}
         <span className="min-w-0 truncate">
-          {denied
-            ? stopped
-              ? `Stopped before ${activity.active.toLowerCase()}`
-              : part.cancelled
-                ? `Skipped: ${activity.active.toLowerCase()}`
-                : `You didn't allow: ${activity.active.toLowerCase()}`
-            : part.resolved === 'allow-always'
-              ? `Always allowed in this project: ${scope ?? activity.active.toLowerCase()}`
-              : `Allowed once: ${activity.active.toLowerCase()}`}
+          {ask
+            ? askOutcome(ask, part, lowerFirst(activity.active), stopped, credits)
+            : denied
+              ? stopped
+                ? `Stopped before ${activity.active.toLowerCase()}`
+                : part.cancelled
+                  ? `Skipped: ${activity.active.toLowerCase()}`
+                  : `You didn't allow: ${activity.active.toLowerCase()}`
+              : part.resolved === 'allow-always'
+                ? `Always allowed in this project: ${scope ?? activity.active.toLowerCase()}`
+                : `Allowed once: ${activity.active.toLowerCase()}`}
         </span>
       </div>
     )
   }
 
+  if (ask) return <AskCard part={part} ask={ask} animate={animate} />
+
   return (
     <div
+      data-space
       className={cn(
         'rounded-[12px] border border-border bg-bg p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
         animate && 'msg-in'
@@ -453,19 +537,129 @@ function PermissionCard({
         <Button size="sm" variant="ghost" onClick={() => void decide(part.id, 'deny')}>
           Don&apos;t allow
         </Button>
-        <button
-          type="button"
-          onClick={() => void useProject.getState().setApprovals('full')}
-          className="self-center text-[11px] text-text-3 underline-offset-2 hover:text-text hover:underline"
-        >
-          Turn on full access
-        </button>
+        {fullAccess ? null : (
+          <button
+            type="button"
+            onClick={() => void useProject.getState().setApprovals('full')}
+            className="self-center text-[11px] text-text-3 underline-offset-2 hover:text-text hover:underline"
+          >
+            Turn on full access
+          </button>
+        )}
       </div>
       <p className="mt-2 pl-[38px] text-[10.5px] leading-[1.4] text-text-3">
         {scope
           ? `Always allow lets ${scope} run in this project without asking again.`
           : 'Luca asks every time for commands that could change, delete or download things.'}
       </p>
+    </div>
+  )
+}
+
+/** How an answered question from one of Luca's own tools reads in the chat. */
+function askOutcome(
+  ask: Ai33Ask,
+  part: PermissionPart,
+  what: string,
+  stopped: boolean,
+  credits: number | null
+): string {
+  const denied = part.resolved === 'deny'
+  if (ask.kind === 'connect') {
+    if (!denied)
+      return credits === null ? 'Connected' : `Connected · ${formatCredits(credits)} credits`
+    return stopped
+      ? 'Stopped before connecting ai33'
+      : part.cancelled
+        ? 'Skipped: connecting ai33'
+        : 'You didn’t connect ai33'
+  }
+  if (!denied) return `Allowed once: ${what}`
+  return stopped ? `Stopped before ${what}` : `Skipped: ${what}`
+}
+
+/**
+ * A question one of Luca's own tools asks in the chat: `connect` (it needs an ai33 key) or
+ * `spend` (a cost card). Main writes the words; there is no "always allow" and no safe list.
+ */
+function AskCard({
+  part,
+  ask,
+  animate
+}: {
+  part: PermissionPart
+  ask: Ai33Ask
+  animate: boolean
+}): ReactElement {
+  const decide = useChat((s) => s.decide)
+  const connect = ask.kind === 'connect'
+  return (
+    <div
+      role="group"
+      aria-label={ask.title}
+      data-space
+      className={cn(
+        'rounded-[12px] border border-border bg-bg p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
+        animate && 'msg-in'
+      )}
+    >
+      <div className="flex items-start gap-2.5">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-secondary text-secondary-fg">
+          <AudioLines size={15} strokeWidth={1.75} />
+        </span>
+        <div className="min-w-0 flex-1">
+          {/* Luca is stopped until this is answered: it is announced as it comes up */}
+          <div role="alert">
+            <div className="text-[12.5px] font-semibold text-text">
+              {connect ? ask.title || 'Luca needs an ai33 key' : ask.title}
+            </div>
+            {connect ? null : (
+              <div className="mt-0.5 text-[12px] leading-[1.45] text-text-2">{ask.detail}</div>
+            )}
+            {!connect && ask.warn ? (
+              <div className="mt-1.5 flex items-start gap-1.5 text-[11.5px] leading-[1.4] text-text-2">
+                <CircleAlert size={12} className="mt-px shrink-0 text-warning" />
+                <span>{ask.warn}</span>
+              </div>
+            ) : null}
+          </div>
+          {connect ? (
+            // the key field, Connect and Not now; connecting is typing a key, never a shortcut
+            <Ai33KeyCard
+              context="chat"
+              onDismiss={() => void decide(part.id, 'deny')}
+              className="mt-0.5"
+            />
+          ) : (
+            <>
+              {ask.voice ? (
+                <div className="mt-2 flex items-center gap-1 text-[11.5px] text-text-2">
+                  <AudioPreview voiceId={ask.voice.id} label={`Hear ${ask.voice.name}`} />
+                  {/* the words play it too; the button beside them is what keyboards and readers use */}
+                  <span
+                    aria-hidden
+                    className="cursor-default"
+                    onClick={(e) => e.currentTarget.parentElement?.querySelector('button')?.click()}
+                  >
+                    Hear {ask.voice.name}
+                  </span>
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+      {connect ? null : (
+        <div className="mt-3 flex flex-wrap gap-1.5 pl-[38px]">
+          <Button size="sm" variant="primary" onClick={() => void decide(part.id, 'allow')}>
+            {ask.labels?.allow ?? 'Go ahead'}{' '}
+            <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↩</kbd>
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => void decide(part.id, 'deny')}>
+            {ask.labels?.deny ?? 'Not now'}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

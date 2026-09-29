@@ -23,6 +23,11 @@ const NAMES: Record<SoundKey, string> = {
 
 /** A clip's sound group and the name people know it by. */
 export function soundOf(clip: Clip, project: Project | null): { key: SoundKey; name: string } {
+  // sound Luca made for this video says what it is (data-luca-role); its path would call every
+  // voiceover line and sound effect "Music"
+  if (clip.role === 'music') return { key: 'music', name: NAMES.music }
+  if (clip.role === 'voice') return { key: 'voiceover', name: NAMES.voiceover }
+  if (clip.role === 'sfx') return { key: 'other', name: clip.title || clip.label || 'Sound effect' }
   const src = clip.src ?? ''
   const base = src.slice(src.lastIndexOf('/') + 1)
   if (/^media\/broll\//.test(src)) return { key: 'broll', name: NAMES.broll }

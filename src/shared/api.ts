@@ -1,4 +1,15 @@
 import type {
+  Ai33Ask,
+  Ai33Estimate,
+  Ai33EstimateReq,
+  Ai33Notice,
+  Ai33Preview,
+  Ai33SetKeyResult,
+  Ai33Status,
+  Ai33VoicePage,
+  Ai33VoiceQuery
+} from './ai33'
+import type {
   AgentEvent,
   BrollResults,
   BrollSearch,
@@ -60,6 +71,8 @@ export type LucaApi = {
     recent: () => Promise<RecentProject[]>
     /** New project from the person's footage or a voiceover (images next to them wait in media/). */
     start: (args: StartArgs) => Promise<StartResult>
+    /** Stop starting a project (a script being recorded); the start call then rejects. */
+    cancelStart: () => Promise<void>
     /** Videos, audio or images (several at once) to start a project from. */
     pickMedia: () => Promise<string[]>
     /** Small data-URL preview of a local image or video file. */
@@ -115,6 +128,33 @@ export type LucaApi = {
     /** Checks the key with Pexels and saves it (empty removes it); rejects when Pexels refuses it. */
     setKey: (key: string) => Promise<boolean>
     search: (args: BrollSearch) => Promise<BrollResults>
+  }
+  /**
+   * Voiceover, music and sound effects from ai33, on the person's own key. The key
+   * never reaches the renderer: it only learns whether there is one and what it can spend.
+   */
+  ai33: {
+    hasKey: () => Promise<boolean>
+    /** Credits, health of the voice services, running jobs; reads ai33 (cached briefly). */
+    status: () => Promise<Ai33Status>
+    /** Checks the key with ai33 and saves it (empty removes it); rejects when ai33 refuses it. */
+    setKey: (key: string) => Promise<Ai33SetKeyResult>
+    /** Voices to choose from (cached for ten minutes). */
+    voices: (q: Ai33VoiceQuery) => Promise<Ai33VoicePage>
+    /** A voice's sample as bytes: the renderer plays it from a blob: URL. */
+    voicePreview: (voiceId: string) => Promise<Ai33Preview>
+    /** What a job is expected to cost (a guess, marked as one). */
+    estimate: (req: Ai33EstimateReq) => Promise<Ai33Estimate>
+    /** Answer a question main pushed with onAsk (the start card's cost confirm). */
+    askReply: (id: string, decision: 'allow' | 'deny') => Promise<void>
+    /** The open project's words are exact (recorded from a script): nothing to transcribe or clean. */
+    isScriptProject: () => Promise<boolean>
+    /** Main asks a question before a chat exists (a cost card on the start card). */
+    onAsk: (cb: (a: { id: string; ask: Ai33Ask }) => void) => Unsubscribe
+    /** The question was answered elsewhere, timed out or was cancelled: take the card down. */
+    onAskClosed: (cb: (id: string) => void) => Unsubscribe
+    /** Something finished while you were elsewhere (a job that outlived its wait). */
+    onNotice: (cb: (n: Ai33Notice) => void) => Unsubscribe
   }
   /** Luca updating itself from its GitHub releases. */
   updates: {

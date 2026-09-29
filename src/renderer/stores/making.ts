@@ -5,16 +5,21 @@ import { useChat } from './chat'
 import { useProject } from './project'
 import { useTimeline } from './timeline'
 
+/** What the first edit starts from: footage, a voiceover, or a script recorded on the start card. */
+export type MakingKind = StartKind | 'script'
+
 /** Luca's first edit of the footage from the start card: from the first request until that turn ends. */
 export type Making = {
   projectId: string
-  kind: StartKind
+  kind: MakingKind
   since: number
   /** The footage's length in seconds, once known (the timeline tells when the start card can't). */
   length: number | null
   /** The first guess for footage this long, before what past edits took (see `guessSeconds`). */
   guess: number
-  /** How long it should take, in seconds (see `expectedSeconds`). */
+  /** A fixed allowance in seconds on top of the learned time (music takes as long as ai33 takes). */
+  extra: number
+  /** How long it should take, in seconds (see `expectedSeconds`), the allowance included. */
   expected: number
   /** Luca's turn has begun (the request can go in while Luca is still starting up). */
   started: boolean
@@ -26,33 +31,46 @@ export type Making = {
 
 type MakingStore = {
   making: Making | null
-  /** `length`: the footage's length in seconds, or null when the start card doesn't know it. */
-  begin: (projectId: string, kind: StartKind, length: number | null) => void
+  /**
+   * `length`: the footage's length in seconds, or null when the start card doesn't know it.
+   * `extraSeconds`: work that takes a fixed time however long the video is (making music); it is
+   * added to the estimate and kept out of what past edits teach.
+   */
+  begin: (
+    projectId: string,
+    kind: MakingKind,
+    length: number | null,
+    opts?: { extraSeconds?: number }
+  ) => void
   cancel: () => void
   setPeek: (peek: boolean) => void
 }
 
+/** Making music takes about this long at ai33, whatever the video's length. */
+export const MAKING_MUSIC_EXTRA_SECONDS = 150
+
 /** A first guess in seconds for a minute of footage, before this Mac has edited any. */
-const GUESS: Record<StartKind, number> = { video: 150, audio: 240, brief: 300 }
+const GUESS: Record<MakingKind, number> = { video: 150, audio: 240, brief: 300, script: 200 }
 /**
  * More for every minute after the first: transcribing, cutting and captioning a 10-minute video
- * takes far longer than a 30-second clip, and a voiceover needs every visual made.
+ * takes far longer than a 30-second clip, and a voiceover needs every visual made. A script
+ * comes with its words and times, so there is nothing to transcribe or cut.
  */
-const PER_MINUTE: Record<StartKind, number> = { video: 45, audio: 75, brief: 0 }
+const PER_MINUTE: Record<MakingKind, number> = { video: 45, audio: 75, brief: 0, script: 70 }
 /** How long past edits took next to their first guess (2 = twice as long), per kind. */
 const TIMES_KEY = 'luca.edit-times'
 
-function pastRatios(): Partial<Record<StartKind, number[]>> {
+function pastRatios(): Partial<Record<MakingKind, number[]>> {
   try {
     return JSON.parse(localStorage.getItem(TIMES_KEY) ?? '{}') as Partial<
-      Record<StartKind, number[]>
+      Record<MakingKind, number[]>
     >
   } catch {
     return {}
   }
 }
 
-function remember(kind: StartKind, ratio: number): void {
+function remember(kind: MakingKind, ratio: number): void {
   try {
     const all = pastRatios()
     all[kind] = [...(all[kind] ?? []), Math.round(ratio * 100) / 100].slice(-5)
@@ -63,13 +81,13 @@ function remember(kind: StartKind, ratio: number): void {
 }
 
 /** The first guess for editing this much footage, in seconds; a minute when the length is unknown. */
-export function guessSeconds(kind: StartKind, length: number | null): number {
+export function guessSeconds(kind: MakingKind, length: number | null): number {
   const minutes = Math.min(30, (length ?? 60) / 60)
   return GUESS[kind] + PER_MINUTE[kind] * Math.max(0, minutes - 1)
 }
 
 /** How long the first edit takes: the guess, scaled by the median of the last few edits. */
-export function expectedSeconds(kind: StartKind, guess: number): number {
+export function expectedSeconds(kind: MakingKind, guess: number): number {
   const xs = [1, ...(pastRatios()[kind] ?? [])].sort((a, b) => a - b)
   const mid = xs.length >> 1
   return guess * (xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2)
@@ -123,7 +141,9 @@ function bind(): void {
     )
       update({ finishingSince: Date.now() })
     else if (e.type === 'turn-end' && m.started) {
-      if (!e.isError) remember(m.kind, (Date.now() - m.since) / 1000 / m.guess)
+      // the fixed allowance is not part of the ratio, and a quick edit doesn't teach "instant"
+      if (!e.isError)
+        remember(m.kind, Math.max(30, (Date.now() - m.since) / 1000 - m.extra) / m.guess)
       useMaking.setState({ making: null })
     }
   })
@@ -133,7 +153,7 @@ function bind(): void {
     const length = s.timeline?.duration
     if (!m || m.length !== null || !length) return
     const guess = guessSeconds(m.kind, length)
-    update({ length, guess, expected: expectedSeconds(m.kind, guess) })
+    update({ length, guess, expected: expectedSeconds(m.kind, guess) + m.extra })
   })
   // Home, or another project: this one's edit isn't on screen any more
   useProject.subscribe((s) => {
@@ -150,9 +170,10 @@ function bind(): void {
 
 export const useMaking = create<MakingStore>((set) => ({
   making: null,
-  begin: (projectId, kind, length) => {
+  begin: (projectId, kind, length, opts) => {
     bind()
     const guess = guessSeconds(kind, length)
+    const extra = Math.max(0, opts?.extraSeconds ?? 0)
     set({
       making: {
         projectId,
@@ -160,7 +181,8 @@ export const useMaking = create<MakingStore>((set) => ({
         since: Date.now(),
         length,
         guess,
-        expected: expectedSeconds(kind, guess),
+        extra,
+        expected: expectedSeconds(kind, guess) + extra,
         started: false,
         peek: false
       }

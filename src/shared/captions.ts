@@ -719,16 +719,20 @@ export function parseFontFaces(css: string): GoogleFontFace[] {
   return out
 }
 
+/** The subsets kept: Latin and Latin Extended, and Vietnamese (its stacked tone marks live there). */
+const KEPT_SUBSETS = new Set(['latin', 'latin-ext', 'vietnamese'])
+
 /**
- * The faces worth keeping: Latin and Latin Extended cover English and most European languages
- * at a few dozen KB per weight. Stylesheets without subset comments are kept whole; a family
- * with no Latin at all keeps everything unless that is more files than is sensible.
+ * The faces worth keeping: Latin, Latin Extended and Vietnamese cover English, most European
+ * languages and Vietnamese at a few dozen KB per weight. Stylesheets without subset comments are
+ * kept whole; a family with none of them keeps everything unless that is more files than is
+ * sensible.
  */
 export function keepFontSubsets(faces: GoogleFontFace[]): GoogleFontFace[] {
   return [...new Set(faces.map((f) => f.family))].flatMap((family) => {
     const all = faces.filter((f) => f.family === family)
     if (!all.some((f) => f.subset)) return all
-    const latin = all.filter((f) => f.subset === 'latin' || f.subset === 'latin-ext')
+    const latin = all.filter((f) => KEPT_SUBSETS.has(f.subset ?? ''))
     if (latin.length) return latin
     return all.length <= 24 ? all : []
   })

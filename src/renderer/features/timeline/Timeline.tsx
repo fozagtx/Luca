@@ -103,7 +103,11 @@ function TrackHead({
         strokeWidth={1.75}
         className={cn('shrink-0', `luca-track-icon-${meta.kind}`)}
       />
-      <span className="min-w-0 flex-1 truncate">{KIND_LABEL[meta.kind]}</span>
+      {/* main names a row by what it holds only for sound (Voiceover, Music, Sound effects); the
+          other rows keep the kind's own name, so animations aren't called graphics */}
+      <span className="min-w-0 flex-1 truncate">
+        {meta.kind === 'audio' && meta.label ? meta.label : KIND_LABEL[meta.kind]}
+      </span>
       <div
         className="luca-track-tools opacity-0 transition-opacity duration-150 group-hover/head:opacity-100 data-[on=true]:opacity-100"
         data-on={muted || locked}

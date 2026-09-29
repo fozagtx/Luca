@@ -2,6 +2,7 @@
  * Plain-language descriptions of what the agent is doing, for people who edit video rather than
  * code: "Adding Lower Third Classic" instead of `npx hyperframes add lower-third-classic --json`.
  */
+import { formatCredits, formatSpan } from './ai33'
 
 export type ActivityKind =
   'look' | 'edit' | 'check' | 'search' | 'add' | 'render' | 'media' | 'plan' | 'other'
@@ -38,6 +39,7 @@ export function friendlyTarget(path: unknown, titleOf?: TitleOf): string {
   if (/(^|\/)remocn\/[^/]+\.tsx?$/.test(p)) return `the ${titleCase(stem)} animation`
   if (/(^|\/)(CLAUDE|AGENTS)\.md$/.test(p)) return 'the project notes'
   if (/(^|\/)media\/broll\//.test(p)) return 'the B-roll'
+  if (/(^|\/)media\/generated\/(speech|music|sfx)\//.test(p)) return 'the generated audio'
   if (/(^|\/)media\//.test(p)) return 'your footage'
   if (/(^|\/)transcript(\.original)?\.json$/.test(p)) return 'the transcript'
   if (/(^|\/)edl\.json$/.test(p)) return 'the cut list'
@@ -255,6 +257,25 @@ export function describeActivity(
       const what = titleCase(String(input.clipId ?? 'the'))
       return act('render', `Rendering the ${what} animation`, `Placed the ${what} animation`)
     }
+    case 'mcp__luca__speech_generate':
+      if (Array.isArray(input.speakers) && input.speakers.length)
+        return act('media', 'Recording the conversation', 'Recorded the conversation')
+      if (typeof input.at === 'number') return act('media', 'Recording a line', 'Recorded a line')
+      return act('media', 'Recording the voiceover', 'Recorded the voiceover')
+    case 'mcp__luca__voice_search':
+      return act('search', 'Finding voices', 'Looked through voices')
+    case 'mcp__luca__music_generate':
+      return act('media', 'Making music', 'Made music')
+    case 'mcp__luca__sfx_generate': {
+      const n = Array.isArray(input.effects) ? input.effects.length : 1
+      return n > 1
+        ? act('media', `Making ${n} sound effects`, `Made ${n} sound effects`)
+        : act('media', 'Making a sound effect', 'Made a sound effect')
+    }
+    case 'mcp__luca__audio_place':
+      return act('add', 'Adding the sound to the video', 'Added the sound to the video')
+    case 'mcp__luca__ai33_status':
+      return act('other', 'Checking your credits', 'Checked your credits')
     case 'mcp__luca__captions_apply':
       return act('edit', 'Styling the captions', 'Styled the captions')
     case 'mcp__luca__sound_mix':
@@ -274,5 +295,92 @@ export function describeActivity(
     }
     default:
       return act('other', 'Working on it', 'Worked on it')
+  }
+}
+
+// ------------------------------------------------------------------ what a finished ai33 step made
+
+/** 3 → "0:03", 84 → "1:24": a time in the video. */
+const clock = (seconds: number): string => {
+  const s = Math.max(0, Math.round(seconds))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/**
+ * What a job cost, as words for the end of a step's label: "610 credits", "no credits" only when
+ * the result says the work was reused (nothing was spent), and nothing when the result doesn't say.
+ */
+const used = (r: { credits?: unknown; reused?: unknown }): string =>
+  r.reused === true
+    ? 'no credits'
+    : typeof r.credits === 'number' && r.credits > 0
+      ? `${formatCredits(r.credits)} credits`
+      : ''
+
+/** A step's label with its cost after it (` · 610 credits`), or as it is when there is none to say. */
+const withCost = (label: string, r: { credits?: unknown; reused?: unknown }): string => {
+  const cost = used(r)
+  return cost ? `${label} · ${cost}` : label
+}
+
+const number = (v: unknown): number | null => (typeof v === 'number' && isFinite(v) ? v : null)
+
+/** What an ai33 tool still working at its wait budget reads, by tool. */
+const WORKING: Record<string, string> = {
+  speech_generate: 'The voiceover is still being recorded',
+  music_generate: 'Music is still being made',
+  sfx_generate: 'The sound effect is still being made'
+}
+
+/**
+ * How a finished ai33 tool step reads in the chat, from its result's first line (single-line JSON,
+ * the shape in the tool's description). `done` replaces the step's finished label (with what it
+ * made and what it cost); `status: 'stopped'` marks a step the person declined (not an error).
+ * Anything unreadable, and every other tool, returns nothing: the neutral label stays.
+ */
+export function describeResult(
+  name: string,
+  firstLine: string
+): { done?: string; status?: 'stopped' } {
+  const tool = name.replace(/^mcp__luca__/, '')
+  let r: Record<string, unknown>
+  try {
+    const parsed: unknown = JSON.parse(firstLine)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    r = parsed as Record<string, unknown>
+  } catch {
+    return {}
+  }
+  if (r.declined === true) return { status: 'stopped' }
+  if (r.ok !== true) return {}
+  if (r.working === true) return WORKING[tool] ? { done: WORKING[tool] } : {}
+  switch (tool) {
+    case 'speech_generate': {
+      // a line placed at a time (the tool says when it starts) reads like an effect at its moment
+      const at = number(r.at)
+      if (at !== null) return { done: withCost(`Added a voiceover line at ${clock(at)}`, r) }
+      const seconds = number(r.seconds)
+      const what = seconds === null ? 'the voiceover' : `a ${formatSpan(seconds)} voiceover`
+      return { done: withCost(`Recorded ${what}`, r) }
+    }
+    case 'music_generate':
+      return {
+        done:
+          r.reused === true ? 'Used the music already made · no credits' : withCost('Made music', r)
+      }
+    case 'sfx_generate': {
+      const placed = Array.isArray(r.placed) ? (r.placed as Record<string, unknown>[]) : []
+      const count = Math.max(placed.length, Array.isArray(r.files) ? r.files.length : 0)
+      if (count > 1) return { done: withCost(`Made ${count} sound effects`, r) }
+      const one = placed[0]
+      const title = typeof one?.title === 'string' ? one.title.trim().toLowerCase() : ''
+      const start = number(one?.start)
+      const noun = title ? `${/^[aeiou]/.test(title) ? 'an' : 'a'} ${title}` : 'a sound effect'
+      return {
+        done: withCost(start === null ? `Made ${noun}` : `Added ${noun} at ${clock(start)}`, r)
+      }
+    }
+    default:
+      return {}
   }
 }

@@ -12,6 +12,7 @@ const defaults = (): Settings => ({
   recentProjects: [],
   panes: {},
   alwaysAllow: {},
+  ai33: {},
   approvals: 'ask'
 })
 

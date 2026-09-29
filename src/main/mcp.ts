@@ -33,6 +33,8 @@ import {
   type Phrase
 } from './clean'
 import { library } from './library'
+import type { Ai33Ctx } from './ai33-ctx'
+import { ai33Tools } from './mcp-ai33'
 import { HYPERFRAMES } from './env'
 import { readTimeline } from './hyperframes'
 import { applyEdit } from './media'
@@ -125,7 +127,9 @@ const REFUSALS: Record<EditRefused['reason'], string> = {
   'off-timeline':
     'The original recording is no longer on the timeline, so there is nothing to cut. Tell the user in one short sentence.',
   'over-footage':
-    'The voice is a separate voiceover playing over the footage, so cutting ums and pauses out of it would pull it out of step with the picture. Do not cut it; tell the user in one short sentence that they can trim pauses themselves in the timeline.'
+    'The voice is a separate voiceover playing over the footage, so cutting ums and pauses out of it would pull it out of step with the picture. Do not cut it; tell the user in one short sentence that they can trim pauses themselves in the timeline.',
+  script:
+    'This video’s words come from the user’s script, so they are already exact and there is nothing to transcribe again or cut. Call transcribe without force to read them (it is free) and time everything to them; never call clean_edit on it. If the user wants a different voice or speed, tell them in one short sentence that it means starting again from the script (a different voice or speed is recorded and charged again; only an identical retry is free).'
 }
 
 const refusal = (err: unknown): string =>
@@ -252,9 +256,13 @@ function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown>
 
 /**
  * Luca's in-process MCP server: the words and the clean edit, catalog search, B-roll, captions and
- * fonts, plus the remocn tools described in the spec.
+ * fonts, plus the remocn tools described in the spec, and the tools that make voiceover, music and
+ * sound effects (they need the agent's ai33 context: where to ask the person and report progress).
  */
-export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMcpServer> {
+export function lucaMcpServer(
+  projectDir: string,
+  ctx: Ai33Ctx
+): ReturnType<typeof createSdkMcpServer> {
   return createSdkMcpServer({
     name: 'luca',
     version: '1.0.0',
@@ -277,7 +285,14 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'their look; Luca keeps them in sync with every cut, so never write or edit them by hand. ' +
       'font_add adds a font that comes with Luca, or downloads a Google Fonts font, into the project ' +
       'so any text can use it offline. ' +
-      'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it.',
+      'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it. ' +
+      'speech_generate records words as a voiceover, a line or a conversation and places it (it ' +
+      'never changes the video’s words or captions); voice_search lists voices the user can listen ' +
+      'to; music_generate makes instrumental music (two takes) and puts it under the video; ' +
+      'sfx_generate makes short sound effects at given times; audio_place puts a saved sound on the ' +
+      'timeline or swaps it for free; ai33_status shows credits and saved files and collects a job ' +
+      'that finished late. speech_generate, music_generate and sfx_generate spend the user’s ai33 ' +
+      'credits: they ask the user when it is a lot, and you never retry them.',
     tools: [
       tool(
         'transcribe',
@@ -823,7 +838,8 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         },
         async ({ clipId, start, track }) =>
           text(await placeComponent(projectDir, { clipId, start, track }))
-      )
+      ),
+      ...ai33Tools(ctx, projectDir)
     ]
   })
 }
