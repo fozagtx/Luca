@@ -69,13 +69,6 @@ export type Chip =
       label?: string
     }
   | { kind: 'frame'; time: number; png: string }
-  | {
-      kind: 'catalog'
-      name: string
-      type: 'block' | 'component'
-      title: string
-      source?: 'hyperframes' | 'remocn'
-    }
   | { kind: 'clip'; clipId: string; track: number; start: number; end: number }
   | { kind: 'transcript'; text: string; start: number; end: number }
   /** What the person picked on the start card (video type, edit steps), shown on the first request. */
@@ -84,7 +77,7 @@ export type Chip =
   | {
       kind: 'broll'
       id: string
-      media: BackgroundMedia
+      media: BrollMedia
       title: string
       thumb: string
       duration?: number
@@ -299,7 +292,6 @@ export type Settings = {
   projectsDir: string
   theme: Theme
   renderWorkers: number
-  defaultAspect: Aspect
   keyterms: string[]
   recentProjects: RecentProject[]
   window?: { x?: number; y?: number; width: number; height: number }
@@ -376,7 +368,7 @@ export type VoiceEvent =
 
 /** Stages of making a new project, pushed while it is created. */
 export type CreateProgress = {
-  stage: 'preparing' | 'copying' | 'scaffolding' | 'media' | 'starting' | 'done' | 'error'
+  stage: 'preparing' | 'copying' | 'scaffolding' | 'starting' | 'done' | 'error'
   message?: string
   /** 0..1 within the stage when measurable. */
   progress?: number
@@ -394,7 +386,6 @@ export type StartArgs = {
    * screenshots).
    */
   files: string[]
-  look?: string | null
   /** What kind of video it is and what Luca does to it; saved as .luca/EDIT.md. */
   edit?: StartEdit
 }
@@ -526,13 +517,13 @@ export type ColorState = {
   targets: number
 }
 
-export type BackgroundMedia = 'photo' | 'video'
+export type BrollMedia = 'photo' | 'video'
 
 /** A free stock photo or video from Pexels, to show as B-roll. */
-export type Background = {
+export type BrollItem = {
   /** `photo:<pexels id>` or `video:<pexels id>`. */
   id: string
-  media: BackgroundMedia
+  media: BrollMedia
   width: number
   height: number
   /** Seconds (videos only). */
@@ -541,37 +532,30 @@ export type Background = {
   title: string
   /** Small still for grids. */
   thumb: string
-  /** Larger still: a photo at screen size, a video's poster frame. */
-  poster: string
-  /** A light MP4 for hover previews and the home screen (videos only). */
+  /** A light MP4 for hover previews (videos only). */
   preview?: string
-  /** Its average color, shown while the still loads. */
-  color?: string | null
-  /** Photographer or videographer, and their Pexels page. */
+  /** Photographer or videographer. */
   author: string
-  authorUrl: string
-  /** The item's Pexels page. */
-  url: string
 }
 
-export type BackgroundSearch = {
-  /** Plain words; empty browses popular backgrounds. */
-  query?: string
-  media?: 'all' | BackgroundMedia
+export type BrollSearch = {
+  /** Plain words. */
+  query: string
+  media?: 'all' | BrollMedia
   orientation?: Aspect
   page?: number
 }
 
-export type BackgroundResults = {
-  items: Background[]
+export type BrollResults = {
+  items: BrollItem[]
   page: number
   hasMore: boolean
 }
 
-/** A background downloaded into the project, sized for its composition. */
-export type AddedBackground = {
+/** B-roll downloaded into the project, sized for its composition. */
+export type AddedBroll = {
   id: string
-  media: BackgroundMedia
+  media: BrollMedia
   /** Project-relative path, e.g. media/broll/pexels-video-123.mp4. */
   file: string
   width: number

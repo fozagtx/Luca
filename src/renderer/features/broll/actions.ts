@@ -1,4 +1,4 @@
-import type { Background } from '@shared/types'
+import type { BrollItem } from '@shared/types'
 import { brollChip } from '../../stores/broll'
 import { useChat } from '../../stores/chat'
 import { useUi } from '../../stores/ui'
@@ -14,7 +14,7 @@ const focusComposer = (): void => {
  * where before sending; the playhead goes with the message). One pick at a time, so a new pick
  * replaces the last one.
  */
-export function pickBroll(b: Background): void {
+export function pickBroll(b: BrollItem): void {
   const chat = useChat.getState()
   const others = chat.chips.filter((c) => c.kind !== 'broll')
   if (others.length !== chat.chips.length) useChat.setState({ chips: others })

@@ -37,7 +37,15 @@ import {
   WEB_IMAGE_EXT,
   type VideoProbe
 } from './footage'
-import { closingOffset, findTagById, findTags, insertIntoRoot, replaceTag, setAttrs } from './html'
+import {
+  closingOffset,
+  findTagById,
+  findTags,
+  insertIntoRoot,
+  removeElement,
+  replaceTag,
+  setAttrs
+} from './html'
 import { Channels, broadcast } from './ipc'
 import { snapshot } from './hyperframes'
 import { poster } from './media'
@@ -131,8 +139,10 @@ type PlacedClip = {
 /**
  * A new project from the person's footage (`hyperframes init --video` with the first video, the
  * others played back to back after it) or a voiceover (`--audio`); images added next to it wait
- * in media/. Videos a browser can't play (iPhone HEVC, 10-bit, HDR) are made ready first. The
- * edit picked on the start card goes in the brief and in .luca/EDIT.md.
+ * in media/. Videos a browser can't play (iPhone HEVC, 10-bit, HDR) are made ready first. A
+ * voiceover next to footage with no sound of its own is the voice: it becomes the project's
+ * source, so the words and captions follow it (it goes on the timeline once the project is
+ * made). The edit picked on the start card goes in the brief and in .luca/EDIT.md.
  */
 export async function startProject(
   args: StartArgs,
@@ -146,8 +156,6 @@ export async function startProject(
   const audio = ofType(AUDIO_EXT)[0] ?? null
   // the first video (or the voiceover), never an image that happened to be added before it
   const main = kind === 'video' ? videos[0] : audio!
-  // images (and a soundtrack next to footage) wait in media/
-  const extras = kind === 'video' ? [...images, ...(audio ? [audio] : [])] : images
   const settings = getSettings()
   const name = (args.name?.trim() || basename(main, extname(main))).slice(0, 80)
   const { dir, id } = uniqueDir(settings.projectsDir, slugify(name))
@@ -157,10 +165,15 @@ export async function startProject(
   try {
     report({ stage: 'preparing', message: 'Getting ready' })
     const probes = await probeAll(videos)
+    // footage without sound and a voiceover: the voiceover is what is said
+    const voiceover = kind === 'video' && audio && !probes[0].audio ? audio : null
+    // images (and a soundtrack next to footage that has its own sound) wait in media/
+    const extras = kind === 'video' ? [...images, ...(audio && !voiceover ? [audio] : [])] : images
     const ready = await prepareAll(videos, probes, staging, report)
+    const initFile = await safelyNamed(kind === 'video' ? ready[0] : main, staging)
     const initArgs = ['init', id, '--non-interactive', '--resolution', RESOLUTION[args.aspect]]
-    if (kind === 'video') initArgs.push('--video', ready[0], '--skip-transcribe')
-    else initArgs.push('--audio', main, '--skip-transcribe')
+    if (kind === 'video') initArgs.push('--video', initFile, '--skip-transcribe')
+    else initArgs.push('--audio', initFile, '--skip-transcribe')
     report({
       stage: 'copying',
       message:
@@ -189,11 +202,14 @@ export async function startProject(
     }
 
     // the file as it is in the project: init renames the footage it converts
-    const source = kind === 'video' ? findSource(dir) : basename(main)
-    let brief =
-      kind === 'video'
-        ? videoBrief(await placeClips(dir, source, videos, ready, probes, report), args.aspect)
-        : await voiceoverBrief(dir, source, args.aspect)
+    let source = kind === 'video' ? findSource(dir) : basename(initFile)
+    let brief: string
+    if (kind === 'video') {
+      const clips = await placeClips(dir, source, videos, ready, probes, report)
+      const voice = voiceover ? await importVoiceover(dir, voiceover, report) : null
+      if (voice) source = basename(voice.src)
+      brief = videoBrief(clips, args.aspect, voice)
+    } else brief = await voiceoverBrief(dir, source, args.aspect)
     if (extras.length) {
       const added = await importExtras(dir, extras, report)
       brief += ` The user also added ${added.length === 1 ? 'this file' : 'these files'}, in the order they added them: ${added.join(', ')}. Use ${added.length === 1 ? 'it' : 'them'} where ${added.length === 1 ? 'it fits' : 'they fit'} (images: a logo, screenshots or pictures of what is said; audio: the voiceover when the footage is silent, music under the voice otherwise).`
@@ -229,6 +245,20 @@ export async function startProject(
   } finally {
     rmSync(staging, { recursive: true, force: true })
   }
+}
+
+/**
+ * The file init copies into the project, under a name a src can hold: init writes the file's name
+ * into index.html as it is, where a browser reads `#` as the start of a fragment, `?` of a query
+ * and `%` of an escape. Such a file waits in `staging` under a safe name, like a prepared video.
+ */
+async function safelyNamed(file: string, staging: string): Promise<string> {
+  const name = basename(file)
+  if (!/[#?%"]/.test(name)) return file
+  mkdirSync(staging, { recursive: true })
+  const out = join(staging, uniqueFile(staging, safeName(name)))
+  await copyMedia(file, out)
+  return out
 }
 
 /** Read every video first, so one Luca can't use stops the start before anything is made. */
@@ -294,7 +324,7 @@ async function placeClips(
       duration: first || r2(probes[0].duration),
       width: probes[0].width,
       height: probes[0].height,
-      audio: true
+      audio: !!probes[0].audio
     }
   ]
   const media = join(dir, 'media')
@@ -325,7 +355,8 @@ async function placeClips(
 /**
  * Time the a-roll from 0 s (init leaves its <video> untimed, which lint reports as an error) and
  * write the clips after it right below it, with the markup `init` writes for it (a muted <video>
- * and its own <audio>, same tracks); the root then lasts until the end of the last one.
+ * and its own <audio>, same tracks); the root then lasts until the end of the last one. A video
+ * with no sound gets no <audio>: one whose file has no sound in it fails the export.
  */
 function writeClips(dir: string, clips: PlacedClip[]): void {
   const file = join(dir, 'index.html')
@@ -337,6 +368,8 @@ function writeClips(dir: string, clips: PlacedClip[]): void {
       first,
       first.raw.replace(/(\s+)data-duration=/, '$1data-start="0"$1data-duration=')
     )
+  const silent = !clips[0].audio && findTagById(html, 'a-roll-audio')
+  if (silent) html = removeElement(html, silent)
   if (clips.length > 1) {
     const anchor = findTagById(html, 'a-roll-audio') ?? findTagById(html, 'a-roll')
     const close = anchor ? closingOffset(html, anchor) : null
@@ -386,18 +419,41 @@ function clipMarkup(c: PlacedClip, pad: string): string {
   return [...video, ...(c.audio ? audio : [])].map((l) => pad + l).join('\n')
 }
 
-/** What Luca is told about the footage: every clip in order, with its start, length and shape. */
-function videoBrief(clips: PlacedClip[], aspect: Aspect): string {
+/** A voiceover that is the voice of silent footage, as put in the project. */
+type Voice = { src: string; seconds: number }
+
+/** Copy the voiceover for silent footage into media/, where it is the project's source. */
+async function importVoiceover(dir: string, file: string, report: Report): Promise<Voice> {
+  report({ stage: 'scaffolding', message: 'Adding your voiceover' })
+  mkdirSync(join(dir, 'media'), { recursive: true })
+  const src = mediaPath(dir, safeName(basename(file)))
+  await copyMedia(file, join(dir, src))
+  const seconds = await probeMedia(join(dir, src)).then(
+    (m) => r2(m.duration),
+    () => 0
+  )
+  return { src, seconds }
+}
+
+/**
+ * What Luca is told about the footage: every clip in order, with its start, length, shape and
+ * whether it has sound, and the voiceover that is its voice when it has none.
+ */
+function videoBrief(clips: PlacedClip[], aspect: Aspect, voice: Voice | null): string {
   const [w, h] = SIZE[aspect]
   const shape = (c: PlacedClip): string => `${aspectOf(c.width, c.height)} ${c.width}×${c.height}`
   const cropped = clips.some((c) => aspectOf(c.width, c.height) !== aspect)
     ? ` Clips shaped differently from the ${w}×${h} frame fill it and are cropped at the edges.`
     : ''
+  const last = clips[clips.length - 1]
+  const total = r2(last.start + last.duration)
+  const voiced = voice
+    ? ` The user's voiceover (${voice.src}${voice.seconds > 0 ? `, ${voice.seconds}s` : ''}) is ${clips.length === 1 ? 'its' : 'their'} voice: it plays from 0 s as its own audio clip, and transcripts and captions follow it.${voice.seconds > total ? ' It runs on past the footage, so the video is as long as the voiceover: fill the rest with visuals that follow the words.' : ''} It is never cut: cutting the voice would pull it out of step with the picture, so skip any clean edit in the plan below and say in one sentence that they can trim pauses in the timeline.`
+    : ''
   if (clips.length === 1) {
     const c = clips[0]
-    return `This project starts from the user's video (the a-roll clip, ${c.src}): ${c.duration}s, ${shape(c)}, in a ${w}×${h} ${aspect} video.${cropped} Edit it as planned below.`
+    return `This project starts from the user's video (the a-roll clip, ${c.src}): ${c.duration}s, ${shape(c)}, ${c.audio ? 'with its own sound' : 'with no sound'}, in a ${w}×${h} ${aspect} video.${cropped}${voiced} Edit it as planned below.`
   }
-  const last = clips[clips.length - 1]
   const list = clips
     .map(
       (c, i) =>
@@ -405,8 +461,8 @@ function videoBrief(clips: PlacedClip[], aspect: Aspect): string {
     )
     .join('\n')
   return (
-    `This project starts from ${clips.length} videos the user added, played back to back in the order they added them; each is a clip with its own audio clip (#<id>-audio):\n${list}\n` +
-    `The whole video is ${r2(last.start + last.duration)}s, ${w}×${h} (${aspect}).${cropped} Transcripts, clean edits and captions follow the first clip only. Edit them as planned below.`
+    `This project starts from ${clips.length} videos the user added, played back to back in the order they added them; each is a clip, with its own audio clip (#<id>-audio) when it has sound:\n${list}\n` +
+    `The whole video is ${total}s, ${w}×${h} (${aspect}).${cropped}${voiced || ' Transcripts, clean edits and captions follow the first clip only.'} Edit them as planned below.`
   )
 }
 

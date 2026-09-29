@@ -220,7 +220,8 @@
   border-radius: 4px;
   font-size: 10.5px;
   font-weight: 500;
-  line-height: 1;
+  /* room for descenders and underscores: the name inside is clipped to its line box */
+  line-height: 1.25;
   color: var(--color-text);
   background: color-mix(in srgb, var(--color-bg) 82%, transparent);
   box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--edge) 60%, transparent);

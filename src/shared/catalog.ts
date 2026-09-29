@@ -2,8 +2,7 @@ import type { CatalogItem, RemocnItem } from './types'
 
 /**
  * One searchable library over the HyperFrames catalog (blocks + components) and Remocn's
- * Remotion components. Shared by the Catalog tab and the agent's catalog_search tool so both
- * find the same things for the same words.
+ * Remotion components, for the agent's catalog_search tool.
  */
 
 export type LibrarySource = 'hyperframes' | 'remocn'
@@ -21,8 +20,6 @@ export type LibraryCategory =
   | 'more'
 
 export type LibraryItem = {
-  /** `${source}:${name}` — names can repeat across sources. */
-  id: string
   source: LibrarySource
   name: string
   type: 'block' | 'component'
@@ -31,7 +28,6 @@ export type LibraryItem = {
   tags: string[]
   category: LibraryCategory
   duration?: number
-  preview?: { video?: string; poster?: string }
   remocn?: Pick<RemocnItem, 'category' | 'useFor' | 'avoidFor' | 'naturalLength' | 'docs' | 'vibe'>
 }
 
@@ -162,7 +158,6 @@ export function categorize(name: string, tags: string[]): LibraryCategory {
 
 export function toLibrary(hf: CatalogItem[], remocn: RemocnItem[]): LibraryItem[] {
   const items: LibraryItem[] = hf.map((i) => ({
-    id: `hyperframes:${i.name}`,
     source: 'hyperframes',
     name: i.name,
     type: i.type,
@@ -170,12 +165,10 @@ export function toLibrary(hf: CatalogItem[], remocn: RemocnItem[]): LibraryItem[
     description: i.description,
     tags: i.tags,
     category: categorize(i.name, i.tags),
-    duration: i.duration,
-    preview: i.preview
+    duration: i.duration
   }))
   for (const r of remocn) {
     items.push({
-      id: `remocn:${r.name}`,
       source: 'remocn',
       name: r.name,
       type: 'component',

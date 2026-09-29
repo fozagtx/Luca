@@ -6,6 +6,7 @@ import type { CleanResult, CleanStatus, Cut, Edl, Project, Transcript } from '..
 import { activeAgent, agentFor } from './agent'
 import { hasTranscript, refreshCaptions } from './captions'
 import { speechClips } from './captions-html'
+import { footageVideos } from './color'
 import { ffmpegProgress, probeMedia } from './env'
 import { AUDIO_EXT } from './footage'
 import {
@@ -21,7 +22,7 @@ import {
 import { Channels, broadcast } from './ipc'
 import { hasSecret } from './secrets'
 import { getSettings } from './settings'
-import { extractAudio, isFiller, transcribe } from './transcribe'
+import { extractAudio, hasAudioStream, isFiller, transcribe } from './transcribe'
 import { checkpoint } from './versions'
 
 const MAX_PAUSE = 0.6
@@ -401,31 +402,54 @@ function cleanOnTimeline(html: string): string | null {
   return clip?.attrs.src ?? null
 }
 
+/** Written once the voiceover is on the timeline, so it is put there only once per project. */
+const placedFile = (dir: string): string => join(dir, '.luca', 'voiceover.json')
+
 /**
  * A voiceover project starts with the recording next to an empty timeline (init leaves no clip for
- * it): put it on at 0 s, so its words, cuts and captions have somewhere to play, and make the
- * video at least as long. Does nothing for footage, or once any clip plays the recording.
- * Returns whether it was placed.
+ * it): put it on at 0 s, so its words, cuts and captions have somewhere to play. The video then
+ * lasts as long as the voice (at least as long, when footage or anything else is already timed).
+ * Does nothing for footage, and happens once per project: a voiceover the person took off the
+ * timeline stays off. Returns whether it was placed.
  */
 export async function placeVoiceover(p: Project): Promise<boolean> {
   const source = sourcePath(p)
-  if (!source || !isAudioOnly(source)) return false
+  if (!source || !isAudioOnly(source) || existsSync(placedFile(p.dir))) return false
   const indexFile = join(p.dir, 'index.html')
   const html = readFileSync(indexFile, 'utf8')
-  if (speechClips(html, p.source).length) return false
+  const src = relative(p.dir, source).split(sep).join('/')
+  const placed = (): void =>
+    writeFileSync(placedFile(p.dir), JSON.stringify({ src }, null, 2) + '\n')
+  // already there (projects from before this was recorded): only remember it
+  if (speechClips(html, p.source).length) {
+    placed()
+    return false
+  }
   const duration = r3((await probe(source)).duration)
   if (!(duration > 0)) return false
+  // the example clips in init's comment aren't on the timeline
+  const tags = findTags(html.replace(/<!--[\s\S]*?-->/g, ''))
+  const top = tags.find((t) => t.attrs['data-composition-id'] !== undefined)
+  const timed = tags.some((t) => t !== top && t.attrs['data-start'] !== undefined)
   const id = findTagById(html, 'voiceover') ? 'luca-voiceover' : 'voiceover'
-  const src = relative(p.dir, source).split(sep).join('/')
   const tag = `<audio id="${id}" src="${src}" data-start="0" data-duration="${duration}" data-track-index="${nextTrackIndex(html)}" data-volume="1"></audio>`
   let out = insertIntoRoot(html, `      ${tag}\n`)
   if (!out) return false
+  // init's placeholder root is 10 s long: with nothing else timed, the video is the voice's length
   const root = findTags(out).find((t) => t.attrs['data-composition-id'] !== undefined)
-  if (root && num(root.attrs['data-duration'], 0) < duration)
+  if (root && (!timed || num(root.attrs['data-duration'], 0) < duration))
     out = replaceTag(out, root, setAttrs(root, { 'data-duration': String(duration) }))
   writeFileSync(indexFile, out)
+  placed()
   return true
 }
+
+/**
+ * A voiceover playing over footage the user brought (a silent screen recording, say): cutting the
+ * voice would pull it out of step with the picture, so it isn't cut automatically.
+ */
+const overFootage = (p: Project): boolean =>
+  isAudioOnly(p.source) && footageVideos(readIndex(p.dir)).length > 0
 
 const OFF_TIMELINE = 'The original clip is no longer on the timeline, so there is nothing to cut.'
 
@@ -439,54 +463,62 @@ export async function applyEdl(
   edl: Edl,
   opts: { checkpoint?: boolean; signal?: AbortSignal } = {}
 ): Promise<CleanResult> {
-  const source = sourcePath(p)
-  if (!source) throw new Error(`Source ${p.source} not found`)
-  const { duration, bitrate } = await probe(source)
-  const err = validateEdl(edl, duration)
-  if (err) throw new Error(`Invalid edl.json: ${err}`)
-  // relinking needs a clip playing the recording; without one the cut would change nothing
-  await placeVoiceover(p)
-  if (!speechClips(readIndex(p.dir), p.source).length) throw new Error(OFF_TIMELINE)
-  const cuts = mergeCuts(edl.cuts)
-  const cleanRel = cleanFileFor(cuts, p.source)
-  const out = join(p.dir, cleanRel)
-  mkdirSync(join(p.dir, 'media'), { recursive: true })
-  setStatus({ stage: 'applying', message: `${cuts.length} cuts`, progress: 0 })
-  if (!existsSync(out) || statSync(out).size === 0) {
-    const segs = keptSegments(cuts, duration)
-    if (!segs.length) throw new Error('The EDL cuts the whole clip')
-    await renderClean(
-      source,
-      segs,
-      bitrate,
-      out,
-      (progress) => setStatus({ stage: 'applying', message: `${cuts.length} cuts`, progress }),
-      isAudioOnly(source)
-    )
-  }
-  if (opts.signal?.aborted) throw new Error('Stopped')
-  const original =
-    (existsSync(join(p.dir, '.luca', 'transcript.original.json'))
-      ? (JSON.parse(
-          readFileSync(join(p.dir, '.luca', 'transcript.original.json'), 'utf8')
-        ) as Transcript)
-      : null) ?? readTranscript(p.dir)
-  if (original)
-    writeFileSync(join(p.dir, 'transcript.json'), JSON.stringify(remap(original, cuts), null, 2))
-  setStatus({ stage: 'relinking' })
-  const newDuration = Math.round((await probe(out)).duration * 1000) / 1000
-  writeFileSync(join(p.dir, 'edl.json'), JSON.stringify({ ...edl, cuts }, null, 2))
-  relink(p, cleanRel, cuts, newDuration)
-  writeFileSync(appliedFile(p.dir), JSON.stringify({ file: cleanRel, cuts }, null, 2))
-  // captions on the timeline follow the cut words; saved in the same version as the cut
+  // the Transcript tab's apply runs on its own: a failure ends it, or the status would stay busy
+  // and every later clean edit would wait on it
+  task = 'clean'
   try {
-    refreshCaptions(p)
+    const source = sourcePath(p)
+    if (!source) throw new Error(`Source ${p.source} not found`)
+    const { duration, bitrate } = await probe(source)
+    const err = validateEdl(edl, duration)
+    if (err) throw new Error(`Invalid edl.json: ${err}`)
+    // relinking needs a clip playing the recording; without one the cut would change nothing
+    await placeVoiceover(p)
+    if (!speechClips(readIndex(p.dir), p.source).length) throw new Error(OFF_TIMELINE)
+    const cuts = mergeCuts(edl.cuts)
+    const cleanRel = cleanFileFor(cuts, p.source)
+    const out = join(p.dir, cleanRel)
+    mkdirSync(join(p.dir, 'media'), { recursive: true })
+    setStatus({ stage: 'applying', message: `${cuts.length} cuts`, progress: 0 })
+    if (!existsSync(out) || statSync(out).size === 0) {
+      const segs = keptSegments(cuts, duration)
+      if (!segs.length) throw new Error('The EDL cuts the whole clip')
+      await renderClean(
+        source,
+        segs,
+        bitrate,
+        out,
+        (progress) => setStatus({ stage: 'applying', message: `${cuts.length} cuts`, progress }),
+        isAudioOnly(source)
+      )
+    }
+    if (opts.signal?.aborted) throw new Error('Stopped')
+    const original =
+      (existsSync(join(p.dir, '.luca', 'transcript.original.json'))
+        ? (JSON.parse(
+            readFileSync(join(p.dir, '.luca', 'transcript.original.json'), 'utf8')
+          ) as Transcript)
+        : null) ?? readTranscript(p.dir)
+    if (original)
+      writeFileSync(join(p.dir, 'transcript.json'), JSON.stringify(remap(original, cuts), null, 2))
+    setStatus({ stage: 'relinking' })
+    const newDuration = Math.round((await probe(out)).duration * 1000) / 1000
+    writeFileSync(join(p.dir, 'edl.json'), JSON.stringify({ ...edl, cuts }, null, 2))
+    relink(p, cleanRel, cuts, newDuration)
+    writeFileSync(appliedFile(p.dir), JSON.stringify({ file: cleanRel, cuts }, null, 2))
+    // captions on the timeline follow the cut words; saved in the same version as the cut
+    try {
+      refreshCaptions(p)
+    } catch (err) {
+      console.warn('[clean] re-timing captions failed', err)
+    }
+    if (opts.checkpoint !== false) await checkpoint(p.dir, `Clean edit: ${cuts.length} cuts`)
+    setStatus({ stage: 'done', message: `${cuts.length} cuts · ${cleanRel}` })
+    return { cuts: cuts.length, cleanFile: cleanRel }
   } catch (err) {
-    console.warn('[clean] re-timing captions failed', err)
+    setStatus({ stage: 'error', message: err instanceof Error ? err.message : String(err) })
+    throw err
   }
-  if (opts.checkpoint !== false) await checkpoint(p.dir, `Clean edit: ${cuts.length} cuts`)
-  setStatus({ stage: 'done', message: `${cuts.length} cuts · ${cleanRel}` })
-  return { cuts: cuts.length, cleanFile: cleanRel }
 }
 
 /** The full pipeline (spec steps 2–10). Step 11 (auto edit) is left to the user's next turn. */
@@ -496,6 +528,7 @@ export async function runCleanEdit(p: Project): Promise<void> {
   try {
     const source = sourcePath(p)
     if (!source) throw new Error(`Source ${p.source} not found`)
+    if (overFootage(p)) throw new EditRefused('over-footage')
     const transcript = await transcribeSource(p, source)
     setStatus({ stage: 'candidates' })
     const { duration } = await probe(source)
@@ -543,6 +576,8 @@ export async function runCleanEdit(p: Project): Promise<void> {
 
 /** Extract the audio and transcribe it with AssemblyAI, reporting each stage's progress. */
 async function transcribeSource(p: Project, source: string): Promise<Transcript> {
+  // footage without a sound track has no words to hear (ffmpeg would fail to write the audio)
+  if (!(await hasAudioStream(source))) throw new EditRefused('no-speech')
   setStatus({ stage: 'extracting', progress: 0 })
   const flac = await extractAudio(p.dir, source, (progress) =>
     setStatus({ stage: 'extracting', progress })
@@ -576,7 +611,8 @@ export async function runTranscribeOnly(p: Project): Promise<void> {
 
 // ------------------------------------------------------------------ from Luca's own turn
 
-type RefusedReason = 'no-source' | 'no-key' | 'no-speech' | 'busy' | 'already-cut' | 'off-timeline'
+type RefusedReason =
+  'no-source' | 'no-key' | 'no-speech' | 'busy' | 'already-cut' | 'off-timeline' | 'over-footage'
 
 const REFUSED: Record<RefusedReason, string> = {
   'no-source': 'This project has no video or audio to transcribe',
@@ -584,7 +620,9 @@ const REFUSED: Record<RefusedReason, string> = {
   'no-speech': 'No speech was heard in this recording',
   busy: 'A clean edit or transcription is already running',
   'already-cut': 'A clean edit is already on the timeline',
-  'off-timeline': OFF_TIMELINE
+  'off-timeline': OFF_TIMELINE,
+  'over-footage':
+    'The voiceover plays over footage, so cutting it would pull it out of step with the picture'
 }
 
 /** Why Luca's transcribe or clean_edit didn't run; its tool tells Luca what to say about it. */
@@ -665,8 +703,10 @@ async function heard(p: Project, placed: boolean): Promise<Heard> {
     shifted:
       !cut && clips.some((c) => Math.abs(c.start - c.mediaStart) > 0.01 || (c.rate ?? 1) !== 1),
     placed,
-    // init's a-roll plays the first video; the others the person started from follow it
-    firstClipOnly: findTags(html).some((t) => /^a-roll-\d+$/.test(t.attrs.id ?? ''))
+    // init's a-roll plays the first video; the others the person started from follow it (a
+    // voiceover over them is heard all the way through)
+    firstClipOnly:
+      !isAudioOnly(p.source) && findTags(html).some((t) => /^a-roll-\d+$/.test(t.attrs.id ?? ''))
   }
 }
 
@@ -730,11 +770,14 @@ export async function cleanEditInTurn(
   const source = sourcePath(p)
   if (!source) throw new EditRefused('no-source')
   if (cleanOnTimeline(readIndex(p.dir))) throw new EditRefused('already-cut')
+  if (overFootage(p)) throw new EditRefused('over-footage')
   const placed = await placeVoiceover(p)
   if (!speechClips(readIndex(p.dir), p.source).length) throw new EditRefused('off-timeline')
   if (!readTranscript(p.dir)?.words.length && !hasSecret('assemblyai'))
     throw new EditRefused('no-key')
   await whenFree()
+  // the Transcript tab may have cut it while this waited
+  if (cleanOnTimeline(readIndex(p.dir))) throw new EditRefused('already-cut')
   task = 'clean'
   let cuts: Cut[] = []
   let before = 0

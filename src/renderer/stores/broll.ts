@@ -1,4 +1,4 @@
-import type { Aspect, Background, BackgroundMedia, Chip } from '@shared/types'
+import type { Aspect, BrollItem, BrollMedia, Chip } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 import { errorMessage, useProject } from './project'
@@ -8,8 +8,8 @@ type BrollStore = {
   hasKey: boolean | null
   /** What was searched for; empty until the first search. */
   query: string
-  media: BackgroundMedia
-  items: Background[] | null
+  media: BrollMedia
+  items: BrollItem[] | null
   /** Query, media and orientation the items belong to. */
   shown: string | null
   page: number
@@ -20,7 +20,7 @@ type BrollStore = {
   /** Rejects with a plain message when Pexels refuses the key. */
   saveKey: (key: string) => Promise<void>
   setQuery: (q: string) => void
-  setMedia: (m: BackgroundMedia) => void
+  setMedia: (m: BrollMedia) => void
   /** Load the grid for the current query and media (no-op when it already shows them). */
   search: (orientation: Aspect, opts?: { more?: boolean; force?: boolean }) => Promise<void>
 }
@@ -40,13 +40,13 @@ export const useBroll = create<BrollStore>((set, get) => ({
   error: null,
 
   checkKey: async () => {
-    const hasKey = await luca.backgrounds.hasKey().catch(() => false)
+    const hasKey = await luca.broll.hasKey().catch(() => false)
     set({ hasKey })
     return hasKey
   },
   saveKey: async (key) => {
     try {
-      const hasKey = await luca.backgrounds.setKey(key)
+      const hasKey = await luca.broll.setKey(key)
       set({ hasKey, shown: null, error: null })
     } catch (err) {
       throw new Error(errorMessage(err))
@@ -71,7 +71,7 @@ export const useBroll = create<BrollStore>((set, get) => ({
     const next = opts?.more ? page + 1 : 1
     set({ loading: true, error: null, ...(opts?.more ? {} : { shown: key, items: null }) })
     try {
-      const res = await luca.backgrounds.search({ query, media, orientation, page: next })
+      const res = await luca.broll.search({ query, media, orientation, page: next })
       if (id !== seq) return
       const have = opts?.more ? (get().items ?? []) : []
       const ids = new Set(have.map((b) => b.id))
@@ -94,7 +94,7 @@ export function useBrollOrientation(): Aspect {
   return useProject((s) => s.project?.aspect ?? 'landscape')
 }
 
-export function brollChip(b: Background): Extract<Chip, { kind: 'broll' }> {
+export function brollChip(b: BrollItem): Extract<Chip, { kind: 'broll' }> {
   return {
     kind: 'broll',
     id: b.id,

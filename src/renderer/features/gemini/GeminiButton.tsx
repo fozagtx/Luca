@@ -10,13 +10,12 @@ import { useGemini } from '../../stores/gemini'
 import { useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
 
-/** Things to ask for, put in the message box to finish. */
-const IDEAS = [
-  'Make an 8-second clip of ',
-  'Make a vertical 1080×1920 clip of ',
+/** Things to ask for, put in the message box to finish: your own footage first, a new clip last. */
+const ASKS = [
   'Restyle this clip to look like ',
   'Continue this clip: ',
-  'Bring this picture to life: '
+  'Bring this picture to life: ',
+  'Make an 8-second clip of '
 ]
 
 function ask(text: string): void {
@@ -48,10 +47,10 @@ function KeyForm({ onDone }: { onDone?: () => void }): ReactElement {
   return (
     <>
       <p className="mt-1">
-        Luca uses Gemini Omni to make new clips from your words or pictures, restyle a clip, and
-        continue a clip, with sound. Paste a Gemini API key: generations are billed to the key’s
-        Google Cloud project, so a key from the project that has your credits uses them. The key
-        stays on this Mac.
+        Luca uses Gemini Omni to restyle or continue a clip, bring a picture to life, or make a new
+        clip from your words, with sound. Paste a Gemini API key: generations are billed to the
+        key’s Google Cloud project, so a key from the project that has your credits uses them. The
+        key stays on this Mac.
       </p>
       <div className="mt-2 flex gap-1.5">
         <Input
@@ -129,13 +128,13 @@ export function GeminiButton(): ReactElement {
             {connected ? (
               <>
                 <p className="mt-1">
-                  Ask Luca in the chat. It makes clips from your words or pictures, restyles a clip,
-                  continues a clip, and puts the result in your video. Each clip takes a few
-                  minutes.
+                  Ask Luca in the chat. It restyles or continues a clip, brings a picture to life,
+                  or makes a new clip from your words, and puts the result in your video. Each clip
+                  takes a few minutes.
                 </p>
                 {hasProject ? (
                   <ul className="mt-2 flex flex-col gap-0.5">
-                    {IDEAS.map((t) => (
+                    {ASKS.map((t) => (
                       <li key={t}>
                         <button
                           type="button"

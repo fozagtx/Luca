@@ -11,7 +11,6 @@ type UiStore = {
   paletteOpen: boolean
   historyOpen: boolean
   exportOpen: boolean
-  settingsOpen: boolean
   gotoOpen: boolean
   windowActive: boolean
   /** macOS fullscreen: the traffic lights are gone, so the toolbar drops its inset. */
@@ -34,7 +33,6 @@ type UiStore = {
   setPalette: (open: boolean) => void
   setHistory: (open: boolean) => void
   setExport: (open: boolean) => void
-  setSettings: (open: boolean) => void
   setGoto: (open: boolean) => void
   setWindowActive: (a: boolean) => void
 }
@@ -47,7 +45,6 @@ export const useUi = create<UiStore>((set, get) => ({
   paletteOpen: false,
   historyOpen: false,
   exportOpen: false,
-  settingsOpen: false,
   gotoOpen: false,
   windowActive: true,
   fullscreen: false,
@@ -73,7 +70,6 @@ export const useUi = create<UiStore>((set, get) => ({
   setPalette: (paletteOpen) => set({ paletteOpen }),
   setHistory: (historyOpen) => set({ historyOpen }),
   setExport: (exportOpen) => set({ exportOpen }),
-  setSettings: (settingsOpen) => set({ settingsOpen }),
   setGoto: (gotoOpen) => set({ gotoOpen }),
   setWindowActive: (windowActive) => set({ windowActive })
 }))
