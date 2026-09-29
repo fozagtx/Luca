@@ -20,7 +20,7 @@ import type {
   StartEdit,
   StartKind
 } from '../shared/types'
-import { childEnv, probeMedia, run, runHyperframes, which } from './env'
+import { childEnv, HYPERFRAMES, probeMedia, run, runHyperframes, which } from './env'
 import {
   aspectOf,
   AUDIO_EXT,
@@ -79,6 +79,31 @@ export function readProject(dir: string): Project | null {
   } catch {
     return null
   }
+}
+
+/**
+ * The agent notes `hyperframes init` scaffolds tell agents to run preview servers and `npm run`
+ * scripts; Luca's own preview shows the video, so both note files are replaced with Luca's rules.
+ */
+export function writeProjectNotes(dir: string): void {
+  const notes = `# Edited with Luca
+
+This video is edited inside Luca. The person sees the preview in Luca itself: never start a preview or dev server, open a browser, window or URL, or run \`npm run dev\`, \`npm run check\`, \`hyperframes preview\`, \`play\`, \`present\` or \`publish\`. To look at a frame, run \`npx ${HYPERFRAMES} snapshot\`; to check an edit, run \`npx ${HYPERFRAMES} lint --json\`.
+
+## Project
+
+- \`index.html\` — the main composition (root timeline); \`compositions/\` holds sub-compositions referenced with \`data-composition-src\`
+- Never edit anything in \`media/\` or \`renders/\`
+
+## Key rules
+
+1. Every timed element needs \`data-start\` and a duration; give timed visual elements \`class="clip"\`
+2. Register one paused root timeline per composition: \`window.__timelines["composition-id"] = gsap.timeline({ paused: true })\`. Scene timelines added to the root must not be paused
+3. Videos use \`muted\` with a separate \`<audio>\` element for the audio track
+4. Only deterministic logic — no \`Date.now()\`, no \`Math.random()\`, no network fetches
+`
+  writeFileSync(join(dir, 'CLAUDE.md'), notes)
+  writeFileSync(join(dir, 'AGENTS.md'), notes)
 }
 
 export function writeProject(p: Project): void {
@@ -200,6 +225,7 @@ export async function startProject(
         `Couldn't set up the project (${res.code}): ${(res.stderr || res.stdout).trim().slice(-800)}`
       )
     }
+    writeProjectNotes(dir)
 
     // the file as it is in the project: init renames the footage it converts
     let source = kind === 'video' ? findSource(dir) : basename(initFile)
@@ -627,6 +653,13 @@ export function openProject(dir: string): Project {
   // (IMG_1234.MOV for IMG_1234.mp4), which left transcription, clean edit and posters without it
   if (p.source && !['', 'media'].some((d) => existsSync(join(dir, d, p!.source))))
     p.source = findSource(dir) || p.source
+  // projects made before Luca wrote its own notes still tell agents to start a preview server
+  try {
+    if (readFileSync(join(dir, 'CLAUDE.md'), 'utf8').includes('hyperframes preview --background'))
+      writeProjectNotes(dir)
+  } catch {
+    // no notes yet, or unreadable: leave them alone
+  }
   p.lastOpenedAt = new Date().toISOString()
   writeProject(p)
   touchRecent(p)

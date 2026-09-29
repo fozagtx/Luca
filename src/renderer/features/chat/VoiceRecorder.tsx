@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import { Check, LoaderCircle, Square, VolumeX, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
-import { orb07Orb } from '../../components/orbs/orb-07/meta'
+import { orb25Orb } from '../../components/orbs/orb-25/meta'
 import { createOrbRenderer, type OrbDrive, type OrbState } from '../../components/orbs/renderer'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
@@ -9,7 +9,7 @@ import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
 import { stopLuca, useQueue } from '../../stores/queue'
-import { useVoice, type VoiceMode, type VoicePhase } from '../../stores/voice'
+import { stageVisible, useVoice, type VoiceMode, type VoicePhase } from '../../stores/voice'
 
 const BARS = 36
 const ORB_SIZE = 56
@@ -77,6 +77,48 @@ export function VoiceRecorder(): ReactElement | null {
   }, [mode, cancel, finish])
 
   if (!mode) return null
+
+  // the stage owns the orb, the status and the way out — the composer keeps just words and OK
+  if (stageVisible({ mode, phase }))
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+      >
+        <div className="flex items-start gap-3 px-3.5 pt-2.5">
+          <div
+            ref={scroll}
+            className="scroll max-h-[170px] min-h-[50px] min-w-0 flex-1 text-[13px] leading-[20px] text-text select-text"
+          >
+            {heard || partial ? (
+              <>
+                {heard}
+                {heard && partial ? ' ' : ''}
+                <span className="text-text-2">{partial}</span>
+              </>
+            ) : (
+              <span className="text-text-3">{hint(mode, phase, take)}</span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-end pt-0.5 pr-2 pb-2 pl-3.5">
+          {take ? (
+            <Tip label="Send what you said" shortcut="↩" side="top">
+              <button
+                type="button"
+                onClick={() => useQueue.getState().approveNext()}
+                aria-label="Send what you said"
+                className="no-drag flex size-8 items-center justify-center rounded-full bg-accent text-accent-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] transition-[filter,transform] duration-150 hover:brightness-110 active:scale-95"
+              >
+                <Check size={16} strokeWidth={2.5} />
+              </button>
+            </Tip>
+          ) : null}
+        </div>
+      </motion.div>
+    )
+
   const bars =
     phase === 'speaking' ? 'speak' : phase === 'listening' || phase === 'thinking' ? 'live' : 'wait'
 
@@ -244,11 +286,17 @@ function orbState(phase: VoicePhase): OrbState {
 }
 
 /**
- * Luca's voice orb (shadercn ORB-07). The frame loop reads the phase and the microphone level
+ * Luca's voice orb (shadercn ORB-25). The frame loop reads the phase and the microphone level
  * straight from the voice store, so it follows the conversation without re-rendering React.
  * `onError` fires when WebGPU can't start, so the level meter can stand in.
  */
-function VoiceOrb({ onError }: { onError: () => void }): ReactElement {
+function VoiceOrb({
+  onError,
+  size = ORB_SIZE
+}: {
+  onError: () => void
+  size?: number
+}): ReactElement {
   const ref = useRef<HTMLCanvasElement>(null)
   const [painted, setPainted] = useState(false)
   const fail = useRef(onError)
@@ -262,7 +310,7 @@ function VoiceOrb({ onError }: { onError: () => void }): ReactElement {
     const heard = { input: 0 }
     const renderer = createOrbRenderer({
       canvas,
-      variant: orb07Orb,
+      variant: orb25Orb,
       drive: () => {
         const voice = useVoice.getState()
         drive.state = orbState(voice.phase)
@@ -282,7 +330,7 @@ function VoiceOrb({ onError }: { onError: () => void }): ReactElement {
     <span
       aria-hidden
       className="relative shrink-0 overflow-hidden rounded-full bg-[#07080c] shadow-[0_4px_14px_rgba(0,0,0,0.18)] ring-1 ring-black/10 dark:ring-white/10"
-      style={{ width: ORB_SIZE, height: ORB_SIZE }}
+      style={{ width: size, height: size }}
     >
       <canvas
         ref={ref}
@@ -350,5 +398,73 @@ function VoiceBars({
         />
       ))}
     </div>
+  )
+}
+
+const STAGE_LABEL: Partial<Record<VoicePhase, string>> = {
+  connecting: 'Connecting…',
+  listening: 'Listening…',
+  thinking: 'Thinking…',
+  speaking: 'Speaking…'
+}
+
+/**
+ * Voice mode's stage: the big orb over the message list with what Luca heard and the way out.
+ * Rendered inside the chat's message area, so the composer stays reachable. Covers the messages
+ * with the panel's own color while it is on.
+ */
+export function VoiceStage(): ReactElement | null {
+  const { mode, phase, finals, partial, cancel, skipSpeech } = useVoice()
+  const [orb, setOrb] = useState(webgpu)
+  const heard = finals.join(' ')
+  const transcript = partial || heard
+  const label = STAGE_LABEL[phase]
+  if (!stageVisible({ mode, phase })) return null
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+      className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-panel px-6"
+    >
+      {orb ? (
+        <VoiceOrb
+          size={200}
+          onError={() => {
+            webgpu = false
+            setOrb(false)
+          }}
+        />
+      ) : (
+        <VoiceBars
+          state={phase === 'speaking' ? 'speak' : phase === 'listening' ? 'live' : 'wait'}
+          className="w-48 text-accent"
+        />
+      )}
+      <div className="text-[13px] font-medium text-text-2">{label}</div>
+      {transcript ? (
+        <div className="line-clamp-3 max-w-[320px] text-center text-[12.5px] leading-[1.5] text-text-3 select-text">
+          {transcript}
+        </div>
+      ) : null}
+      <div className="flex items-center gap-2">
+        {phase === 'speaking' ? (
+          <Tip label="Skip the reply" side="top">
+            <button type="button" className="icon-btn" onClick={skipSpeech} aria-label="Skip">
+              <VolumeX size={15} />
+            </button>
+          </Tip>
+        ) : null}
+        <Tip label="End voice mode" shortcut="Esc" side="top">
+          <button
+            type="button"
+            onClick={cancel}
+            className="no-drag inline-flex h-8 items-center gap-1 rounded-full bg-danger px-3 text-[12px] font-medium text-white transition-[filter,transform] duration-150 hover:brightness-110 active:scale-95"
+          >
+            <X size={13} strokeWidth={2.5} /> End
+          </button>
+        </Tip>
+      </div>
+    </motion.div>
   )
 }

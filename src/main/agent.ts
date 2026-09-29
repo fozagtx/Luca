@@ -20,7 +20,7 @@ import type {
   PermissionDecision,
   Project
 } from '../shared/types'
-import { alwaysAllowRule, describeActivity } from '../shared/activity'
+import { alwaysAllowRule, describeActivity, shellWords } from '../shared/activity'
 import { childEnv, HYPERFRAMES, run, which } from './env'
 import { Channels, broadcast, notifyInBackground } from './ipc'
 import { catalogTitle } from './library'
@@ -39,6 +39,7 @@ const SYSTEM_RULES = [
   '6. The words come from transcribe, with their times; never guess what is said. Cutting ums, pauses and retakes goes through clean_edit; never cut the source by hand. Time titles, zooms and B-roll to the times these tools return.',
   '7. Captions of what is said in the video always go through captions_apply: adding them and every change to their style, font, size, position, colors, outline, box or animation (to match a reference image, read its look and pass it as overrides). Never write or edit the captions file by hand; Luca rebuilds it from the transcript and keeps it in sync with every cut. For a font that is not built in (one that comes with Luca, or a Google Fonts link or name the user gives), call font_add first.',
   '7b. A color look on the footage itself (cinematic, moody, warm, cool, black and white, or a named LUT) goes through lut_apply — never write data-color-grading attributes by hand.',
+  `8. The person watches the video in Luca’s own preview. Never start a preview or dev server, never open a browser, window or URL, and never use browser-automation tools. To see what a frame looks like, run \`npx ${HYPERFRAMES} snapshot\`; to check an edit, run lint. If playback in Luca seems wrong, check the HTML and lint output and describe what you find; do not try to watch it yourself.`,
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
   'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a cut, zoom, title, caption, B-roll, animation, effect, transition) and use the plain-English title of anything you added, not its id.',
   'Keep replies short: say what you changed and why, no preamble.'
@@ -55,6 +56,33 @@ const ALLOWED_TOOLS = [
   'Bash(ffmpeg *)',
   'Bash(ffprobe *)',
   'mcp__luca__*'
+]
+
+/** Nothing Luca does may open a browser, a window or a server the person can see. */
+const NO_WINDOW = [
+  'preview',
+  'play',
+  'present',
+  'browser',
+  'publish',
+  'cloud',
+  'cloudrun',
+  'lambda'
+]
+const DISALLOWED_TOOLS = [
+  ...NO_WINDOW.flatMap((sub) => [
+    `Bash(npx ${HYPERFRAMES} ${sub}*)`,
+    `Bash(npx hyperframes ${sub}*)`,
+    `Bash(npx hyperframes@* ${sub}*)`
+  ]),
+  'Bash(open *)',
+  'Bash(npm run dev*)',
+  'Bash(npm run check*)',
+  'Bash(npm run publish*)',
+  'WebFetch',
+  'WebSearch',
+  'mcp__playwright__*',
+  'mcp__chrome-devtools__*'
 ]
 
 type Pending = {
@@ -301,10 +329,12 @@ export class ProjectAgent {
       cwd: this.project.dir,
       pathToClaudeCodeExecutable: claude,
       env: envRecord,
-      settingSources: ['user', 'project'],
+      settingSources: [],
+      strictMcpConfig: true,
       systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_RULES },
       permissionMode: 'acceptEdits',
       allowedTools: ALLOWED_TOOLS,
+      disallowedTools: DISALLOWED_TOOLS,
       mcpServers: { luca: lucaMcpServer(this.project.dir) },
       canUseTool: this.canUseTool,
       includePartialMessages: true,
@@ -518,6 +548,22 @@ export class ProjectAgent {
 
   // ---------------------------------------------------------------- permissions
   private canUseTool: CanUseTool = async (toolName, input) => {
+    // DISALLOWED_TOOLS is matched literally by the SDK; this also catches oblique forms
+    if (toolName === 'Bash') {
+      let w = shellWords(String(input.command ?? ''))
+      if (w?.[0] === 'npx') w = w.slice(w[1] === '--yes' || w[1] === '-y' ? 2 : 1)
+      if (
+        w &&
+        ((/^hyperframes(@[\w.-]+)?$/.test(w[0] ?? '') && NO_WINDOW.includes(w[1] ?? '')) ||
+          w[0] === 'open')
+      ) {
+        return {
+          behavior: 'deny',
+          message:
+            'Luca shows the preview itself; nothing may open a browser, a window or a preview server.'
+        }
+      }
+    }
     // Never let edits escape the project folder.
     const target = input.file_path ?? input.path ?? input.notebook_path
     if (

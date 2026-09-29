@@ -20,6 +20,14 @@ export type VoiceMode = 'dictate' | 'converse'
  */
 export type VoicePhase = 'off' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'finishing'
 
+/** Voice mode while it is live (not off or finishing): the stage is up over the messages. */
+export const stageVisible = (voice: { mode: VoiceMode | null; phase: VoicePhase }): boolean =>
+  voice.mode === 'converse' &&
+  (voice.phase === 'connecting' ||
+    voice.phase === 'listening' ||
+    voice.phase === 'thinking' ||
+    voice.phase === 'speaking')
+
 /** Dictation finishes, and voice mode ends, after this long with no speech or agent activity. */
 const IDLE_MS = 2 * 60_000
 /** Room echo of the reply can still reach the mic just after speech ends. */
