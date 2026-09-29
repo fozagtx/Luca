@@ -155,6 +155,10 @@ export const useStart = create<StartStore>((set, get) => ({
       next.push(a)
     }
     set({ files: next, error: null })
+    // the chat's "add your video first" is answered once there is something to edit
+    const asked = useChat.getState().error
+    if (kindOf(next) && (asked === NO_FOOTAGE || asked === IMAGES_ONLY))
+      useChat.setState({ error: null })
     filesChanged()
     for (const f of next) {
       if (f.path in get().previews) continue

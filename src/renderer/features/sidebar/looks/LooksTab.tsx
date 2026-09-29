@@ -137,7 +137,8 @@ export function LooksTab(): ReactElement {
           hint="Save this project's style to reuse its fonts, colors, captions, transitions and pacing on another video."
         />
       ) : (
-        <div className="scroll grid auto-rows-min grid-cols-2 gap-2.5 px-3 pb-3">
+        // two cards a row only while each is wide enough for its Apply button; one when narrow
+        <div className="scroll grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2.5 px-3 pb-3">
           {looks.map((l) => (
             <div
               key={l.slug}

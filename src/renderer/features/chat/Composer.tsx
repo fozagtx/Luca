@@ -2,7 +2,9 @@ import {
   ArrowUp,
   AudioLines,
   CircleAlert,
+  Clapperboard,
   Crosshair,
+  ImagePlus,
   LoaderCircle,
   Mic,
   Paperclip,
@@ -23,12 +25,11 @@ import { EdgeGlow } from '../../components/ui/edge-glow'
 import { Thumb } from '../../components/ui/thumb'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
-import { catalogChip, hasCatalogDrag, readCatalogDrag } from '../../lib/drag'
 import { useChat, type PendingMedia } from '../../stores/chat'
 import { luca } from '../../lib/luca'
 import { stopLuca, useQueue } from '../../stores/queue'
 import { usePlayer } from '../../stores/player'
-import { kindOf, useStart } from '../../stores/start'
+import { kindOf, useStart, type Attachment } from '../../stores/start'
 import { useVoice } from '../../stores/voice'
 import { AssemblyAiKeyCard } from '../onboarding/AssemblyAiKeyCard'
 import { ChipPill } from './Message'
@@ -48,7 +49,6 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const draft = useChat((s) => s.draft)
   const setDraft = useChat((s) => s.setDraft)
   const chips = useChat((s) => s.chips)
-  const addChip = useChat((s) => s.addChip)
   const removeChip = useChat((s) => s.removeChip)
   const attaching = useChat((s) => s.attaching)
   const attach = useChat((s) => s.attach)
@@ -143,7 +143,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
       // isolate: the glow while Luca works sits behind the box, not behind the panel
       className="isolate shrink-0 px-3 pt-1 pb-3"
       onDragOver={(e) => {
-        if (!hasCatalogDrag(e.dataTransfer) && !fileDrop(e.dataTransfer)) return
+        if (!fileDrop(e.dataTransfer)) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
         if (!over) setOver(true)
@@ -151,16 +151,9 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
       onDragLeave={() => setOver(false)}
       onDrop={(e) => {
         setOver(false)
-        if (fileDrop(e.dataTransfer)) {
-          e.preventDefault()
-          addFiles([...e.dataTransfer.files])
-          return
-        }
-        const d = readCatalogDrag(e.dataTransfer)
-        if (!d) return
+        if (!fileDrop(e.dataTransfer)) return
         e.preventDefault()
-        addChip(catalogChip(d))
-        ref.current?.focus()
+        addFiles([...e.dataTransfer.files])
       }}
     >
       {error ? <Notice text={error} onDismiss={() => useChat.setState({ error: null })} /> : null}
@@ -214,6 +207,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                   src={startPreviews[f.path] ?? null}
                   lazy={false}
                   className="size-10 rounded-[7px] ring-1 ring-border"
+                  fallback={<KindIcon kind={f.kind} />}
                 />
                 <button
                   type="button"
@@ -398,6 +392,16 @@ function AddingPill({ file }: { file: PendingMedia }): ReactElement {
         <span className="text-text-3 tabular-nums">{Math.round(file.progress * 100)}%</span>
       ) : null}
     </span>
+  )
+}
+
+/** A start file with no picture (a voiceover, or one still being read): what kind it is. */
+function KindIcon({ kind }: { kind: Attachment['kind'] }): ReactElement {
+  const Icon = kind === 'audio' ? AudioLines : kind === 'video' ? Clapperboard : ImagePlus
+  return (
+    <div className="flex h-full w-full items-center justify-center text-text-3">
+      <Icon size={14} strokeWidth={1.6} />
+    </div>
   )
 }
 

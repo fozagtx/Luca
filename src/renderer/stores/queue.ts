@@ -15,7 +15,7 @@ export type QueueStatus = 'review' | 'queued' | 'sending'
 
 export type QueueItem = {
   id: string
-  /** The project it was asked in; null for an idea with no project open. */
+  /** The project it was asked in; null on Home (notes for the footage on the start card). */
   dir: string | null
   text: string
   chips: Chip[]
@@ -26,10 +26,8 @@ export type QueueItem = {
   open?: boolean
   /** Asked out loud: Luca answers in a sentence or two that can be read aloud. */
   spoken?: boolean
-  /** Playhead to report instead of the one at send time (a drop on the timeline). */
+  /** Playhead to report instead of the one at send time (a comment on a frame). */
   time?: number
-  /** Hidden context that rides along with the message. */
-  note?: string
 }
 
 type QueueStore = {
@@ -47,7 +45,7 @@ type QueueStore = {
     text: string,
     chips: Chip[],
     source: QueueSource,
-    extra?: Pick<QueueItem, 'time' | 'note'>
+    extra?: Pick<QueueItem, 'time'>
   ) => void
   approve: (id: string) => void
   approveAll: () => void
@@ -195,8 +193,7 @@ export const useQueue = create<QueueStore>((set, get) => ({
 
   toComposer: (id) => {
     const item = get().items.find((i) => i.id === id)
-    // the message box can't carry a hidden note (a timeline drop's details): edit those in place
-    if (!item || item.status === 'sending' || item.note) return
+    if (!item || item.status === 'sending') return
     get().discard(id)
     const chat = useChat.getState()
     chat.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${item.text}` : item.text)
@@ -236,7 +233,6 @@ function drain(): void {
   }))
   const context = {
     time: next.time ?? usePlayer.getState().currentTime,
-    ...(next.note ? { note: next.note } : {}),
     ...(next.spoken ? { voice: true } : {})
   }
   void useChat

@@ -24,7 +24,8 @@ export function Viewer(): ReactElement {
       ) : (
         <EmptyState />
       )}
-      {!sidebarOpen ? (
+      {/* the sidebar works on the open project: Home has nothing for it */}
+      {project && !sidebarOpen ? (
         <Tip label="Show sidebar" shortcut="⇧⌘S" side="right">
           <button
             type="button"

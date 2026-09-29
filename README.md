@@ -82,8 +82,6 @@ Luca is free and MIT-licensed. It stands on these tools, and couldn’t exist wi
 </table>
 <!-- built-with:end -->
 
-<p align="center"><b>Coming soon:</b> <a href="https://higgsfield.ai/"><img src="docs/logos/higgsfield.png" alt="" height="20" align="middle" /> Higgsfield</a>, to find and generate media right from the chat.</p>
-
 Building a tool Luca should talk to? [Open an issue](https://github.com/fozagtx/Luca/issues) and it could live here.
 
 ## Everything Luca can do

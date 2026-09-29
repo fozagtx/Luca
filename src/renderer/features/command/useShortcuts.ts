@@ -167,8 +167,9 @@ export function useShortcuts(): void {
         case 'undo':
           if (proj.project) await luca.history.undo()
           break
+        // the sidebar's tabs work on the open project: Home has none
         case 'toggle-sidebar':
-          ui.setSidebar(!ui.sidebarOpen)
+          if (proj.project) ui.setSidebar(!ui.sidebarOpen)
           break
         case 'toggle-chat':
           ui.setChat(!ui.chatOpen)
@@ -195,7 +196,7 @@ export function useShortcuts(): void {
           break
         }
         case 'tab':
-          ui.setTab(arg as SidebarTab)
+          if (proj.project) ui.setTab(arg as SidebarTab)
           break
         case 'theme':
           if (arg === 'light' || arg === 'dark') ui.setTheme(arg as Theme)
@@ -246,14 +247,11 @@ export function useShortcuts(): void {
         case 'mute':
           player.toggleMute()
           break
-        case 'settings':
-          ui.setSettings(true)
-          break
         case 'check-updates':
           void useUpdates.getState().check()
           break
         case 'clean-edit':
-          ui.setTab('transcript')
+          if (proj.project) ui.setTab('transcript')
           break
         case 'captions':
           if (proj.project) ui.setCaptions(true)
