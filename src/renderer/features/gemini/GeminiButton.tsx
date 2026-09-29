@@ -48,10 +48,10 @@ function KeyForm({ onDone }: { onDone?: () => void }): ReactElement {
   return (
     <>
       <p className="mt-1">
-        Luca uses Gemini Omni to make new clips from your words or pictures, restyle a clip or a
-        background, and continue a clip, with sound. Paste a Gemini API key: generations are billed
-        to the key’s Google Cloud project, so a key from the project that has your credits uses
-        them. The key stays on this Mac.
+        Luca uses Gemini Omni to make new clips from your words or pictures, restyle a clip, and
+        continue a clip, with sound. Paste a Gemini API key: generations are billed to the key’s
+        Google Cloud project, so a key from the project that has your credits uses them. The key
+        stays on this Mac.
       </p>
       <div className="mt-2 flex gap-1.5">
         <Input
@@ -129,9 +129,9 @@ export function GeminiButton(): ReactElement {
             {connected ? (
               <>
                 <p className="mt-1">
-                  Ask Luca in the chat. It makes clips from your words or pictures, restyles a clip
-                  or a background (pick one in Backgrounds and say how it should look), continues a
-                  clip, and puts the result in your video. Each clip takes a few minutes.
+                  Ask Luca in the chat. It makes clips from your words or pictures, restyles a clip,
+                  continues a clip, and puts the result in your video. Each clip takes a few
+                  minutes.
                 </p>
                 {hasProject ? (
                   <ul className="mt-2 flex flex-col gap-0.5">

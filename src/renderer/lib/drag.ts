@@ -9,12 +9,6 @@ export type CatalogDrag = {
   source: 'hyperframes' | 'remocn'
 }
 
-export function setCatalogDrag(dt: DataTransfer, item: CatalogDrag): void {
-  dt.setData(CATALOG_MIME, JSON.stringify(item))
-  dt.setData('text/plain', item.name)
-  dt.effectAllowed = 'copy'
-}
-
 export function readCatalogDrag(dt: DataTransfer): CatalogDrag | null {
   const raw = dt.getData(CATALOG_MIME)
   if (!raw) return null
