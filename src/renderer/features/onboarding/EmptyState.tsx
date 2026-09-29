@@ -44,7 +44,7 @@ import { luca } from '../../lib/luca'
 import { useAi33 } from '../../stores/ai33'
 import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
-import { IMAGES_ONLY, kindOf, STOPPED, useStart, type Attachment } from '../../stores/start'
+import { IMAGES_ONLY, isStopped, kindOf, useStart, type Attachment } from '../../stores/start'
 import { Ai33KeyCard } from '../ai33/Ai33KeyCard'
 import { AssemblyAiKeyCard } from './AssemblyAiKeyCard'
 import { CreateProgressList } from './CreateProgress'
@@ -116,8 +116,9 @@ function StartCard(): ReactElement {
   }
 
   return (
-    // isolate: the glow while the project starts sits behind the card
-    <section className="isolate flex flex-col items-center gap-6">
+    // isolate: the glow while the project starts sits behind the card. data-space: voices, chips
+    // and "Say it right" are chosen with Space here (see useShortcuts)
+    <section data-space className="isolate flex flex-col items-center gap-6">
       <div className="flex flex-col items-center gap-3 text-center">
         <img
           src={logo}
@@ -265,7 +266,7 @@ function StartError({ className }: { className?: string }): ReactElement | null 
     el.scrollIntoView?.({ block: 'nearest' })
   }, [error])
   if (!error) return null
-  if (error === STOPPED)
+  if (isStopped(error))
     return (
       <div
         ref={ref}

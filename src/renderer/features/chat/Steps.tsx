@@ -153,6 +153,7 @@ export function Steps({
   stopped = false,
   animate = true,
   waiting,
+  waitingOn,
   declined = false
 }: {
   parts: ToolPart[]
@@ -162,6 +163,8 @@ export function Steps({
   animate?: boolean
   /** The running step is stopped on a card in the chat: "Waiting for your OK". */
   waiting?: string
+  /** The step whose card that is (steps run in parallel); without it, the first one running. */
+  waitingOn?: string
   /** The person said no to the card the last step asked: that step was stopped, not done. */
   declined?: boolean
 }): ReactElement {
@@ -170,6 +173,9 @@ export function Steps({
     return declined && i === parts.length - 1 && r.state !== 'running' ? { state: 'stopped' } : r
   })
   const running = live ? parts.find((p) => p.status === 'running') : undefined
+  // the running step whose card it is, else the first one running
+  const named = live ? parts.find((p) => p.id === waitingOn && p.status === 'running') : undefined
+  const asking = waiting ? (named ?? running) : undefined
   // a failed step followed by others is a normal retry; only a failed last step is a problem
   const endedBadly = !running && info[info.length - 1].state === 'error'
   const [toggled, setToggled] = useState<boolean | null>(null)
@@ -261,7 +267,7 @@ export function Steps({
                         info[i].state === 'running' ? 'text-text' : 'text-text-2'
                       )}
                     >
-                      {label(p, info[i], p === running ? waiting : undefined)}
+                      {label(p, info[i], p === asking ? waiting : undefined)}
                     </span>
                   </li>
                 )

@@ -168,22 +168,43 @@ type PermissionPart = Extract<ChatContentPart, { type: 'permission' }>
 type Group =
   | { kind: 'steps'; parts: ToolPart[] }
   | { kind: 'text'; text: string }
-  /** `after`: the step that was running when the card came up (a tool's own question). */
+  /** `after`: the step that raised the card (a tool's own question). */
   | { kind: 'permission'; part: PermissionPart; after?: ToolPart }
+
+/**
+ * The step a card came from. Main puts that step's own name in the card's `tool`; tools can run
+ * in parallel, so the last step started is not necessarily the one that asked. The nearest step of
+ * that name before the card is, and with none the last step stands in.
+ */
+function raisedBy(tools: ToolPart[], card: PermissionPart): ToolPart | undefined {
+  for (let i = tools.length - 1; i >= 0; i--) if (tools[i].name === card.tool) return tools[i]
+  return tools[tools.length - 1]
+}
 
 function group(parts: ChatContentPart[]): Group[] {
   const out: Group[] = []
-  let after: ToolPart | undefined
+  const tools: ToolPart[] = []
   for (const p of parts) {
     const last = out[out.length - 1]
     if (p.type === 'tool') {
-      after = p
+      tools.push(p)
       if (last?.kind === 'steps') last.parts.push(p)
       else out.push({ kind: 'steps', parts: [p] })
     } else if (p.type === 'text') {
       if (!p.text.trim()) continue
       out.push({ kind: 'text', text: p.text })
-    } else out.push({ kind: 'permission', part: p, after })
+    } else out.push({ kind: 'permission', part: p, after: raisedBy(tools, p) })
+  }
+  return out
+}
+
+/** The question cards a run of steps raised: the ones right after it, in the order they came up. */
+function cardsAfter(groups: Group[], i: number): Extract<Group, { kind: 'permission' }>[] {
+  const out: Extract<Group, { kind: 'permission' }>[] = []
+  for (let j = i + 1; j < groups.length; j++) {
+    const g = groups[j]
+    if (g.kind !== 'permission') break
+    if (g.part.ask) out.push(g)
   }
   return out
 }
@@ -261,10 +282,10 @@ export function AssistantMessage({
     <div className={cn('group/msg flex flex-col gap-2.5', animate && 'msg-in')}>
       {groups.map((g, i) => {
         if (g.kind === 'steps') {
-          // a tool that asked a question of its own is stopped on the card that follows it
-          const next = groups[i + 1]
-          const ask = next?.kind === 'permission' ? next.part.ask : undefined
-          const answer = next?.kind === 'permission' ? next.part.resolved : undefined
+          // a tool that asked a question of its own is stopped on the cards that follow it: it may
+          // ask to connect first and then to spend, so it waits on the first one still open
+          const asked = cardsAfter(groups, i)
+          const open = asked.find((c) => !c.part.resolved)
           return (
             <Steps
               key={i}
@@ -273,13 +294,15 @@ export function AssistantMessage({
               stopped={!!m.stopped}
               animate={anim}
               waiting={
-                ask && !answer
-                  ? ask.kind === 'connect'
+                open
+                  ? open.part.ask?.kind === 'connect'
                     ? 'Waiting for your ai33 key'
                     : 'Waiting for your OK'
                   : undefined
               }
-              declined={!!ask && answer === 'deny'}
+              // the step that asked, when it can be told apart by name (else the first one running)
+              waitingOn={open && open.after?.name === open.part.tool ? open.after.id : undefined}
+              declined={asked.some((c) => c.part.resolved === 'deny')}
             />
           )
         }
@@ -450,6 +473,7 @@ function PermissionCard({
 
   return (
     <div
+      data-space
       className={cn(
         'rounded-[12px] border border-border bg-bg p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
         animate && 'msg-in'
@@ -559,6 +583,7 @@ function AskCard({
     <div
       role="group"
       aria-label={ask.title}
+      data-space
       className={cn(
         'rounded-[12px] border border-border bg-bg p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
         animate && 'msg-in'

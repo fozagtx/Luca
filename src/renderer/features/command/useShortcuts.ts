@@ -26,15 +26,28 @@ const isEditable = (t: EventTarget | null): boolean => {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
 }
 
-/**
- * Controls Space belongs to: it presses a focused button or link, picks a radio, option or tab and
- * ticks a checkbox, so it can't also play the video. Anything inside a list of options counts.
- */
-const SPACE_IS_THEIRS =
-  'button, a, [role="radio"], [role="option"], [role="tab"], [role="checkbox"], [role="menuitem"], [role="listbox"]'
+/** Controls that Space presses, picks or ticks. */
+const PRESSED_BY_SPACE =
+  'button, a, [role="radio"], [role="option"], [role="tab"], [role="checkbox"], [role="menuitem"]'
 
-const usesSpace = (t: EventTarget | null): boolean =>
-  t instanceof Element && t.closest(SPACE_IS_THEIRS) !== null
+/**
+ * Places where Space always belongs to what is in them: sheets, lists of options, radio groups and
+ * menus, and the start card and chat cards (`data-space`), where a voice, a chip or "Say it right"
+ * is chosen with Space.
+ */
+const SPACE_AREAS =
+  '[role="dialog"], [role="alertdialog"], [role="listbox"], [role="radiogroup"], [role="menu"], [data-space]'
+
+/**
+ * Whether Space is meant for the focused control and not for play/pause. One reached with the
+ * keyboard is pressed by Space; one the mouse just clicked (`clicked`) keeps Space for the video,
+ * or the toolbar and timeline buttons would fire again on every play.
+ */
+const usesSpace = (t: EventTarget | null, clicked: Element | null): boolean => {
+  if (!(t instanceof Element)) return false
+  if (t.closest(SPACE_AREAS)) return true
+  return t.closest(PRESSED_BY_SPACE) !== null && t !== clicked
+}
 
 /** Open the chat if it's hidden and put the caret in the message box. */
 async function focusChat(): Promise<void> {
@@ -50,6 +63,18 @@ async function focusChat(): Promise<void> {
 /** Keyboard shortcuts and native menu commands. Menu items without accelerators are handled here. */
 export function useShortcuts(): void {
   useEffect(() => {
+    // The control the mouse last pressed. `:focus-visible` can't stand in for this: once a key is
+    // down the browser counts whatever is focused as keyboard-focused, Space included.
+    let clicked: Element | null = null
+    const onPointerDown = (e: PointerEvent): void => {
+      const pressed = e.target instanceof Element ? e.target.closest(PRESSED_BY_SPACE) : null
+      if (pressed) clicked = pressed
+    }
+    // it stays the clicked one for as long as it keeps focus
+    const onFocusOut = (e: FocusEvent): void => {
+      // the whole window losing focus is not the control losing it
+      if (e.target === clicked && document.hasFocus()) clicked = null
+    }
     const onKey = (e: KeyboardEvent): void => {
       const ui = useUi.getState()
       const player = usePlayer.getState()
@@ -100,8 +125,8 @@ export function useShortcuts(): void {
           if (selected) void trimToPlayhead(selected, 'end')
           break
         case ' ':
-          // a focused button (a voice, a chip, "Say it right") is pressed by Space, not by Enter alone
-          if (usesSpace(e.target)) break
+          // Space presses a control reached by keyboard (a voice, a chip, "Say it right"), not just Enter
+          if (usesSpace(e.target, clicked)) break
           e.preventDefault()
           player.togglePlay()
           break
@@ -151,6 +176,8 @@ export function useShortcuts(): void {
       }
     }
     window.addEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', onPointerDown, true)
+    window.addEventListener('focusout', onFocusOut, true)
 
     const off = luca.menu.onCommand(async (cmd, arg) => {
       const ui = useUi.getState()
@@ -291,6 +318,8 @@ export function useShortcuts(): void {
 
     return () => {
       window.removeEventListener('keydown', onKey)
+      window.removeEventListener('pointerdown', onPointerDown, true)
+      window.removeEventListener('focusout', onFocusOut, true)
       off()
       offDrop()
       offActive()

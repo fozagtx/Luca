@@ -10,7 +10,7 @@ import type {
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 import { errorMessage, useProject } from './project'
-import { attachmentOf, kindOf, NO_FOOTAGE, NO_SCRIPT, STOPPED, useStart } from './start'
+import { attachmentOf, isStopped, kindOf, NO_FOOTAGE, NO_SCRIPT, useStart } from './start'
 
 /** A file on its way into the project for the chat; videos can take a moment to get ready. */
 export type PendingMedia = { id: number; name: string; media: MediaKind; progress?: number }
@@ -162,7 +162,7 @@ export const useChat = create<ChatStore>((set, get) => ({
       const ok = await start.create({ spoken })
       // Cancel is the person's own doing: the start card says so quietly, no red box here as well
       const failed = useStart.getState().error
-      if (!ok) set({ error: failed === STOPPED ? null : failed })
+      if (!ok) set({ error: isStopped(failed) ? null : failed })
       return ok
     }
     const own = opts?.chips

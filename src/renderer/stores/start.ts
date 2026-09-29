@@ -54,6 +54,13 @@ export const NO_AI33_KEY = 'Connect ai33 first: paste your key at the top of the
  * quiet note, not a red box.
  */
 export const STOPPED = 'Stopped. Your script is still here.'
+/**
+ * Whether a start ended because it was stopped, not because it failed. Cancel gives STOPPED; Stop on
+ * the cost question gives main's own words ("Stopped before the whole voiceover was recorded…"),
+ * which begin the same way.
+ */
+export const isStopped = (message: string | null): boolean =>
+  message !== null && /^Stopped\b/.test(message)
 /** Shown in place of a refusal that was written for the model rather than the person. */
 export const COULDNT_RECORD = 'Couldn’t record the voiceover. Your script is still here.'
 /** Sentences main writes for Luca to relay ("Tell the user…"); they are never shown as they are. */
