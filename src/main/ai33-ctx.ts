@@ -36,10 +36,13 @@ export type Ai33Ctx = {
   projectId: string
   /** Where the running step is; `pct` is null while ai33 gives no progress. */
   progress(tool: ToolName, p: { pct: number | null; note?: string }): void
-  /** Awaits a card in the chat; Stop or a timeout answers 'deny'. */
-  ask(ask: Ai33Ask): Promise<'allow' | 'deny'>
+  /**
+   * Awaits a card in the chat; Stop or a timeout answers 'deny'. `tool` is the tool the card is
+   * for: the chat puts the card on that tool's step (the oldest running ai33 step when omitted).
+   */
+  ask(ask: Ai33Ask, tool?: ToolName): Promise<'allow' | 'deny'>
   /** Awaits the ai33 key card: true once connected, false on Not now, Stop or a timeout. */
-  connect(): Promise<boolean>
+  connect(tool?: ToolName): Promise<boolean>
   turn(): Ai33Turn
 }
 

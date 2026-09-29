@@ -80,7 +80,7 @@ export function musicTools(ctx: Ai33Ctx, projectDir: string): Ai33Tool[] {
                 summary: `Music: ${req.mood.replace(/\s+/g, ' ').trim()}`.slice(0, 80),
                 thing: 'music'
               },
-              { again: musicLostRecently(req) }
+              { again: musicLostRecently(req), tool: 'music_generate' }
             )
             if (!gate.go) return gate.result
             grant = gate.grant

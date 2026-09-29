@@ -218,12 +218,6 @@ export function markCollected(jobId: string, dest: string[] = []): void {
   save()
 }
 
-/** Keep polling a job that outlived its caller's wait, and record how it ends. */
-export function finishInBackground(jobId: string): void {
-  const entry = get(jobId)
-  if (entry && hooks) hooks.finish(entry)
-}
-
 /** Where a job stands: its result files once done, or still working. Null for an unknown job. */
 export function collect(jobId: string): Promise<JobOutcome | null> {
   const entry = get(jobId)

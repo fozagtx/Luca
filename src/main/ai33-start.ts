@@ -11,7 +11,7 @@ import {
   statSync,
   writeFileSync
 } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import {
   formatCredits,
   languageFor,
@@ -28,6 +28,7 @@ import { Ai33Error, getCredits, plainError } from './ai33-client'
 import { makeSpeech, pickVoice, SpeechPartError, wordsFromScript } from './ai33-speech'
 import { gateSpend, makeStartCtx, settleSpend, voiceLabel } from './ai33-spend'
 import { patchProjectAi33, writeScriptMeta } from './ai33-store'
+import { appendCredit, creditLine } from './place'
 import { probeMedia } from './env'
 import { getSettings } from './settings'
 
@@ -310,7 +311,8 @@ function spreadWords(text: string, language: string, seconds: number): TimedWord
 
 /**
  * After the project is made: transcript.json and .luca/transcript.original.json from the script's
- * words, .luca/script.json, .luca/SCRIPT.md and .luca/ai33.json.
+ * words, .luca/script.json, .luca/SCRIPT.md, .luca/ai33.json and the voiceover's line in
+ * media/generated/CREDITS.txt (as for every other sound ai33 made).
  */
 export async function finishScriptStart(dir: string, prepared: PreparedScript): Promise<void> {
   mkdirSync(join(dir, '.luca'), { recursive: true })
@@ -335,6 +337,12 @@ export async function finishScriptStart(dir: string, prepared: PreparedScript): 
     ...(prepared.dictionaryId !== null ? { dictionaryId: prepared.dictionaryId } : {})
   })
   rememberVoice(prepared.language, prepared.voice)
+  try {
+    appendCredit(dir, creditLine(basename(prepared.audioFile), 'speech', prepared.text))
+  } catch (err) {
+    // the credit is a note: a start that made the whole project is not failed over it
+    console.warn('[ai33] couldn’t add the voiceover’s credit line', err)
+  }
 }
 
 /** The voice picked for a language is the one offered first next time (a courtesy: never fails a start). */

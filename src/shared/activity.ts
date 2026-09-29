@@ -352,6 +352,9 @@ export function describeResult(
   if (r.working === true) return WORKING[tool] ? { done: WORKING[tool] } : {}
   switch (tool) {
     case 'speech_generate': {
+      // a line placed at a time (the tool says when it starts) reads like an effect at its moment
+      const at = number(r.at)
+      if (at !== null) return { done: withCost(`Added a voiceover line at ${clock(at)}`, r) }
       const seconds = number(r.seconds)
       const what = seconds === null ? 'the voiceover' : `a ${formatSpan(seconds)} voiceover`
       return { done: withCost(`Recorded ${what}`, r) }

@@ -137,7 +137,7 @@ const REFUSALS: Record<EditRefused['reason'], string> = {
   'off-timeline':
     'The original recording is no longer on the timeline, so there is nothing to cut. Tell the user in one short sentence.',
   script:
-    'This video’s words come from the user’s script, so they are already exact and there is nothing to transcribe again or cut. Call transcribe without force to read them (it is free) and time everything to them; never call clean_edit on it. If the user wants a different voice or speed, tell them in one short sentence that it means starting again from the script (parts already recorded are not paid for twice).'
+    'This video’s words come from the user’s script, so they are already exact and there is nothing to transcribe again or cut. Call transcribe without force to read them (it is free) and time everything to them; never call clean_edit on it. If the user wants a different voice or speed, tell them in one short sentence that it means starting again from the script (a different voice or speed is recorded and charged again; only an identical retry is free).'
 }
 
 const refusal = (err: unknown): string =>

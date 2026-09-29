@@ -66,7 +66,7 @@ import { pickVoice, providerOf, rememberVoice } from './ai33-voices'
 import { childEnv, run, which } from './env'
 import { isSoundFile, probeAudio } from './place'
 
-export { listVoices, pickVoice, resolveVoice, voicePreview } from './ai33-voices'
+export { findVoice, listVoices, pickVoice, resolveVoice, voicePreview } from './ai33-voices'
 export type { PickVoiceOpts } from './ai33-voices'
 export { timingLadder, wordsFromScript }
 

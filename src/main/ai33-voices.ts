@@ -14,7 +14,8 @@ import {
   type Ai33VoicePage,
   type Ai33VoiceQuery,
   type Ai33VoiceTier,
-  type VoiceRef
+  type VoiceRef,
+  UNNAMED_VOICE
 } from '../shared/ai33'
 import { Ai33Error, dataDir, downloadTo, getHealth, request, toInt } from './ai33-client'
 import { patchAi33Settings } from './ai33-account'
@@ -42,7 +43,12 @@ const TIER_OF: Record<string, Ai33VoiceTier> = {
   vbee: 'standard',
   clone: 'yours'
 }
-const VOICE_ID = /^(elevenlabs|minimax|clone|edge|kokoro|vbee)_(.+)$/
+/**
+ * A voice id as ai33 spells it: a service's prefix, then letters, digits, dots, dashes and
+ * underscores only (an id is passed back to ai33 as it is, and reaches the model and the chat's
+ * hidden notes, so nothing else may ride in one).
+ */
+const VOICE_ID = /^(elevenlabs|minimax|clone|edge|kokoro|vbee)_([A-Za-z0-9_.-]{1,100})$/
 
 /** The service a prefixed voice id belongs to ("elevenlabs_abc" is "elevenlabs"), or null. */
 export const providerOf = (voiceId: string): string | null => VOICE_ID.exec(voiceId)?.[1] ?? null
@@ -145,6 +151,7 @@ function normalize(raw: Ai33Raw, provider: string): Listed | null {
   // an id is passed back to ai33 as it is, so one that isn't plain is dropped rather than cleaned
   if (s.length > ID_MAX || /\p{C}/u.test(s)) return null
   const id = s.startsWith(`${provider}_`) ? s : `${provider}_${s}`
+  if (!VOICE_ID.test(id)) return null
   const gender = genderOf(raw)
   const locale = Array.isArray(raw?.tags)
     ? raw.tags.find((t: unknown) => typeof t === 'string' && /^[a-z]{2,3}-[A-Za-z]{2,4}$/.test(t))
@@ -285,16 +292,52 @@ export async function listVoices(q: Ai33VoiceQuery): Promise<Ai33VoicePage> {
   }
 }
 
-/** A voice from what a tool was given: an id from voice_search, or a name from its list. */
-export function resolveVoice(input: string): VoiceRef | null {
+/**
+ * What a voice not listed yet is called: the name its own id spells ("edge_fr-FR-DeniseNeural" is
+ * "Denise"), else a neutral label (an id like "21m00Tcm4TlvDq8ikWAM" is not a name).
+ */
+function nameFromId(provider: string, id: string): string {
+  const said = friendlyName(undefined, provider, id)
+  return said.toLowerCase() === plain(id.slice(provider.length + 1), NAME_MAX).toLowerCase()
+    ? UNNAMED_VOICE
+    : said
+}
+
+/**
+ * A voice from what a tool was given: an id from voice_search, or a name from its list. `named` is
+ * false for an id nothing has been listed for this session (after a restart, `known` is empty).
+ */
+function resolveKnown(input: string): { ref: VoiceRef; named: boolean } | null {
   const s = input.trim()
   if (!s) return null
   const hit = known.get(s)
-  if (hit) return refOf(hit.voice)
+  if (hit) return { ref: refOf(hit.voice), named: true }
   const m = VOICE_ID.exec(s)
-  if (m) return { id: s, name: friendlyName(undefined, m[1], s) }
+  if (m) return { ref: { id: s, name: nameFromId(m[1], s) }, named: false }
   const named = [...known.values()].filter((v) => v.voice.name.toLowerCase() === s.toLowerCase())
-  return named.length === 1 ? refOf(named[0].voice) : null
+  return named.length === 1 ? { ref: refOf(named[0].voice), named: true } : null
+}
+
+/** A voice from what a tool was given, from what this session has listed (never named by its raw id). */
+export function resolveVoice(input: string): VoiceRef | null {
+  return resolveKnown(input)?.ref ?? null
+}
+
+/**
+ * `resolveVoice`, and an id this session has not listed is looked up at ai33 for its name (a card
+ * or the project would otherwise call it by the id). When that fails (offline, no such voice) it
+ * is called by a neutral label.
+ */
+export async function findVoice(input: string): Promise<VoiceRef | null> {
+  const r = resolveKnown(input)
+  if (!r || r.named) return r?.ref ?? null
+  try {
+    const listed = await listedById(r.ref.id)
+    if (listed) return refOf(listed.voice)
+  } catch {
+    // named by the neutral label below
+  }
+  return r.ref
 }
 
 // ------------------------------------------------------------------------------ choosing one
@@ -382,18 +425,19 @@ export function sniffAudio(b: Uint8Array): string | null {
   return null
 }
 
-/** Where a voice's sample is: seen in a list this session, else looked up by its own id. */
-async function previewUrlOf(voiceId: string): Promise<string | null> {
+/** A voice by its own id: seen in a list this session, else looked up at ai33 (the id is searched for). */
+async function listedById(voiceId: string): Promise<Listed | null> {
   const seen = known.get(voiceId)
-  if (seen) return seen.previewUrl
+  if (seen) return seen
   const provider = providerOf(voiceId)
   if (!provider) return null
   const page = await pageOf(provider, { query: voiceId.slice(provider.length + 1) }, 30)
-  return (
-    known.get(voiceId)?.previewUrl ??
-    page.voices.find((v) => v.voice.id === voiceId)?.previewUrl ??
-    null
-  )
+  return known.get(voiceId) ?? page.voices.find((v) => v.voice.id === voiceId) ?? null
+}
+
+/** Where a voice's sample is. */
+async function previewUrlOf(voiceId: string): Promise<string | null> {
+  return (await listedById(voiceId))?.previewUrl ?? null
 }
 
 /** A voice's sample as bytes (https only, at most 2 MB), for the renderer to play. */

@@ -19,10 +19,11 @@ import {
   type Ai33HealthMap,
   type Ai33Kind,
   type Grant,
-  type SpendReq
+  type SpendReq,
+  UNNAMED_VOICE
 } from '../shared/ai33'
 import { Ai33Error, dataDir, getCredits, getHealth } from './ai33-client'
-import type { Ai33Turn, SpendCtx } from './ai33-ctx'
+import type { Ai33Turn, SpendCtx, ToolName } from './ai33-ctx'
 import { list } from './ai33-jobs'
 
 /** Asked first when a job (or a batch) is estimated at this many credits or more. */
@@ -333,7 +334,7 @@ function askFor(
       title = `Make ${req.thing ?? (req.units === 1 ? 'a sound effect' : `${req.units} sound effects`)}?`
     else {
       const what = req.thing ?? (req.kind === 'dialogue' ? 'the conversation' : 'the voiceover')
-      title = `Record ${what}${req.voice ? ` in ${voiceLabel(req.voice.name)}’s voice` : ''}?`
+      title = `Record ${what}${req.voice ? inVoiceOf(req.voice.name) : ''}?`
     }
     if (credits === null) {
       detail.push(`You have ${left} credits.`)
@@ -454,16 +455,21 @@ export async function precheckSpend(
  */
 export function gateSpend(
   ctx: SpendCtx,
-  req: SpendReq
+  req: SpendReq,
+  tool?: ToolName
 ): Promise<{ go: true; grant: Grant } | { go: false; result: CallToolResult }> {
-  return gateSpendWith(ctx, req, {})
+  return gateSpendWith(ctx, req, { tool })
 }
 
-/** `gateSpend`; `again` asks first whatever the price (an identical request that may already have been charged). */
+/**
+ * `gateSpend`; `again` asks first whatever the price (an identical request that may already have
+ * been charged); `tool` is the tool the card is for, so the chat puts it on that tool's step (two
+ * tools running at once must not swap cards).
+ */
 export async function gateSpendWith(
   ctx: SpendCtx,
   req: SpendReq,
-  o: { again?: boolean }
+  o: { again?: boolean; tool?: ToolName }
 ): Promise<{ go: true; grant: Grant } | { go: false; result: CallToolResult }> {
   const preapprovable = preapprovalHolds(ctx.projectDir, ctx.turn()) && req.kind === 'music'
 
@@ -501,7 +507,8 @@ export async function gateSpendWith(
         start: startTurns.has(turn),
         busy: health === 'degraded',
         again: o.again === true
-      })
+      }),
+      o.tool
     )
     if (answer !== 'allow' || turn.stop.aborted) return declined()
   }
@@ -560,9 +567,10 @@ function learn(r: Reservation, actual: number): void {
 /**
  * After the job: replace the reservation with what it really cost (0 when it failed or was
  * cancelled, which also gives back its place in the turn's caps), remember the price, and use up
- * a preapproval. `actualCredits` is what the units that were gated cost. A job still running when
- * the tool stopped waiting keeps its estimate: settle it with `grant.reserved`. A grant settles
- * once; settling it again does nothing.
+ * a preapproval. `actualCredits` is what the units that were gated cost. A job whose cost isn't
+ * known (still running when the tool stopped waiting, or a failure that may have been charged) is
+ * not settled at all: `holdSpend` keeps its estimate and its place. A grant settles once;
+ * settling it again does nothing.
  */
 export function settleSpend(ctx: SpendCtx, grant: Grant, actualCredits: number): void {
   const r = reservations.get(grant.id)
@@ -594,6 +602,28 @@ export function holdSpend(ctx: SpendCtx, grant: Grant): void {
   if (!r) return
   reservations.delete(grant.id)
   if (r.preapproved && ctx.projectDir) endPreapproval(ctx.projectDir)
+}
+
+/**
+ * Count what a call used that could not be gated before it was paid for: the first part of a long
+ * voiceover is recorded before the person is asked about the rest. Its credits are added to the
+ * turn's total; `call` also counts the call itself (a paid call, and its place in the caps), which
+ * is all that is left of it when the rest is not recorded. `credits` may be 0 for a call that may
+ * have been charged: its place is held, as `holdSpend` does. Nothing is learned from it.
+ */
+export function countSpent(
+  ctx: SpendCtx,
+  req: SpendReq,
+  credits: number,
+  o: { call: boolean }
+): void {
+  const { spent } = ctx.turn()
+  if (o.call) {
+    spent.paid += 1
+    const bucket = bucketOf(req.kind)
+    spent.byKind[bucket] = (spent.byKind[bucket] ?? 0) + capUnits(req)
+  }
+  if (Number.isFinite(credits) && credits > 0) spent.credits += Math.round(credits)
 }
 
 /** How long after a submit that got no answer the same request is asked about again. */
@@ -630,6 +660,12 @@ const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g
 export function voiceLabel(name: string): string {
   const flat = name.replace(CONTROL, ' ').replace(/\s+/g, ' ').trim()
   return flat.length > 40 ? `${flat.slice(0, 39).trimEnd()}…` : flat
+}
+
+/** " in Sam’s voice", or " in the voice you picked" when the voice has no name to say. */
+export function inVoiceOf(name: string): string {
+  const label = voiceLabel(name)
+  return label === UNNAMED_VOICE ? ` in ${UNNAMED_VOICE}` : ` in ${label}’s voice`
 }
 
 /** A spend context for work that starts before any project or chat exists (a script start). */

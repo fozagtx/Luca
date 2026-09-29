@@ -23,7 +23,7 @@ import type {
 } from '../shared/types'
 import { hasAi33Key } from './ai33-account'
 import { getCredits } from './ai33-client'
-import { endPreapproval, grantPreapproval, MUSIC_SEED, voiceLabel } from './ai33-spend'
+import { endPreapproval, estimate, grantPreapproval, MUSIC_SEED, voiceLabel } from './ai33-spend'
 import { finishScriptStart, scriptToAudio, startAbort, throwIfStopped } from './ai33-start'
 import { childEnv, probeMedia, run, runHyperframes, which } from './env'
 import {
@@ -243,7 +243,9 @@ async function createProject(
     // music is made without asking only when the credits cover it: else it is left out, said once
     if (edit.steps.includes('music') && hasAi33Key()) {
       const left = (await getCredits({ fresh: true }).catch(() => null)) ?? prepared?.left ?? null
-      if (left !== null && left >= MUSIC_SEED) grantPreapproval(dir, ['music'])
+      // the price the start card's note shows (a learned one, else the seed), so the two agree
+      const price = (await estimate({ kind: 'music' })).credits ?? MUSIC_SEED
+      if (left !== null && left >= price) grantPreapproval(dir, ['music'])
       else {
         edit = { ...edit, steps: edit.steps.filter((s) => s !== 'music') }
         brief += left === null ? NO_MUSIC_UNKNOWN : NO_MUSIC_SHORT

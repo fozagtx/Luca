@@ -81,6 +81,8 @@ type Pending = {
   rule: string | null
   /** Set for a question one of Luca's own tools asks (connect ai33, spend credits). */
   ask?: Ai33Ask
+  /** The step that question stops, so a second card from the same tool goes to another step. */
+  step?: ToolPart
 }
 
 type TurnOutcome = { isError: boolean; error?: string }
@@ -663,8 +665,8 @@ export class ProjectAgent {
       projectDir: this.project.dir,
       projectId: this.project.id,
       progress: (tool, p) => this.reportProgress(tool, p),
-      ask: (ask) => this.openAsk(ask).answer,
-      connect: () => this.askForKey(),
+      ask: (ask, tool) => this.openAsk(ask, tool).answer,
+      connect: (tool) => this.askForKey(tool),
       turn: () => (this.aiTurn ??= this.newAiTurn())
     }
   }
@@ -734,14 +736,24 @@ export class ProjectAgent {
 
   /**
    * A question one of Luca's own tools asks: a card in the chat that the tool waits on. Stop, a
-   * restart, the project closing or ASK_TIMEOUT_MS answer it 'deny'.
+   * restart, the project closing or ASK_TIMEOUT_MS answer it 'deny'. The card's `tool` is the exact
+   * name of the step it stops (the chat reads it to put the card on that step): the running step of
+   * the tool that asked, else the oldest ai33 step still running.
    */
-  private openAsk(ask: Ai33Ask): { id: string; answer: Promise<'allow' | 'deny'> } {
+  private openAsk(
+    ask: Ai33Ask,
+    from?: ToolName
+  ): { id: string; answer: Promise<'allow' | 'deny'> } {
     const id = randomUUID()
-    // the step it stops: the oldest ai33 step still running
-    const step = [...this.tools.values()].find(
-      (t) => t.status === 'running' && AI33_STEPS.has(t.name)
-    )
+    const running = [...this.tools.values()].filter((t) => t.status === 'running')
+    const name = from ? `mcp__luca__${from}` : null
+    // two calls of one tool at once: the one that has no card open yet is the one asking now
+    const waiting = new Set([...this.pending.values()].map((p) => p.step))
+    const ofTool = running.filter((t) => t.name === name)
+    const step =
+      ofTool.find((t) => !waiting.has(t)) ??
+      ofTool[0] ??
+      running.find((t) => AI33_STEPS.has(t.name))
     const tool = step?.name ?? 'mcp__luca__ai33'
     const part: ChatContentPart = { type: 'permission', id, tool, input: {}, ask }
     this.current?.parts?.push(part)
@@ -756,6 +768,7 @@ export class ProjectAgent {
       this.pending.set(id, {
         rule: null,
         ask,
+        step,
         resolve: (r) => {
           clearTimeout(timer)
           resolveAsk(r.behavior === 'allow' ? 'allow' : 'deny')
@@ -766,9 +779,9 @@ export class ProjectAgent {
   }
 
   /** Ask for an ai33 key in the chat; true once one is saved, false on Not now, Stop or a timeout. */
-  private async askForKey(): Promise<boolean> {
+  private async askForKey(tool?: ToolName): Promise<boolean> {
     if (hasAi33Key()) return true
-    const { id, answer } = this.openAsk(CONNECT_ASK)
+    const { id, answer } = this.openAsk(CONNECT_ASK, tool)
     // saving the key (here or in Connections) is what answers this card
     const off = onKeyConnected(() => this.decide(id, 'allow'))
     try {
@@ -1001,66 +1014,77 @@ export class ProjectAgent {
     // carry on as if it had succeeded
     const stopped = this.interrupted
     this.interrupted = false
-    this.cancelPending(stopped ? 'Stopped' : 'The turn ended')
-    if (this.current) {
-      this.settleCurrent(isError && !stopped, stopped)
-      if (stopped && !this.current.text) this.appendText('Stopped.')
-      else if (isError && error && !this.current.text) {
-        this.appendText(
-          this.state === 'needs-login'
-            ? 'Sign in to Claude Code to continue.'
-            : (PLAIN_ERRORS[error] ?? error)
-        )
+    const listeners: Promise<void>[] = []
+    // Whatever throws in here (a full disk, a notification), the wait below is reached: `ending`
+    // stays set until then, so a throw that skipped it would queue every later message for good.
+    try {
+      this.cancelPending(stopped ? 'Stopped' : 'The turn ended')
+      if (this.current) {
+        this.settleCurrent(isError && !stopped, stopped)
+        if (stopped && !this.current.text) this.appendText('Stopped.')
+        else if (isError && error && !this.current.text) {
+          this.appendText(
+            this.state === 'needs-login'
+              ? 'Sign in to Claude Code to continue.'
+              : (PLAIN_ERRORS[error] ?? error)
+          )
+        }
+        this.pushMessage(this.current)
+        // you stopped it, or the project closed or restarted: nothing is waiting on you
+        if (!stopped && error !== 'closed' && error !== 'restarted')
+          notifyInBackground(
+            isError ? 'Luca couldn’t finish' : `Luca finished in ${this.project.name}`,
+            firstSentence(this.current.text) ||
+              (isError ? 'Open Luca to try again.' : 'Your video is updated.')
+          )
+        this.current = null
       }
-      this.pushMessage(this.current)
-      // you stopped it, or the project closed or restarted: nothing is waiting on you
-      if (!stopped && error !== 'closed' && error !== 'restarted')
-        notifyInBackground(
-          isError ? 'Luca couldn’t finish' : `Luca finished in ${this.project.name}`,
-          firstSentence(this.current.text) ||
-            (isError ? 'Open Luca to try again.' : 'Your video is updated.')
-        )
-      this.current = null
-    }
-    this.rewriteHistory()
-    const end: Extract<AgentEvent, { type: 'turn-end' }> = {
-      type: 'turn-end',
-      sessionId: this.sessionId ?? '',
-      durationMs: Date.now() - this.turnStartedAt,
-      isError: isError || stopped,
-      stopped,
-      error: stopped ? 'Stopped' : error
-    }
-    this.emit(end)
-    // the Music start chip covered this project's first turn, whether or not it made any music
-    endPreapproval(this.project.dir)
-    // each listener starts now, in order; the turn is over for whoever waits on it only once they
-    // are all done (captions re-timed, the version queued), and before the next turn starts
-    const listeners = [...turnEndListeners].map((cb) => {
       try {
-        return Promise.resolve(cb(this.project, end))
+        this.rewriteHistory()
       } catch (err) {
-        return Promise.reject(err)
+        // the chat file is a copy: a turn that can't be saved is still over
+        console.warn('[luca] couldn’t save the chat', err)
       }
-    })
-    void listenersDone(listeners).then(() => {
-      const turn = this.active
-      this.active = null
-      this.working = false
-      this.ending = false
-      // a stopped turn is not a success for whoever waits on it (clean edit, Save Look), and
-      // they show the error to the person, so it is in plain words
-      turn?.done?.({
-        isError: end.isError,
-        error: stopped ? 'Stopped' : error && (PLAIN_ERRORS[error] ?? error)
+      const end: Extract<AgentEvent, { type: 'turn-end' }> = {
+        type: 'turn-end',
+        sessionId: this.sessionId ?? '',
+        durationMs: Date.now() - this.turnStartedAt,
+        isError: isError || stopped,
+        stopped,
+        error: stopped ? 'Stopped' : error
+      }
+      this.emit(end)
+      // the Music start chip covered this project's first turn, whether or not it made any music
+      endPreapproval(this.project.dir)
+      // each listener starts now, in order; the turn is over for whoever waits on it only once they
+      // are all done (captions re-timed, the version queued), and before the next turn starts
+      for (const cb of [...turnEndListeners]) {
+        try {
+          listeners.push(Promise.resolve(cb(this.project, end)))
+        } catch (err) {
+          listeners.push(Promise.reject(err))
+        }
+      }
+    } finally {
+      void listenersDone(listeners).then(() => {
+        const turn = this.active
+        this.active = null
+        this.working = false
+        this.ending = false
+        // a stopped turn is not a success for whoever waits on it (clean edit, Save Look), and
+        // they show the error to the person, so it is in plain words
+        turn?.done?.({
+          isError: isError || stopped,
+          error: stopped ? 'Stopped' : error && (PLAIN_ERRORS[error] ?? error)
+        })
+        if (this.state === 'working') this.setState('ready')
+        // without a live session the queue waits for the next start (restart, or the next send)
+        if (this.q) {
+          const next = this.queued.shift()
+          if (next) this.dispatch(next)
+        }
       })
-      if (this.state === 'working') this.setState('ready')
-      // without a live session the queue waits for the next start (restart, or the next send)
-      if (this.q) {
-        const next = this.queued.shift()
-        if (next) this.dispatch(next)
-      }
-    })
+    }
   }
 }
 

@@ -28,6 +28,7 @@ import { findTags } from './html'
 import {
   clampBeds,
   findClip,
+  findPlacement,
   hasVoice,
   insertAudio,
   MUSIC_FADE_IN,
@@ -38,6 +39,7 @@ import {
   SFX_VOLUME,
   withoutClip
 } from './place-html'
+import { ignoreGenerated } from './versions'
 
 /** How far under the voice a bed sits, in dB, and the level it gets when there is no voice to measure. */
 export const MUSIC_QUIET_DB = 16
@@ -293,7 +295,7 @@ function remember(dir: string, rel: string, entry: Library['files'][string]): vo
 }
 
 /** One line in a file's credit: what it is, that ai33 made it, when, and what it was asked for. */
-function creditLine(rel: string, kind: SavedAsset['kind'], prompt: string): string {
+export function creditLine(rel: string, kind: SavedAsset['kind'], prompt: string): string {
   const said = prompt.replace(/\s+/g, ' ').trim()
   const short = said.length > 120 ? `${said.slice(0, 119)}…` : said
   const day = new Date().toISOString().slice(0, 10)
@@ -304,6 +306,7 @@ function creditLine(rel: string, kind: SavedAsset['kind'], prompt: string): stri
 export function appendCredit(dir: string, line: string): void {
   const folder = join(dir, 'media', 'generated')
   mkdirSync(folder, { recursive: true })
+  ignoreGenerated(dir)
   const file = join(folder, 'CREDITS.txt')
   const one = line.replace(/\s+/g, ' ').trim()
   if (!one) return
@@ -354,6 +357,8 @@ export async function importGenerated(
     const found = await probeFile(tmp)
     if (!found.ok) throw new Error(WHY_GENERATED[found.why])
     mkdirSync(dirname(abs), { recursive: true })
+    // before the first byte lands: a version made from now on must not track it (undo deletes what it tracks)
+    ignoreGenerated(p.dir)
     let seconds = found.seconds
     if (found.codec === 'mp3' && found.format.includes('mp3')) moveFile(tmp, part)
     else {
@@ -489,6 +494,7 @@ export async function fitAudio(o: {
   filters.push(`[${last}]atrim=end=${r3(o.seconds)},asetpts=PTS-STARTPTS[out]`)
   const part = `${abs}.part`
   mkdirSync(dirname(abs), { recursive: true })
+  ignoreGenerated(dir)
   try {
     await ffmpeg(
       [
@@ -680,6 +686,12 @@ export async function placeAudio(p: Project, o: PlaceAudio): Promise<Placed> {
 
   // from here on index.html is read and written with nothing awaited in between
   const html = readFileSync(indexFile(p), 'utf8')
+  // the same sound from the same moment in the same role is already there (the same request
+  // asked twice): say where it plays instead of putting a second copy on top of it
+  if (!o.replaces) {
+    const there = findPlacement(html, { file: file.rel, role: o.role, start })
+    if (there) return there
+  }
   const rootTag = findTags(html).find((t) => t.attrs['data-composition-id'] !== undefined)
   const rootLength = num(rootTag?.attrs['data-duration'], 0)
   const extend = o.role === 'voice' && (o.extendRoot ?? true)

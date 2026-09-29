@@ -46,6 +46,7 @@ type Bundle = {
   exportPreflight: typeof import('../src/main/export-preflight')
   html: typeof import('../src/main/html')
   shared: typeof import('../src/shared/ai33')
+  activity: typeof import('../src/shared/activity')
   edits: typeof import('../src/shared/edits')
   captions: typeof import('../src/shared/captions')
 }
@@ -62,6 +63,7 @@ const MODULES: Record<keyof Bundle, string> = {
   exportPreflight: 'src/main/export-preflight.ts',
   html: 'src/main/html.ts',
   shared: 'src/shared/ai33.ts',
+  activity: 'src/shared/activity.ts',
   edits: 'src/shared/edits.ts',
   captions: 'src/shared/captions.ts'
 }
@@ -2451,6 +2453,95 @@ async function sectionSpend(): Promise<void> {
   const { ctx: cQ, asks: askQ } = mkCtx(p5, tQ)
   await spend.gateSpend(cQ, req({ kind: 'music' }))
   check('the chip never lets a turn spend past its cap', askQ.length === 1, () => show(askQ))
+
+  // a card goes to the step of the tool that raised it (two tools may run at once)
+  const seenTools: (string | undefined)[] = []
+  const toolCtx = (turn: Turn): SpendCtx => ({
+    projectDir: null,
+    turn: () => turn,
+    ask: async (_a, tool) => {
+      seenTools.push(tool)
+      return 'allow'
+    }
+  })
+  scenario('ok')
+  pointAtFake()
+  await spend.gateSpendWith(toolCtx(mkTurn(50)), req({ kind: 'music' }), {
+    tool: 'music_generate'
+  })
+  await spend.gateSpend(
+    toolCtx(mkTurn(51)),
+    req({ kind: 'sfx', units: 4, batch: 4 }),
+    'sfx_generate'
+  )
+  await spend.gateSpend(toolCtx(mkTurn(52)), req({ kind: 'music' }))
+  same(
+    'the tool a card is for goes with the ask (and nothing is invented when there is none)',
+    seenTools,
+    ['music_generate', 'sfx_generate', undefined]
+  )
+
+  // a failure that may have been charged is held: nothing is learned from it and its place stays
+  const tHold = mkTurn(53)
+  const { ctx: cHold } = mkCtx(null, tHold)
+  const learnedBefore = await spend.estimate({ kind: 'music' })
+  const gHold = await spend.gateSpend(cHold, req({ kind: 'music' }))
+  if (gHold.go) {
+    spend.holdSpend(cHold, gHold.grant)
+    same(
+      'a held call keeps its estimate and its place in the caps, and teaches no price',
+      [tHold.spent, await spend.estimate({ kind: 'music' })],
+      [{ credits: gHold.grant.reserved, paid: 1, byKind: { music: 1 } }, learnedBefore]
+    )
+    spend.settleSpend(cHold, gHold.grant, 1)
+    same('a held grant is over: settling it afterwards changes nothing', tHold.spent, {
+      credits: gHold.grant.reserved,
+      paid: 1,
+      byKind: { music: 1 }
+    })
+  } else check('a music call is allowed', false, () => show(gHold))
+
+  // the partOne part of a long voiceover is paid before the rest is asked about, and still counts
+  const tFirst = mkTurn(54)
+  const { ctx: cFirst } = mkCtx(null, tFirst)
+  const partOne = req({ kind: 'speech', units: 3000, voice: V })
+  spend.countSpent(cFirst, partOne, 2500, { call: true })
+  same('the partOne part counts as a paid call, a voiceover and its credits', tFirst.spent, {
+    credits: 2500,
+    paid: 1,
+    byKind: { speech: 1 }
+  })
+  spend.countSpent(cFirst, partOne, 300, { call: false })
+  same('credits alone (the call was counted by the gate) only add up', tFirst.spent, {
+    credits: 2800,
+    paid: 1,
+    byKind: { speech: 1 }
+  })
+  spend.countSpent(cFirst, partOne, 0, { call: true })
+  spend.countSpent(cFirst, partOne, 0, { call: true })
+  const capped = await spend.gateSpend(
+    cFirst,
+    req({ kind: 'speech', units: 50, voice: V, estimate: known(50) })
+  )
+  check(
+    'declined partOne parts fill the voiceover cap: the next one is refused before it is paid',
+    !capped.go && /already made 3 voiceovers/.test(textOf(capped.result)),
+    () => show(capped)
+  )
+
+  // a voice known only by its id is never called by it on a card
+  const unnamed = b.shared.UNNAMED_VOICE
+  same(
+    'a voice with no name is spoken of neutrally, a named one by name',
+    [spend.inVoiceOf(unnamed), spend.inVoiceOf('Rachel')],
+    [' in the voice you picked', ' in Rachel’s voice']
+  )
+  const askU: Ai33Ask[] = []
+  await spend.gateSpend(
+    mkCtx(null, mkTurn(55), (a) => (askU.push(a), 'allow')).ctx,
+    req({ kind: 'speech', units: 4000, voice: { id: V.id, name: unnamed }, estimate: known(2000) })
+  )
+  same('so the card reads plainly', askU[0]?.title, 'Record the voiceover in the voice you picked?')
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2980,6 +3071,54 @@ async function sectionTimeline(): Promise<void> {
       return P.rowFor(s, 'sfx', 20, 22) === 5
     })()
   )
+
+  // asking for the same sound at the same moment in the same role twice adds nothing
+  {
+    const base = shell()
+    const one = P.insertAudio(base, {
+      file: 'media/generated/speech/hello-1a2b3c4d5e.mp3',
+      role: 'voice',
+      start: 2,
+      row: 0,
+      duration: 4,
+      title: 'Voice line'
+    })
+    const there = P.findPlacement(one.html, {
+      file: 'media/generated/speech/hello-1a2b3c4d5e.mp3',
+      role: 'voice',
+      start: 2
+    })
+    same('the same file, role and start is found, as insertAudio reported it', there, one.placed)
+    check(
+      'another start, another role or another file is not the same placement',
+      [
+        P.findPlacement(one.html, {
+          file: 'media/generated/speech/hello-1a2b3c4d5e.mp3',
+          role: 'voice',
+          start: 3
+        }),
+        P.findPlacement(one.html, {
+          file: 'media/generated/speech/hello-1a2b3c4d5e.mp3',
+          role: 'music',
+          start: 2
+        }),
+        P.findPlacement(one.html, {
+          file: 'media/generated/speech/other-1a2b3c4d5e.mp3',
+          role: 'voice',
+          start: 2
+        })
+      ].every((r) => r === null)
+    )
+    check(
+      'a clip nested in a scene is not the top-level placement',
+      P.findPlacement(
+        shell(
+          '    <div id="scene" data-start="0" data-duration="10"><audio id="in" src="a.mp3" data-start="2" data-duration="4" data-luca-role="voice"></audio></div>\n'
+        ),
+        { file: 'a.mp3', role: 'voice', start: 2 }
+      ) === null
+    )
+  }
 
   // what insertAudio writes
   const placed = P.insertAudio(shell(), {
@@ -3534,6 +3673,32 @@ async function sectionTimeline(): Promise<void> {
 // ---------------------------------------------------------------------------------------------
 // 10. The edit plan, the per-project files and the small shared helpers
 
+async function sectionLabels(): Promise<void> {
+  const { activity: A } = b
+  const line = (o: unknown): string => JSON.stringify(o)
+  same(
+    'a voiceover reads as recorded, with its length and cost',
+    A.describeResult('mcp__luca__speech_generate', line({ ok: true, seconds: 42, credits: 610 })),
+    { done: 'Recorded a 42 s voiceover · 610 credits' }
+  )
+  same(
+    'a line placed at a time reads like an effect at its moment',
+    A.describeResult(
+      'mcp__luca__speech_generate',
+      line({ ok: true, seconds: 4, credits: 90, at: 4 })
+    ),
+    { done: 'Added a voiceover line at 0:04 · 90 credits' }
+  )
+  same(
+    'a refusal to record the rest is a stopped step, whatever else it says',
+    A.describeResult(
+      'mcp__luca__speech_generate',
+      line({ ok: false, declined: true, credits: 2500, tell: 'x' })
+    ),
+    { status: 'stopped' }
+  )
+}
+
 async function sectionPlan(): Promise<void> {
   const { edits: E, store, shared, captions } = b
   const ids = (l: { id: string }[]): string[] => l.map((s) => s.id)
@@ -3906,6 +4071,7 @@ async function main(): Promise<void> {
       'The timeline: rows, placement, clamping, names and the export check',
       sectionTimeline
     )
+    await section('What the chat says a step did', sectionLabels)
     await section('The edit plan, per-project files, credits format and caption fonts', sectionPlan)
     await section('The key, over the whole run', sectionKey)
   } finally {

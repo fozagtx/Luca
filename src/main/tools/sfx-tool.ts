@@ -15,7 +15,7 @@ import {
   videoLength,
   type SfxOutcome
 } from '../ai33-sound'
-import { gateSpendWith, settleSpend } from '../ai33-spend'
+import { gateSpendWith, holdSpend, settleSpend } from '../ai33-spend'
 import { SFX_VOLUME } from '../place'
 import { readProject } from '../projects'
 import { fail, guarded, okJson, STILL_WORKING } from './common'
@@ -98,7 +98,7 @@ export function sfxTools(ctx: Ai33Ctx, projectDir: string): Ai33Tool[] {
                 batch: paid.length,
                 thing: paid.length === 1 ? 'a sound effect' : `${paid.length} sound effects`
               },
-              { again: sfxLostRecently(paid) }
+              { again: sfxLostRecently(paid), tool: 'sfx_generate' }
             )
             if (!gate.go) return gate.result
             grant = gate.grant
@@ -128,11 +128,10 @@ export function sfxTools(ctx: Ai33Ctx, projectDir: string): Ai33Tool[] {
             const pending = later.filter((w) =>
               paid.some((j) => j.what === w.what && j.seconds === w.seconds)
             )
-            settleSpend(
-              ctx,
-              grant,
-              made.credits + pending.reduce((n, w) => n + sfxCredits(w.seconds), 0)
-            )
+            const spent = made.credits + pending.reduce((n, w) => n + sfxCredits(w.seconds), 0)
+            // settling at 0 gives the call's place in the caps back: not while an effect may have been charged
+            if (spent === 0 && made.uncertain) holdSpend(ctx, grant)
+            else settleSpend(ctx, grant, spent)
           }
 
           const reused = paid.length === 0

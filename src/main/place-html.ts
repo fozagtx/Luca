@@ -168,6 +168,38 @@ export function findClip(html: string, id: string): ClipInfo | null {
   }
 }
 
+/**
+ * The clip that already plays this file from this time in this role, as `insertAudio` would have
+ * reported it, or null. Asking for the same sound at the same moment twice adds nothing: a second
+ * copy would double it.
+ */
+export function findPlacement(
+  html: string,
+  o: { file: string; role: RowRole; start: number }
+): Placed | null {
+  const tags = findTags(html)
+  const top = topLevelTest(html, tags)
+  const start = r3(Math.max(0, o.start))
+  for (const t of tags) {
+    if (t.name !== 'audio' || !t.attrs.id || roleOf(t) !== o.role || !top(t)) continue
+    if (clipSrc(t) !== o.file) continue
+    const c = findClip(html, t.attrs.id)
+    // a clip with no length of its own can't be said to end anywhere
+    if (!c || c.end === null || Math.abs(c.start - start) > EPS) continue
+    return {
+      id: c.id,
+      start: r3(c.start),
+      end: c.end,
+      row: c.row,
+      volume: c.volume,
+      ...(c.fadeIn > 0 ? { fadeIn: c.fadeIn } : {}),
+      ...(c.fadeOut > 0 ? { fadeOut: c.fadeOut } : {}),
+      ...(c.title ? { title: c.title } : {})
+    }
+  }
+  return null
+}
+
 /** The composition without the element with this id (unchanged when there is none). */
 export function withoutClip(html: string, id: string): string {
   const tag = findTagById(html, id)

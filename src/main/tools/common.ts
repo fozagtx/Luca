@@ -1,15 +1,13 @@
 /**
  * What every ai33 tool shares: the wrapper that checks the key, joins the abort signals and never
- * throws; the spend gate; the result helpers; and the words tools use to refuse or fail. They
- * live here (not in mcp-ai33.ts) because that file imports the tool files.
+ * throws; the result helpers; and the words tools use to refuse or fail. They live here (not in
+ * mcp-ai33.ts) because that file imports the tool files.
  */
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { BrowserWindow } from 'electron'
-import type { Grant, SpendReq } from '../../shared/ai33'
 import { hasAi33Key } from '../ai33-account'
 import { notEnough, plainError, refundLine } from '../ai33-client'
-import type { Ai33Ctx, SpendCtx, ToolName } from '../ai33-ctx'
-import { gateSpend } from '../ai33-spend'
+import type { Ai33Ctx, ToolName } from '../ai33-ctx'
 
 /** One block of a tool result. */
 export type ToolContent = { type: 'text'; text: string }
@@ -79,7 +77,7 @@ export async function guarded(
     if (!hasAi33Key()) {
       // with no window there is nowhere to show the key card
       if (!hasWindow()) return fail(NO_AI33)
-      if (!(await ctx.connect())) return declined(NO_AI33_DECLINED)
+      if (!(await ctx.connect(tool))) return declined(NO_AI33_DECLINED)
     }
     const turn = ctx.turn()
     const call = Symbol(tool)
@@ -100,12 +98,6 @@ export async function guarded(
   } catch (err) {
     return failure(err)
   }
-}
-
-/** The spend gate for a tool: a Grant to settle after the job, or the result to return instead. */
-export async function spend(ctx: SpendCtx, req: SpendReq): Promise<Grant | CallToolResult> {
-  const r = await gateSpend(ctx, req)
-  return r.go ? r.grant : r.result
 }
 
 /** A failed call: shown red in the chat and told to Luca in plain words. */

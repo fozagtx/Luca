@@ -14,7 +14,8 @@ import {
   type SpendReq,
   type SpeechReq,
   type SpeechResult,
-  type VoiceRef
+  type VoiceRef,
+  UNNAMED_VOICE
 } from '../../shared/ai33'
 import type { Project } from '../../shared/types'
 import { Ai33Error, getCredits } from '../ai33-client'
@@ -35,27 +36,20 @@ import {
   wordsFromScript
 } from '../ai33-speech-text'
 import {
+  countSpent,
   gateSpendWith,
   holdSpend,
+  inVoiceOf,
   lostRecently,
   mayHaveBeenCharged,
   precheckSpend,
-  settleSpend,
-  voiceLabel
+  settleSpend
 } from '../ai33-spend'
 import { patchProjectAi33, readProjectAi33 } from '../ai33-store'
-import { listVoices, pickVoice, resolveVoice } from '../ai33-voices'
+import { findVoice, listVoices, pickVoice } from '../ai33-voices'
 import { findSaved, importGenerated, placeAudio, probeAudio, projectHasVoice } from '../place'
 import { readProject } from '../projects'
-import {
-  fail,
-  guarded,
-  okJson,
-  OVERLOADED,
-  SPEND_DECLINED,
-  STILL_WORKING,
-  type Guard
-} from './common'
+import { fail, guarded, okJson, OVERLOADED, STILL_WORKING, type Guard } from './common'
 
 /** The longest text one call records: what `text` allows, so a file is no way round the limit. */
 const MAX_CHARS = 60_000
@@ -154,7 +148,10 @@ function mergeSay(dir: string, given: Args['say']): Say[] {
   return [...mine.filter((s) => !ours.has(s.word.trim().toLowerCase())), ...given]
 }
 
-function prepare(projectDir: string, a: Args): { ready: Ready } | { refused: CallToolResult } {
+async function prepare(
+  projectDir: string,
+  a: Args
+): Promise<{ ready: Ready } | { refused: CallToolResult }> {
   const hasText = typeof a.text === 'string' && a.text.trim() !== ''
   if (hasText === (a.file !== undefined))
     return {
@@ -196,14 +193,14 @@ function prepare(projectDir: string, a: Args): { ready: Ready } | { refused: Cal
       }
     speakers = []
     for (const s of a.speakers) {
-      const v = resolveVoice(s.voice)
+      const v = await findVoice(s.voice)
       if (!v) return { refused: unknownVoice(s.voice) }
       speakers.push({ voice: v, speed: s.speed })
     }
   }
   let voice: VoiceRef | null = null
   if (!dialogue && a.voice) {
-    voice = resolveVoice(a.voice)
+    voice = await findVoice(a.voice)
     if (!voice) return { refused: unknownVoice(a.voice) }
   }
 
@@ -222,6 +219,32 @@ type Gate = {
   refused: CallToolResult | null
   /** What was already spent (the first part) when the rest was asked about. */
   paid: number
+  /** What the rest was estimated at when it was asked about (null: no price to go by). */
+  rest: number | null
+}
+
+/**
+ * The rest of a long voiceover was not recorded (the person said no, or the gate refused it): what
+ * the first part used and that it is kept, so asking again only pays for the rest. A refusal keeps
+ * its own words after that; a plain no is still a decline (the step reads "stopped").
+ */
+function restNotRecorded(
+  refused: CallToolResult | null,
+  used: number,
+  rest: number | null
+): CallToolResult {
+  const kept = `The first part ${used > 0 ? `used ${formatCredits(used)} credits and ` : ''}is saved, so asking again only pays for the rest${rest === null ? '' : ` (about ${formatCredits(rest)} credits)`}.`
+  if (refused?.isError) {
+    const first = refused.content[0]
+    const words = first && first.type === 'text' ? first.text : ''
+    return fail(`${kept} ${words}`.trim())
+  }
+  return okJson({
+    ok: false,
+    declined: true,
+    credits: used,
+    tell: `The user chose not to record the rest of the voiceover. ${kept} Say so in one short sentence, with the credits the first part used, and do not ask again unless the user does.`
+  })
 }
 
 /** A few of the words, for the saved file's name. */
@@ -255,7 +278,7 @@ function tellFor(o: {
   const used = o.reused ? 'no credits used' : `used ${formatCredits(o.credits)} credits`
   const left = o.left === null ? '' : `, ${formatCredits(o.left)} left`
   return [
-    `Tell the user in two short lines what you recorded${o.dialogue ? '' : ` in ${voiceLabel(o.voice.name)}’s voice`}, where it plays and how long it is (${formatSpan(o.seconds)}), the credits clause (${used}${left}) and one next step, for example “Want a different voice? I can show a few to listen to.”`,
+    `Tell the user in two short lines what you recorded${o.dialogue ? '' : inVoiceOf(o.voice.name)}, where it plays and how long it is (${formatSpan(o.seconds)}), the credits clause (${used}${left}) and one next step, for example “Want a different voice? I can show a few to listen to.”`,
     'You cannot hear it: never say how it sounds.',
     o.left !== null && o.left < LOW_BALANCE ? 'Credits are running low: mention it once.' : ''
   ]
@@ -307,7 +330,7 @@ async function generate(
     }
   }
 
-  const gate: Gate = { grant: null, refused: null, paid: 0 }
+  const gate: Gate = { grant: null, refused: null, paid: 0, rest: null }
   // an identical part was sent a moment ago and ai33 never answered: it may have been charged
   const again = !saved && preview.uncachedHashes.some(lostRecently)
   const spendReq = (units: number, estimate?: Ai33Estimate): SpendReq => ({
@@ -319,7 +342,10 @@ async function generate(
     ...(a.at !== undefined && !dialogue ? { thing: 'the line' } : {})
   })
   const ask = async (units: number, estimate?: Ai33Estimate): Promise<boolean> => {
-    const r = await gateSpendWith(ctx, spendReq(units, estimate), { again })
+    const r = await gateSpendWith(ctx, spendReq(units, estimate), {
+      again,
+      tool: 'speech_generate'
+    })
     if (r.go) gate.grant = r.grant
     else gate.refused = r.result
     return gate.grant !== null
@@ -352,6 +378,7 @@ async function generate(
           : {
               confirmRest: (o) => {
                 gate.paid = o.paid
+                gate.rest = o.credits
                 return ask(
                   o.chars,
                   o.credits === null
@@ -362,17 +389,26 @@ async function generate(
             })
       })
     } catch (err) {
+      const wrapped = err instanceof SpeechPartError ? err.cause : err
+      const total = (err as { credits?: number }).credits ?? 0
       if (gate.grant) {
         // a part still recording at ai33, or one that may have been charged, keeps its estimate and
         // its place in the caps (settling at 0 would free it for a retry); anything else settles at what it used
-        const used = Math.max(0, ((err as { credits?: number }).credits ?? 0) - gate.paid)
-        const wrapped = err instanceof SpeechPartError ? err.cause : err
+        const used = Math.max(0, total - gate.paid)
         if (err instanceof SpeechStillWorking) holdSpend(ctx, gate.grant)
         else if (used === 0 && mayHaveBeenCharged(wrapped)) holdSpend(ctx, gate.grant)
         else settleSpend(ctx, gate.grant, used)
+        // the first part was paid before the rest was asked about: it is in the turn's total too
+        if (gate.paid > 0) countSpent(ctx, spendReq(preview.firstChars), gate.paid, { call: false })
+      } else if (
+        !upfront &&
+        (total > 0 || err instanceof SpeechStillWorking || mayHaveBeenCharged(wrapped))
+      ) {
+        // the rest was never agreed to, so the first part (paid before anything could be asked)
+        // is all this call was: it counts as a paid call, or the caps never see it
+        countSpent(ctx, spendReq(preview.firstChars), total, { call: true })
       }
-      if (err instanceof SpeechDeclined)
-        return gate.refused ?? okJson({ ok: false, declined: true, tell: SPEND_DECLINED })
+      if (err instanceof SpeechDeclined) return restNotRecorded(gate.refused, total, gate.rest)
       if (err instanceof SpeechStillWorking)
         return okJson({
           ok: true,
@@ -385,6 +421,7 @@ async function generate(
       throw err
     }
     if (gate.grant) settleSpend(ctx, gate.grant, Math.max(0, made.credits - gate.paid))
+    if (gate.paid > 0) countSpent(ctx, spendReq(preview.firstChars), gate.paid, { call: false })
 
     // a copy goes into the project (which uses it up); the joined file stays for next time
     const tmp = join(dirname(made.file), `to-project-${randomUUID()}.mp3`)
@@ -433,7 +470,13 @@ async function generate(
   // the next line in this video starts from the same voice, and keeps its pronunciations
   try {
     const patch: Parameters<typeof patchProjectAi33>[1] = {}
-    if (!dialogue && readProjectAi33(projectDir).voice?.id !== heard.id) patch.voice = heard
+    const stored = readProjectAi33(projectDir).voice
+    // a voice kept without a name gets one once it has one
+    if (
+      !dialogue &&
+      (stored?.id !== heard.id || (stored.name === UNNAMED_VOICE && heard.name !== UNNAMED_VOICE))
+    )
+      patch.voice = heard
     if (a.say?.length) patch.say = ready.say
     if (Object.keys(patch).length) patchProjectAi33(projectDir, patch)
   } catch {
@@ -449,6 +492,8 @@ async function generate(
     left,
     reused,
     placed,
+    // a line placed at a time: the chat labels the step with it
+    ...(placed && a.at !== undefined && !dialogue ? { at: placed.start } : {}),
     readBack: readBack(text, a.language),
     tell: tellFor({ dialogue, voice: heard, seconds: out.seconds, credits, left, reused }),
     ...(placed
@@ -541,7 +586,7 @@ export function speechTools(ctx: Ai33Ctx, projectDir: string): Ai33Tool[] {
       },
       async (args, extra) => {
         // refused before asking for a key or spending anything
-        const prepared = prepare(projectDir, args as Args)
+        const prepared = await prepare(projectDir, args as Args)
         if ('refused' in prepared) return prepared.refused
         return guarded(ctx, 'speech_generate', extra, (g) =>
           generate(ctx, projectDir, args as Args, prepared.ready, g)

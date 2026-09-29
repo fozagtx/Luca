@@ -37,6 +37,13 @@ function projectAt(dir: string): Project | null {
   }
 }
 
+/** A project's name as a toast shows it: one line, at most 60 characters. */
+const nameOf = (p: Project): string =>
+  p.name
+    .replace(/[\p{Cc}\s]+/gu, ' ')
+    .trim()
+    .slice(0, 60)
+
 const slugOf = (text: string, fallback: string): string =>
   text
     .toLowerCase()
@@ -109,10 +116,15 @@ export async function announceSettled(e: Settled, send: (n: Ai33Notice) => void)
     }
   }
   if (saved.length) upsert({ ...entry, dest: saved })
+  // another project may be the one open now: the notice says which one this is about
+  const name = project ? nameOf(project) : ''
   send({
     id: entry.jobId,
     kind: 'ready',
-    text: `Your ${thing} is ready.${saved.length ? ' It’s saved with the project.' : ''}`,
+    text:
+      saved.length && name
+        ? `Your ${thing} is ready. It’s saved in ${name}.`
+        : `Your ${thing} is ready${name ? ` for ${name}` : ''}.`,
     ...where,
     action: { label: 'Add it', request: REQUESTS[entry.kind] }
   })

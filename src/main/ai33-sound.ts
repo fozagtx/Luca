@@ -2,7 +2,6 @@
  * Music and sound effects: make them at ai33, save them in the project and (unless told not to)
  * put them on the timeline. Whether to spend is decided by the tool before it calls these.
  */
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -154,23 +153,25 @@ function carry(err: unknown, credits: number, thing?: string): SoundError {
   })
 }
 
-/** `spend` hands back a Grant, or the result to return instead (declined, too dear, over a cap). */
-export const isGrant = (r: Grant | CallToolResult): r is Grant => 'reserved' in r
-
 /**
- * What a failed call cost, to settle its spend with: what the error itself counted, nothing when
- * the job never started or ai33 refunds it (a failed task, a stop), and the estimate when it may
- * have been charged (a submit that got no answer). A SoundError is looked through: it only wraps
- * the failure, so it must not hand back the place a possibly-charged call took in the turn's caps.
+ * What a failed call cost, to settle its spend with: what the error itself counted, and nothing
+ * otherwise (the job never started, ai33 refunds it, or a stop). A failure that may have been
+ * charged with no price to show is not settled at all (see `settleFailure`). A SoundError is
+ * looked through: it only wraps the failure, so it must not hand back the place a
+ * possibly-charged call took in the turn's caps.
  */
-export function spentOnFailure(err: unknown, grant: Grant): number {
-  if (err instanceof SoundError && err.credits > 0) return err.credits
-  return mayHaveBeenCharged(err) ? grant.reserved : 0
+export function spentOnFailure(err: unknown): number {
+  return err instanceof SoundError && err.credits > 0 ? err.credits : 0
 }
 
-/** Settle a failed call's spend: what it cost, or held as it is when that can't be known. */
+/**
+ * Settle a failed call's spend: the credits the failure really cost, else (when it may have been
+ * charged, e.g. a submit that got no answer) hold it as it is. Never settle at the estimate: that
+ * would teach ai33's price from a job that made nothing, and settling at 0 would free the
+ * call's place in the turn's caps.
+ */
 export function settleFailure(ctx: SpendCtx, grant: Grant, err: unknown): void {
-  const spent = spentOnFailure(err, grant)
+  const spent = spentOnFailure(err)
   if (spent === 0 && mayHaveBeenCharged(err)) holdSpend(ctx, grant)
   else settleSpend(ctx, grant, spent)
 }
@@ -687,6 +688,8 @@ export type SfxOutcome = SfxResult & {
   failed?: { what: string; at: number; reason: string }[]
   /** Effects still being made at ai33 when the wait ran out: they carry on in the background. */
   working?: { what: string; at: number; seconds: number; jobId: string }[]
+  /** Effects that failed in a way that may have been charged, with no price to show for it. */
+  uncertain?: number
 }
 
 /**
@@ -801,6 +804,11 @@ export async function makeSfx(
   const first = errors.find(mayHaveBeenCharged) ?? errors[0]
   if (!files.length && !working.length && first) throw carry(first, credits, 'sound effect')
 
+  // an effect that failed may still have been charged (a submit that got no answer): with others
+  // saved the call still succeeds, and the tool must not read that as "nothing was spent"
+  const uncertain = [...made.values()].filter(
+    (m) => !m.file && !m.working && m.err !== undefined && mayHaveBeenCharged(m.err)
+  ).length
   const known = [...made.values()].reduce<number | null>(
     (least, m) => (typeof m.balance === 'number' ? Math.min(least ?? m.balance, m.balance) : least),
     null
@@ -811,6 +819,7 @@ export async function makeSfx(
     credits,
     left: await creditsLeft(known),
     ...(failed.length ? { failed } : {}),
-    ...(working.length ? { working } : {})
+    ...(working.length ? { working } : {}),
+    ...(uncertain ? { uncertain } : {})
   }
 }

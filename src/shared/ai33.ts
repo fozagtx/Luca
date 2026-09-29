@@ -72,6 +72,9 @@ export type Ai33Preview =
   { ok: true; mime: string; bytes: Uint8Array } | { ok: false; message: string }
 export type VoiceRef = { id: string; name: string; language?: string }
 
+/** What a voice is called when only its id is known (never the id itself: it reads as noise on a card). */
+export const UNNAMED_VOICE = 'the voice you picked'
+
 // ---- estimates and spend
 
 export type Ai33Kind = 'speech' | 'dialogue' | 'music' | 'sfx'

@@ -47,7 +47,7 @@ Optional keys, all entered inside the app and kept in the macOS Keychain:
 - [AssemblyAI](https://www.assemblyai.com/) so Luca can hear what’s said: cutting ums and pauses, captions, B-roll that matches your words, and voice input. Strongly recommended; without it Luca can still zoom, title and grade.
 - [Pexels](https://www.pexels.com/api/) (free) for B-roll: photos and short clips of what you talk about.
 - [Gemini](https://aistudio.google.com/apikey) for making and editing video clips (Gemini in the toolbar). Generation is billed to the key’s Google Cloud project, so a key made in a project with Google Cloud credits uses them.
-- [ai33](https://ai33.pro) for voiceovers, music and sound effects: paste a script and Luca records it, or ask for quiet music under your voice or a whoosh on a title. One key, entered the first time Luca needs it (or any time in Connections: **Luca → Settings…**, ⌘,) and stored encrypted on your Mac. ai33 is a separate paid service: you buy credits from ai33, every job uses some, and Luca asks before spending a lot.
+- [ai33](https://ai33.pro) for voiceovers, music and sound effects: paste a script and Luca records it, or ask for quiet music under your voice or a whoosh on a title. One key, entered the first time Luca needs it (or any time in Connections: **Luca → Connections…**, ⌘,) and stored encrypted on your Mac. ai33 is a separate paid service: you buy credits from ai33, every job uses some, and Luca asks before spending a lot.
 
 ## Edit your first video
 
