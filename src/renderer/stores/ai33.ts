@@ -31,7 +31,7 @@ type Ai33Store = {
 }
 
 /**
- * ai33 (voices, music, sound effects, pictures) on the person's own key. The renderer only ever
+ * ai33 (voices, music, sound effects) on the person's own key. The renderer only ever
  * holds whether there is a key and what it can spend: the key stays in main.
  */
 export const useAi33 = create<Ai33Store>((set, get) => ({

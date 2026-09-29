@@ -17,7 +17,6 @@ export type ToolName =
   | 'voice_search'
   | 'music_generate'
   | 'sfx_generate'
-  | 'image_generate'
   | 'audio_place'
   | 'ai33_status'
 
@@ -50,7 +49,7 @@ export type SpendCtx = Pick<Ai33Ctx, 'ask' | 'turn'> & { projectDir: string | nu
 /** Reports how far a job is; `pct` is null while ai33 gives no progress. */
 export type ProgressFn = (p: { pct: number | null; note?: string }) => void
 
-/** What making music, sound effects or a picture needs from the tool that asked for it. */
+/** What making music or sound effects needs from the tool that asked for it. */
 export type MakeCtx = {
   project: Project
   /** Aborted by Stop, the project closing or a restart: stop waiting. */

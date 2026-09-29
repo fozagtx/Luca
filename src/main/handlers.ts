@@ -345,7 +345,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.geminiHasKey, hasGeminiKey)
   handle(Channels.geminiSetKey, (key: string) => saveGeminiKey(key))
 
-  // voice, music, sound effects and pictures (ai33)
+  // voice, music and sound effects (ai33)
   handle(Channels.ai33HasKey, hasAi33Key)
   handle(Channels.ai33Status, ai33Status)
   handle(Channels.ai33SetKey, (key: string) => saveAi33Key(key))

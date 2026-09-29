@@ -95,7 +95,6 @@ export type Ai33Urls = {
   audios?: string[]
   srt?: string
   json?: string
-  images?: { url: string; mime?: string; width?: number; height?: number }[]
 }
 
 /** The result files of a finished task, wherever its type puts them; an Ai33Error('unusable') if none. */
@@ -164,8 +163,7 @@ export const PATHS: Record<Ai33Kind, string> = {
   speech: '/v3/text-to-speech',
   dialogue: '/v3/text-to-speech/dialogue',
   sfx: '/v1/task/sound-effect',
-  music: '/v1s/task/music-generation',
-  image: '/v1i/task/generate-image'
+  music: '/v1s/task/music-generation'
 }
 
 const SECOND = 1000
@@ -176,8 +174,7 @@ export const DEADLINES: Record<Ai33Kind, number> = {
   speech: 20 * MINUTE,
   dialogue: 20 * MINUTE,
   music: 20 * MINUTE,
-  sfx: 5 * MINUTE,
-  image: 10 * MINUTE
+  sfx: 5 * MINUTE
 }
 
 /** How long a tool call waits before it answers "still working". */
@@ -185,6 +182,5 @@ export const WAIT_BUDGETS: Record<Ai33Kind, number> = {
   speech: 4 * MINUTE,
   dialogue: 4 * MINUTE,
   music: 6 * MINUTE,
-  sfx: 90 * SECOND,
-  image: 3 * MINUTE
+  sfx: 90 * SECOND
 }

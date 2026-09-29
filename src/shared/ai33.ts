@@ -1,7 +1,7 @@
 /**
- * Everything the parts of the ai33 integration (voiceover, music, sound effects, pictures)
- * agree on: the types that cross between main, the agent's tools and the renderer, and the pure
- * helpers both sides use. No Electron, no Node: the smoke script bundles this file.
+ * Everything the parts of the ai33 integration (voiceover, music, sound effects) agree on: the
+ * types that cross between main, the agent's tools and the renderer, and the pure helpers both
+ * sides use. No Electron, no Node: the smoke script bundles this file.
  */
 
 /** ai33's answers are read tolerantly (a field may be missing or another type); callers coerce. */
@@ -74,9 +74,9 @@ export type VoiceRef = { id: string; name: string; language?: string }
 
 // ---- estimates and spend
 
-export type Ai33Kind = 'speech' | 'dialogue' | 'music' | 'sfx' | 'image'
+export type Ai33Kind = 'speech' | 'dialogue' | 'music' | 'sfx'
 
-/** Renderer-facing; a picture is priced inside the image tool, which knows the model. */
+/** Renderer-facing. */
 export type Ai33EstimateReq =
   | { kind: 'speech'; chars: number; voiceId?: string }
   | { kind: 'music' }
@@ -89,11 +89,11 @@ export type Ai33Estimate = {
 
 export type SpendReq = {
   kind: Ai33Kind
-  /** Characters (speech, dialogue), effects (sfx), 1 (music, image). */
+  /** Characters (speech, dialogue), effects (sfx), 1 (music). */
   units: number
   /** At most 80 characters, for the ledger; never the script. */
   summary: string
-  /** Precomputed (a picture: exact, from ai33's price call); else estimate() derives it. */
+  /** Precomputed; else estimate() derives it. */
   estimate?: Ai33Estimate
   /** Shown as "Hear {name}" on the card. */
   voice?: { id: string; name: string } | null
@@ -209,7 +209,7 @@ export type PreparedScript = {
   left: number | null
 }
 
-// ---- music, sound effects, pictures and placement
+// ---- music, sound effects and placement
 
 /** Where a clip went on the timeline. */
 export type Placed = {
@@ -251,18 +251,6 @@ export type SfxResult = {
   credits: number
   left: number | null
 }
-export type ImageReq = { prompt: string; at?: number; seconds: number; fit: 'cover' | 'contain' }
-export type ImageResult = {
-  files: string[]
-  width: number
-  height: number
-  credits: number
-  left: number | null
-  reused: boolean
-  placed: Placed | null
-  /** A downscaled still Luca can look at (JPEG or PNG, at most 1568 px). */
-  preview: { mime: 'image/jpeg' | 'image/png'; base64: string } | null
-}
 export type PlaceAudio = {
   /** Project-relative. */
   file: string
@@ -280,19 +268,10 @@ export type PlaceAudio = {
   /** The id of a clip of the same role to take out; the new one keeps its place. */
   replaces?: string
 }
-export type PlaceImage = {
-  file: string
-  start: number
-  duration: number
-  fit: 'cover' | 'contain'
-  id?: string
-  title?: string
-  alt?: string
-}
 /** A file made for this project (media/generated), for finding it again after an undo. */
 export type SavedAsset = {
   file: string
-  kind: 'speech' | 'music' | 'sfx' | 'images'
+  kind: 'speech' | 'music' | 'sfx'
   prompt: string
   seconds?: number
   placedId?: string

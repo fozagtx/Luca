@@ -265,7 +265,7 @@ function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown>
 /**
  * Luca's in-process MCP server: the words and the clean edit, catalog search, B-roll, captions and
  * fonts, plus the remocn tools described in the spec, and (when the agent gives it its ai33
- * context) the tools that make voiceover, music, sound effects and pictures.
+ * context) the tools that make voiceover, music and sound effects.
  */
 export function lucaMcpServer(
   projectDir: string,

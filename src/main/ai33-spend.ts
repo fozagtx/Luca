@@ -14,7 +14,7 @@ export const ASK_ABOVE = 1500
 /** Asked first when one turn's approved spending would pass this. */
 export const TURN_CAP = 6000
 /** Most a turn may make of each kind (sound effects: effects, not calls) before it must ask the person. */
-export const PER_TURN = { speech: 3, music: 1, sfx: 8, image: 3 }
+export const PER_TURN = { speech: 3, music: 1, sfx: 8 }
 export const MAX_PAID_PER_TURN = 6
 /** The most music may cost and still be made without a card when the start card switched it on. */
 export const PREAPPROVE_MAX = 6000

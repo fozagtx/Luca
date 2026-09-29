@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unused-vars -- stub: the owning slice writes the function bodies (except refitBeds, which is real for now) and drops this line */
 /**
- * Everything generated audio and pictures need to become part of a project: checking and saving
+ * Everything generated audio needs to become part of a project: checking and saving
  * the files (media/generated), putting them on the timeline, and finding them again after an
  * undo. All placement is deterministic code here; Luca never writes an audio tag itself.
  */
-import type { PlaceAudio, PlaceImage, Placed, SavedAsset } from '../shared/ai33'
+import type { PlaceAudio, Placed, SavedAsset } from '../shared/ai33'
 import type { Project } from '../shared/types'
 
 /** The length of an audio file; rejects with a plain message when it has no audio or is unreadable. */
@@ -13,8 +13,8 @@ export function probeAudio(_file: string): Promise<{ seconds: number }> {
 }
 
 /**
- * Check a downloaded file (real audio or a picture, not a web page saved under the wrong name)
- * and move it to media/generated/<kind>/<slug>-<hash>.<ext>, converted to mp3 when audio.
+ * Check a downloaded file (real audio, not a web page saved under the wrong name) and move it
+ * to media/generated/<kind>/<slug>-<hash>.mp3, converted to mp3 when it is another format.
  * `rel` is project-relative. The same hash returns the file already saved.
  */
 export function importGenerated(
@@ -22,7 +22,7 @@ export function importGenerated(
   _kind: SavedAsset['kind'],
   _tmp: string,
   _o: { slug: string; hash: string; prompt: string }
-): Promise<{ rel: string; abs: string; seconds?: number; width?: number; height?: number }> {
+): Promise<{ rel: string; abs: string; seconds?: number }> {
   throw new Error('not implemented')
 }
 
@@ -33,11 +33,6 @@ export function findSaved(_dir: string, _kind: SavedAsset['kind'], _hash: string
 
 /** Put an audio file on the timeline (validated first) and say where it went. */
 export function placeAudio(_p: Project, _o: PlaceAudio): Promise<Placed> {
-  throw new Error('not implemented')
-}
-
-/** Put a picture on the timeline as a cutaway and say where it went. */
-export function placeImage(_p: Project, _o: PlaceImage): Promise<Placed> {
   throw new Error('not implemented')
 }
 

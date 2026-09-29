@@ -8,9 +8,8 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { formatCredits, type Grant, type SpendReq } from '../../shared/ai33'
 import type { Ai33Ctx, SpendCtx, ToolName } from '../ai33-ctx'
 
-/** One block of a tool result: text, or a picture Luca can look at. */
-export type ToolContent =
-  { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+/** One block of a tool result. */
+export type ToolContent = { type: 'text'; text: string }
 
 /** What `guarded` hands a tool's body. */
 export type Guard = {
@@ -47,7 +46,7 @@ export function fail(message: string): CallToolResult {
 
 /**
  * A finished call: `first` as one line of JSON (the chat reads the first line of a result), then
- * any further blocks (a picture to look at).
+ * any further blocks.
  */
 export function okJson(first: unknown, ...more: ToolContent[]): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(first) }, ...more] }

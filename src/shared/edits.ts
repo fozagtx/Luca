@@ -167,7 +167,7 @@ export type EditPlanOptions = {
   voiceOnly: boolean
   /** The words are exact already (a voiceover recorded from a script): nothing to cut, and nothing to transcribe. */
   scripted?: boolean
-  /** ai33 is connected, so the steps that make sound or pictures can run. */
+  /** ai33 is connected, so the steps that make sound can run. */
   canGenerate?: boolean
 }
 

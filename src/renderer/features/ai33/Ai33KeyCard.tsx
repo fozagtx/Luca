@@ -167,14 +167,13 @@ export function Ai33KeyCard({
           <p className="mt-1">
             {chat ? 'Luca needs an ai33 key to make this. ' : ''}
             Connect your ai33 account and Luca can record a voiceover from your script, make music
-            and sound effects, and make pictures. ai33 is a separate paid service: you buy credits
-            from ai33, and every job uses them. Luca asks before spending a lot. The key stays on
-            this Mac.
+            and sound effects. ai33 is a separate paid service: you buy credits from ai33, and every
+            job uses them. Luca asks before spending a lot. The key stays on this Mac.
           </p>
           <p className="mt-1.5 text-text-3">
-            Luca sends ai33 only the words, prompts and pictures a job needs. Names you ask Luca to
-            say a certain way are stored on your ai33 account. Your recordings and footage stay on
-            this Mac.
+            Luca sends ai33 only the words and prompts a job needs. Names you ask Luca to say a
+            certain way are stored on your ai33 account. Your recordings and footage stay on this
+            Mac.
           </p>
           <Input
             ref={field}

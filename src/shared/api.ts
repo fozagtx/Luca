@@ -146,7 +146,7 @@ export type LucaApi = {
     setKey: (key: string) => Promise<boolean>
   }
   /**
-   * Voiceover, music, sound effects and pictures from ai33, on the person's own key. The key
+   * Voiceover, music and sound effects from ai33, on the person's own key. The key
    * never reaches the renderer: it only learns whether there is one and what it can spend.
    */
   ai33: {

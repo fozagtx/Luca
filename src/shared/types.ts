@@ -130,7 +130,7 @@ export type AgentEvent =
       status: ToolStatus
       detail?: string
       activity?: Activity
-      /** How far a long job (voiceover, music, a picture) is, while it runs. */
+      /** How far a long job (voiceover, music) is, while it runs. */
       progress?: ToolProgress
     }
   | {
@@ -174,7 +174,7 @@ export type ChatContentPart =
       detail?: string
       /** Plain-language description (older history may not have it). */
       activity?: Activity
-      /** How far a long job (voiceover, music, a picture) is, while it runs. */
+      /** How far a long job (voiceover, music) is, while it runs. */
       progress?: ToolProgress
     }
   | {

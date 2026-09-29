@@ -1,24 +1,18 @@
 /* eslint-disable @typescript-eslint/no-unused-vars -- stub: the owning slice writes the function bodies and drops this line */
 /**
- * Putting sound and pictures into a composition's HTML, as strings: which row a clip goes on, the
- * tags themselves, and shortening music that outlasts the video. Pure (the smoke script bundles
- * it); place.ts reads and writes the files.
+ * Putting sound into a composition's HTML, as strings: which row a clip goes on, the tags
+ * themselves, and shortening music that outlasts the video. Pure (the smoke script bundles it);
+ * place.ts reads and writes the files.
  */
-import type { PlaceAudio, PlaceImage, Placed } from '../shared/ai33'
+import type { PlaceAudio, Placed } from '../shared/ai33'
 
-export type RowRole = PlaceAudio['role'] | 'image'
+export type RowRole = PlaceAudio['role']
 
 /**
  * The row for a clip of `role` between `start` and `end`: a row of the same role where nothing
- * overlaps (at most `maxPerRow` clips of pictures), else a new row that no other role uses.
+ * overlaps, else a new row that no other role uses.
  */
-export function rowFor(
-  _html: string,
-  _role: RowRole,
-  _start: number,
-  _end: number,
-  _o?: { maxPerRow?: number }
-): number {
+export function rowFor(_html: string, _role: RowRole, _start: number, _end: number): number {
   throw new Error('not implemented')
 }
 
@@ -26,14 +20,6 @@ export function rowFor(
 export function insertAudio(
   _html: string,
   _o: PlaceAudio & { row: number; duration: number }
-): { html: string; placed: Placed } {
-  throw new Error('not implemented')
-}
-
-/** Add an `<img>` cutaway on `o.row`, and where it went. */
-export function insertImage(
-  _html: string,
-  _o: PlaceImage & { row: number }
 ): { html: string; placed: Placed } {
   throw new Error('not implemented')
 }

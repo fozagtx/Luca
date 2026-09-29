@@ -40,7 +40,6 @@ export function friendlyTarget(path: unknown, titleOf?: TitleOf): string {
   if (/(^|\/)(CLAUDE|AGENTS)\.md$/.test(p)) return 'the project notes'
   if (/(^|\/)media\/broll\//.test(p)) return 'the B-roll'
   if (/(^|\/)media\/generated\/(speech|music|sfx)\//.test(p)) return 'the generated audio'
-  if (/(^|\/)media\/generated\/images\//.test(p)) return 'the generated picture'
   if (/(^|\/)media\//.test(p)) return 'your footage'
   if (/(^|\/)transcript(\.original)?\.json$/.test(p)) return 'the transcript'
   if (/(^|\/)edl\.json$/.test(p)) return 'the cut list'
@@ -275,8 +274,6 @@ export function describeActivity(
         ? act('media', `Making ${n} sound effects`, `Made ${n} sound effects`)
         : act('media', 'Making a sound effect', 'Made a sound effect')
     }
-    case 'mcp__luca__image_generate':
-      return act('media', 'Making a picture', 'Made a picture')
     case 'mcp__luca__audio_place':
       return act('add', 'Adding the sound to the video', 'Added the sound to the video')
     case 'mcp__luca__ai33_status':
@@ -316,8 +313,7 @@ const number = (v: unknown): number | null => (typeof v === 'number' && isFinite
 const WORKING: Record<string, string> = {
   speech_generate: 'The voiceover is still being recorded',
   music_generate: 'Music is still being made',
-  sfx_generate: 'The sound effect is still being made',
-  image_generate: 'The picture is still being made'
+  sfx_generate: 'The sound effect is still being made'
 }
 
 /**
@@ -352,13 +348,6 @@ export function describeResult(
       return {
         done:
           r.reused === true ? 'Used the music already made · no credits' : `Made music · ${used(r)}`
-      }
-    case 'image_generate':
-      return {
-        done:
-          r.reused === true
-            ? 'Used the picture already made · no credits'
-            : `Made a picture · ${used(r)}`
       }
     case 'sfx_generate': {
       const placed = Array.isArray(r.placed) ? (r.placed as Record<string, unknown>[]) : []
