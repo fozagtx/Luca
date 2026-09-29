@@ -58,7 +58,7 @@ export type FakeAi33 = {
   url: string
   requests: RecordedRequest[]
   setScenario(name: string, params?: Record<string, unknown>): void
-  /** Forget tasks, files, clones, dictionaries and requests; re-apply the current scenario. */
+  /** Forget tasks, files, dictionaries and requests; re-apply the current scenario. */
   reset(): void
   /** Requests that carried the key to a path that must never see it. */
   leaks(): RecordedRequest[]
@@ -100,15 +100,13 @@ const DEFAULTS = {
   transcript: 'words' as 'words' | 'srt' | 'none', // what with_transcript=true returns
   jsonShape: 'words' as 'words' | 'ms' | 'array' | 'segments' | 'short', // words JSON layout
   health: { elevenlabs: 'good', minimax: 'good' } as Record<'elevenlabs' | 'minimax', Health>,
-  isolateMismatch: false, // isolate output is 1.5 s longer than its input
   aliasHost: false, // result and preview URLs use localhost instead of 127.0.0.1
   audioSeconds: 2, // length of generated audio
   cost: 0, // fixed credit cost for every task; 0 = natural prices
   tasksShape: 'data' as 'data' | 'tasks' | 'array', // GET /v1/tasks wrapper
   dictShape: 'dictionaries' as 'dictionaries' | 'data' | 'array', // GET /v3/dictionaries wrapper
   languageMatch: 'both' as 'both' | 'name' | 'code', // which voice `language` values match (A14)
-  deleteRefunds: true, // deleting a task that is still `doing` refunds its cost
-  replacement: 'done' as 'done' | 'failed' // dubbing with a replacement voice: the second output
+  deleteRefunds: true // deleting a task that is still `doing` refunds its cost
 }
 type Params = typeof DEFAULTS
 
@@ -128,7 +126,6 @@ const SCENARIOS: Record<string, Partial<Params>> = {
   'tts-srt-only': { transcript: 'srt' },
   'tts-no-transcript': { transcript: 'none' },
   'overloaded-health': { health: { elevenlabs: 'overloaded', minimax: 'good' } },
-  'isolate-length-mismatch': { isolateMismatch: true },
   'auth-header-audit': { aliasHost: true }
 }
 
@@ -140,15 +137,13 @@ const ENUMS: Record<string, readonly string[]> = {
   jsonShape: ['words', 'ms', 'array', 'segments', 'short'],
   tasksShape: ['data', 'tasks', 'array'],
   dictShape: ['dictionaries', 'data', 'array'],
-  languageMatch: ['both', 'name', 'code'],
-  replacement: ['done', 'failed']
+  languageMatch: ['both', 'name', 'code']
 }
 
 // ---------------------------------------------------------------------------------------------
 // State
 
-type Kind = 'tts' | 'sfx' | 'music' | 'isolate' | 'dub'
-type Upload = { bytes: Buffer; type: string; ext: string; seconds: number }
+type Kind = 'tts' | 'sfx' | 'music'
 
 /** What a validated submit hands to createTask. */
 type Spec = {
@@ -161,8 +156,7 @@ type Spec = {
   meta: Rec // metadata present once done, besides the URLs
   spoken: string // text behind the words JSON and the SRT
   transcript: boolean
-  upload: Upload | null
-  extra: Rec // bits that are never emitted as they are (clip title and tags, dub voice)
+  extra: Rec // bits that are never emitted as they are (clip title and tags)
 }
 
 type Task = Spec & {
@@ -180,7 +174,6 @@ type Task = Spec & {
   json: string | null
   srt: string | null
   cover: string | null
-  replacement: string | null
 }
 
 type FileEntry =
@@ -202,11 +195,9 @@ type State = {
   counters: { rateLimited: number; ambiguous: number; created: number }
   tasks: Task[]
   files: Map<string, FileEntry>
-  clones: { id: string; name: string }[]
   dictionaries: Dictionary[]
-  nextClone: number
   nextDictionary: number
-  audio: { make(seconds: number, wav?: boolean): Buffer }
+  audio: { make(seconds: number): Buffer }
   requests: RecordedRequest[]
 }
 
@@ -262,8 +253,7 @@ function applyScenario(s: State, name: string, overrides: Rec = {}): void {
 }
 
 function resetState(s: State): void {
-  Object.assign(s, { tasks: [], files: new Map(), clones: [], dictionaries: [] })
-  s.nextClone = 123
+  Object.assign(s, { tasks: [], files: new Map(), dictionaries: [] })
   s.nextDictionary = 1
   s.requests.length = 0
   applyScenario(s, s.scenario, s.overrides)
@@ -309,21 +299,6 @@ function wavBytes(seconds: number): Buffer {
   return Buffer.concat([header, data])
 }
 
-/** Duration of a PCM WAV, or null when the bytes are not one. */
-function wavSeconds(bytes: Buffer): number | null {
-  if (bytes.toString('latin1', 0, 4) !== 'RIFF' || bytes.toString('latin1', 8, 12) !== 'WAVE')
-    return null
-  let byteRate = 0
-  for (let at = 12; at + 8 <= bytes.length;) {
-    const id = bytes.toString('latin1', at, at + 4)
-    const size = bytes.readUInt32LE(at + 4)
-    if (id === 'fmt ') byteRate = bytes.readUInt32LE(at + 16)
-    if (id === 'data') return byteRate > 0 ? Math.min(size, bytes.length - at - 8) / byteRate : null
-    at += 8 + size + (size % 2)
-  }
-  return null
-}
-
 /**
  * mp3 bytes come from ffmpeg when `ffmpeg -version` works (probed once per server); otherwise the
  * WAV bytes are served under the audio/mpeg content type, which ffprobe and ffmpeg sniff through.
@@ -335,13 +310,12 @@ function createAudio(): State['audio'] {
   } catch {
     ffmpeg = false
   }
-  const cache = new Map<string, Buffer>()
+  const cache = new Map<number, Buffer>()
   return {
-    make(seconds, wav = false) {
+    make(seconds) {
       const length = Math.min(Math.max(seconds, 0.1), 600)
-      const key = `${wav}:${length}`
-      let bytes = cache.get(key) ?? wavBytes(length)
-      if (ffmpeg && !wav && !cache.has(key)) {
+      let bytes = cache.get(length) ?? wavBytes(length)
+      if (ffmpeg && !cache.has(length)) {
         try {
           const args = [
             '-v',
@@ -367,7 +341,7 @@ function createAudio(): State['audio'] {
           ffmpeg = false
         }
       }
-      cache.set(key, bytes)
+      cache.set(length, bytes)
       return bytes
     }
   }
@@ -455,7 +429,6 @@ const VOICE_FILTERS =
 const RATES: Record<string, number> = {
   elevenlabs: 1000,
   minimax: 600,
-  clone: 800,
   edge: 100,
   kokoro: 100,
   vbee: 300,
@@ -671,7 +644,7 @@ const dictionaryOut = (d: Dictionary): Rec => ({ id: d.id, name: d.name, rules: 
 // ---------------------------------------------------------------------------------------------
 // Request plumbing
 
-type UploadedFile = { field: string; name: string; type: string; size: number; blob: Blob }
+type UploadedFile = { field: string; name: string; type: string; size: number }
 type ParsedBody = { kind: RecordedBody['kind']; size: number; fields: Rec; files: UploadedFile[] }
 
 type Ctx = {
@@ -777,7 +750,7 @@ async function readBody(req: IncomingMessage, url: URL): Promise<ParsedBody> {
       const files: UploadedFile[] = []
       for (const [field, value] of (await request.formData()).entries()) {
         if (typeof value !== 'string') {
-          files.push({ field, name: value.name, type: value.type, size: value.size, blob: value })
+          files.push({ field, name: value.name, type: value.type, size: value.size })
         } else {
           const seen = fields[field]
           fields[field] =
@@ -846,13 +819,10 @@ function send(
 const NATURAL: Record<Kind, UrlShape> = {
   tts: 'audio_url',
   sfx: 'output_uri',
-  music: 'audio_url',
-  isolate: 'top_output_uri',
-  dub: 'audio_url'
+  music: 'audio_url'
 }
 const SHAPE_CYCLE: UrlShape[] = ['audio_url', 'output_uri', 'top_output_uri', 'all_audio_urls']
 const CLIP_DURATIONS = [187.96, 176.4] // what clips[].duration claims; the files are shorter
-const DUB_TEXT = 'Hola esto es una version doblada por el servidor de prueba'
 
 const taskStatus = (t: Task): 'doing' | 'done' | 'error' =>
   t.polls <= t.doingPolls ? 'doing' : t.final
@@ -879,8 +849,7 @@ function createTask(s: State, spec: Spec): Task {
     audio: [],
     json: null,
     srt: null,
-    cover: null,
-    replacement: null
+    cover: null
   }
   const audio = (name: string, seconds: number, type: string): void => {
     s.files.set(name, p.html ? { kind: 'html', type } : { kind: 'audio', seconds, type })
@@ -913,21 +882,6 @@ function createTask(s: State, spec: Spec): Task {
     task.cover = `${id}-cover.png`
     s.files.set(task.cover, { kind: 'bytes', bytes: PNG, type: 'image/png' })
     s.files.set(`${id}-stream.mp3`, { kind: 'audio', seconds: spec.seconds, type: 'audio/mpeg' })
-  } else if (spec.kind === 'isolate' && spec.upload) {
-    const { bytes, type, ext, seconds } = spec.upload
-    if (p.isolateMismatch || p.html)
-      audio(`${id}.${ext}`, seconds + (p.isolateMismatch ? 1.5 : 0), type)
-    else {
-      s.files.set(`${id}.${ext}`, { kind: 'bytes', bytes, type })
-      task.audio.push(`${id}.${ext}`)
-    }
-  } else if (spec.kind === 'dub') {
-    audio(`${id}.m4a`, spec.seconds, 'audio/mp4')
-    srt(DUB_TEXT)
-    if (spec.extra.voiceId && p.replacement === 'done') {
-      task.replacement = `${id}-replacement.mp3`
-      s.files.set(task.replacement, { kind: 'audio', seconds: spec.seconds, type: 'audio/mpeg' })
-    }
   }
   s.balance -= spec.cost
   s.tasks.push(task)
@@ -962,7 +916,6 @@ function resultFor(t: Task, u: (name: string) => string): { metadata: Rec; top: 
   }
   if (t.json) metadata.json_url = u(t.json)
   if (t.srt) metadata.srt_url = u(t.srt)
-  if (t.replacement) metadata.replacement_audio_url = u(t.replacement)
   return { metadata, top }
 }
 
@@ -1013,19 +966,18 @@ const spec = (o: Partial<Spec> & Pick<Spec, 'kind' | 'type' | 'cost' | 'seconds'
   meta: {},
   spoken: '',
   transcript: false,
-  upload: null,
   extra: {},
   ...o
 })
 
-function checkVoice(s: State, voiceId: unknown, label: string): string {
+function checkVoice(voiceId: unknown, label: string): string {
   const id = asString(voiceId)
   const provider = PROVIDERS.find((p) => id?.startsWith(`${p}_`) && id.length > p.length + 1)
   if (!id || !provider) {
     bad(`${label} must use a provider prefix: ${PROVIDERS.map((p) => `${p}_`).join(', ')}`)
   }
-  if (provider === 'clone' && !s.clones.some((c) => c.id === id.slice('clone_'.length)))
-    bad(`Voice not found: ${id}`)
+  // Luca never clones a voice, so the account has none of its own to speak with
+  if (provider === 'clone') bad(`Voice not found: ${id}`)
   return provider
 }
 
@@ -1052,7 +1004,7 @@ function validateSpeech(c: Ctx, dialogue: boolean): Spec {
       if (!isRec(speaker)) bad(`speakers[${i}] must be an object`)
       if ('with_transcript' in speaker) bad('with_transcript is top-level only')
       optNumber(speaker, 'speed', 0.5, 1.5)
-      return checkVoice(s, speaker.voice_id, `speakers[${i}].voice_id`)
+      return checkVoice(speaker.voice_id, `speakers[${i}].voice_id`)
     })
     optNumber(f, 'delay', 0, 5)
     const lines: string[] = []
@@ -1066,7 +1018,7 @@ function validateSpeech(c: Ctx, dialogue: boolean): Spec {
     spoken = lines.join('\n')
   } else {
     optNumber(f, 'speed', 0.5, 1.5)
-    providers = [checkVoice(s, f.voice_id, 'voice_id')]
+    providers = [checkVoice(f.voice_id, 'voice_id')]
   }
   const rate = providers.reduce((sum, p) => sum + RATES[p], 0) / providers.length
   const fileName = asString(f.file_name)
@@ -1137,61 +1089,6 @@ function validateMusic(c: Ctx): Spec {
   })
 }
 
-async function readUpload(c: Ctx, exts: string[]): Promise<{ name: string; upload: Upload }> {
-  const file = c.body.files.find((f) => f.field === 'file')
-  if (!file) bad('file is required')
-  const ext = /\.([a-z0-9]+)$/i.exec(file.name)?.[1].toLowerCase() ?? ''
-  if (!exts.includes(ext)) bad(`file must be one of: ${exts.join(', ')}`)
-  const bytes = Buffer.from(await file.blob.arrayBuffer())
-  const seconds = wavSeconds(bytes) ?? c.s.params.audioSeconds
-  return { name: file.name, upload: { bytes, type: file.type || 'audio/mpeg', ext, seconds } }
-}
-
-async function validateIsolate(c: Ctx): Promise<Spec> {
-  const { name, upload } = await readUpload(c, ['mp3', 'm4a', 'wav'])
-  const cost = price(c.s, 800)
-  return spec({
-    kind: 'isolate',
-    type: 'voice_isolate',
-    cost,
-    seconds: upload.seconds,
-    ident: { file_name: name },
-    meta: { duration: upload.seconds },
-    upload
-  })
-}
-
-async function validateDub(c: Ctx): Promise<Spec> {
-  const { s } = c
-  const f = c.body.fields
-  const { name, upload } = await readUpload(c, ['mp3', 'm4a'])
-  reqString(f, 'target_lang')
-  reqString(f, 'receive_url')
-  optNumber(f, 'num_speakers', 0, 100)
-  optBool(f, 'disable_voice_cloning')
-  const voice = asString(f.voice_id)
-  if (voice?.startsWith('kokoro_')) bad('Kokoro voices are not supported for dubbing')
-  if (voice) checkVoice(s, voice, 'voice_id')
-  const failed = s.params.replacement === 'failed'
-  const replacement = {
-    replacement_voice_id: voice,
-    replacement_credit_multiplier: 1.25,
-    replacement_status: failed ? 'failed' : 'done',
-    ...(failed
-      ? { replacement_error: { code: 'synthesis_failed', message: 'Replacement voice failed' } }
-      : {})
-  }
-  return spec({
-    kind: 'dub',
-    type: 'dubbing',
-    cost: price(s, voice ? Math.ceil(5210 * 1.25) : 5210),
-    seconds: upload.seconds,
-    ident: { file_name: name },
-    meta: voice ? replacement : {},
-    extra: { voiceId: voice }
-  })
-}
-
 /** The shared submit path: 429, body and field checks, credit check, create, optional 502. */
 const submit =
   (validate: (c: Ctx) => Spec | Promise<Spec>): Handler =>
@@ -1249,10 +1146,7 @@ function listVoices(c: Ctx): Reply {
   const sort = q.get('sort')
   if (provider === 'fishaudio' && sort && !FISH_SORTS.includes(sort))
     bad(`sort must be one of: ${FISH_SORTS.join(', ')}`)
-  const clones = s.clones.map((clone) =>
-    seed(`clone_${clone.id}`, clone.name, '', '', ['clone'], { langName: '' })
-  )
-  let list = provider === 'clone' ? clones : CATALOG[provider]
+  let list = CATALOG[provider] ?? [] // the account has no voice of its own (provider=clone)
   const term = (q.get('search') ?? q.get('q'))?.trim().toLowerCase()
   if (term) {
     const haystack = ({ voice, meta }: Seed): string =>
@@ -1286,24 +1180,6 @@ function listVoices(c: Ctx): Reply {
     has_more: pageNo * size < list.length
   }
   return ok({ success: true, format_version: '2026-05-29', data, pagination })
-}
-
-function cloneVoice(c: Ctx): Reply {
-  if (c.body.kind === 'invalid') bad('Could not parse the request body')
-  const name = reqString(c.body.fields, 'voice_name')
-  const file = c.body.files.find((f) => f.field === 'audio_file')
-  if (!file) bad('audio_file is required')
-  if (file.size > 10 * 1024 * 1024) bad('audio_file must be at most 10MB')
-  const id = String(c.s.nextClone++)
-  c.s.clones.push({ id, name })
-  return ok({ success: true, data: { voice_id: id } })
-}
-
-function deleteClone(c: Ctx): Reply {
-  const at = c.s.clones.findIndex((clone) => clone.id === c.params.id)
-  if (at < 0) throw new Problem(404, 'Voice not found')
-  c.s.clones.splice(at, 1)
-  return ok({ success: true })
 }
 
 function findDictionary(c: Ctx): Dictionary {
@@ -1426,7 +1302,7 @@ function serveFile(c: Ctx): Reply {
     case 'audio':
       return {
         status: 200,
-        raw: c.s.audio.make(entry.seconds, entry.type === 'audio/wav'),
+        raw: c.s.audio.make(entry.seconds),
         type: entry.type
       }
     case 'bytes':
@@ -1504,8 +1380,6 @@ const ROUTES: Route[] = [
     '/v3/text-to-speech/dialogue',
     submit((c) => validateSpeech(c, true))
   ),
-  route('POST', '/v3/text-to-speech/voice-clone', cloneVoice),
-  route('DELETE', '/v3/text-to-speech/voice-clone/:id', deleteClone),
   route('GET', '/v3/dictionaries', listDictionaries),
   route('POST', '/v3/dictionaries', createDictionary),
   route('POST', '/v3/dictionaries/preview', previewDictionary),
@@ -1516,8 +1390,6 @@ const ROUTES: Route[] = [
   route('DELETE', '/v3/dictionaries/:id', deleteDictionary),
   route('POST', '/v1/task/sound-effect', submit(validateSfx)),
   route('POST', '/v1s/task/music-generation', submit(validateMusic)),
-  route('POST', '/v1/task/voice-isolate', submit(validateIsolate)),
-  route('POST', '/v1/task/dubbing', submit(validateDub)),
   route('GET', '/v1/tasks', listTasks),
   route('POST', '/v1/task/delete', deleteTasks),
   route('GET', '/v1/task/:id/full', taskFull),
@@ -1595,9 +1467,7 @@ export async function startFakeAi33(opts: StartOptions = {}): Promise<FakeAi33> 
     counters: { rateLimited: 0, ambiguous: 0, created: 0 },
     tasks: [],
     files: new Map(),
-    clones: [],
     dictionaries: [],
-    nextClone: 123,
     nextDictionary: 1,
     audio: createAudio(),
     requests: []

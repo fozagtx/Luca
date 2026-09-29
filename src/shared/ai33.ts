@@ -289,8 +289,6 @@ export type ProjectAi33 = {
   say?: Say[]
   dictionaryId?: number
   dictionaryHash?: string
-  /** A record of what the first turn may make without asking (only 'music'); the spend policy keeps the real one in memory and never reads this back. */
-  preapproved?: Ai33Kind[]
 }
 /** `.luca/script.json`: this project's words come from a script, so they are exact. */
 export type ScriptMeta = {
