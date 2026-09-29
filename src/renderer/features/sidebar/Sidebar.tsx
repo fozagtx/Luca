@@ -1,4 +1,4 @@
-import { Captions, ImagePlay, Palette, PanelLeftClose } from 'lucide-react'
+import { Captions, ImagePlay, Palette, PanelLeftClose, Volume2 } from 'lucide-react'
 import type { ReactElement, ReactNode } from 'react'
 import { ErrorBoundary } from '../../components/ui/error-boundary'
 import { Segmented, type SegmentedItem } from '../../components/ui/segmented'
@@ -6,6 +6,7 @@ import { Tip } from '../../components/ui/tooltip'
 import { useUi, type SidebarTab } from '../../stores/ui'
 import { BrollTab } from './broll/BrollTab'
 import { LooksTab } from './looks/LooksTab'
+import { SoundTab } from './sound/SoundTab'
 import { TranscriptTab } from './transcript/TranscriptTab'
 
 const tabs: (SegmentedItem<SidebarTab> & { title: string })[] = [
@@ -29,6 +30,13 @@ const tabs: (SegmentedItem<SidebarTab> & { title: string })[] = [
     title: 'Looks',
     shortcut: '⌘3',
     icon: <Palette size={15} strokeWidth={1.6} />
+  },
+  {
+    id: 'sound',
+    label: 'Sound',
+    title: 'Sound',
+    shortcut: '⌘4',
+    icon: <Volume2 size={15} strokeWidth={1.6} />
   }
 ]
 
@@ -73,6 +81,7 @@ export function Sidebar(): ReactElement {
           {tab === 'transcript' && <TranscriptTab />}
           {tab === 'broll' && <BrollTab />}
           {tab === 'looks' && <LooksTab />}
+          {tab === 'sound' && <SoundTab />}
         </ErrorBoundary>
       </div>
     </aside>

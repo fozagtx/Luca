@@ -67,10 +67,13 @@ export async function readTimeline(dir: string): Promise<Timeline> {
 
   // clip volumes and trimmed starts aren't in the CLI's JSON; read them from the tags
   const volumes = new Map<string, number>()
+  const muted = new Set<string>()
   const mediaStarts = new Map<string, number>()
   for (const t of findTags(html))
     if (t.attrs.id && (t.name === 'video' || t.name === 'audio')) {
-      volumes.set(t.attrs.id, Number(t.attrs['data-volume'] ?? 1))
+      const v = Number(t.attrs['data-volume'] ?? 1)
+      volumes.set(t.attrs.id, v)
+      if ('muted' in t.attrs) muted.add(t.attrs.id)
       const ms = Number(t.attrs['data-media-start'])
       if (ms > 0) mediaStarts.set(t.attrs.id, ms)
     }
@@ -114,6 +117,7 @@ export async function readTimeline(dir: string): Promise<Timeline> {
         : volumes.has(id)
           ? { volume: volumes.get(id) }
           : {}),
+      ...(muted.has(row.elementId ?? id) ? { muted: true } : {}),
       ...(mediaStarts.has(row.elementId ?? id)
         ? { mediaStart: mediaStarts.get(row.elementId ?? id) }
         : {})
