@@ -1,3 +1,4 @@
+import { estimateSpoken, languageFor, type Say, type VoiceRef } from '@shared/ai33'
 import { editRequest, editStep, videoType } from '@shared/edits'
 import type {
   Aspect,
@@ -11,8 +12,9 @@ import type {
 import { create } from 'zustand'
 import { goHome } from '../features/command/go-home'
 import { luca } from '../lib/luca'
+import { useAi33 } from './ai33'
 import { useChat } from './chat'
-import { useMaking } from './making'
+import { MAKING_MUSIC_EXTRA_SECONDS, useMaking } from './making'
 import { errorMessage, useProject } from './project'
 import { useUi } from './ui'
 
@@ -43,6 +45,61 @@ export const NO_FOOTAGE = 'Add your video first: drop it on the start card.'
 export const IMAGES_ONLY =
   'Add a video or a voiceover too; images come along as extras, like a logo or screenshots.'
 
+/** The script panel has nothing to record yet. */
+export const NO_SCRIPT = 'Paste your script first.'
+/** A script is recorded with ai33, so it can't start without a key. */
+export const NO_AI33_KEY = 'Connect ai33 first: paste your key at the top of the card.'
+/** Cancel was pressed while the voiceover was being recorded. */
+export const STOPPED =
+  'Stopped before the voiceover was ready. If ai33 still finishes it, it is saved and won’t be paid for twice.'
+
+/** What the script panel holds. It stays through a failed or cancelled start. */
+export type ScriptDraft = {
+  text: string
+  /** A `LANGUAGES` id. */
+  language: string
+  /** Null: nothing picked yet, or voices can't be listed, so Luca picks one. */
+  voice: VoiceRef | null
+  /** Rows as typed; rows missing a word or how it sounds are left out when the script is sent. */
+  say: Say[]
+}
+
+/** The most rows in "Say it right". */
+export const MAX_SAY = 30
+
+/** The Mac's own language when a script can be in it, else English. */
+function defaultLanguage(): string {
+  try {
+    return languageFor(navigator.language)?.id ?? 'en'
+  } catch {
+    return 'en'
+  }
+}
+
+function emptyScript(language = defaultLanguage()): ScriptDraft {
+  return { text: '', language, voice: null, say: [] }
+}
+
+/**
+ * The project's name from a script's first six words: title-cased, punctuation trimmed off the
+ * ends, at most 40 characters (cut at a word).
+ */
+export function scriptName(text: string): string {
+  const words = text
+    .split(/\s+/)
+    .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((w) => w.charAt(0).toLocaleUpperCase() + w.slice(1))
+  let name = words.join(' ')
+  if (name.length > 40) {
+    const cut = name.slice(0, 40)
+    const space = cut.lastIndexOf(' ')
+    name = (space > 10 ? cut.slice(0, space) : cut).trim()
+  }
+  return name || 'Script video'
+}
+
 /** A video type with the steps it suggests, keeping the notes. */
 function editOf(type: VideoTypeId, notes?: string): StartEdit {
   return { type, steps: [...videoType(type).steps], ...(notes ? { notes } : {}) }
@@ -64,6 +121,10 @@ type StartStore = {
   typePicked: boolean
   /** The start card asks for a script to record instead of footage. */
   scriptMode: boolean
+  /** The script, its language and voice, kept while the card is busy and after it fails. */
+  script: ScriptDraft
+  /** Cancel was pressed and main hasn't stopped yet. */
+  cancelling: boolean
   busy: boolean
   progress: CreateProgress | null
   /** Stages seen during the current create, for the step list. */
@@ -80,6 +141,9 @@ type StartStore = {
   setAspect: (a: Aspect) => void
   /** Show the script panel (on) or the drop zone (off) on the start card. */
   setScriptMode: (on: boolean) => void
+  setScript: (patch: Partial<ScriptDraft>) => void
+  /** Stop recording the script: the start call then rejects and the panel comes back as it was. */
+  cancelStart: () => Promise<void>
   /** Switching type turns on its own steps. */
   setType: (type: VideoTypeId) => void
   toggleStep: (id: EditStepId) => void
@@ -87,8 +151,9 @@ type StartStore = {
   /** Words said or typed in the chat: after the notes already there, on a new paragraph. */
   addNotes: (text: string) => void
   /**
-   * Create the project from the footage or voiceover (images come along), open it and send
-   * Luca the first request: the edit picked on the card and the notes. Luca starts right away.
+   * Create the project from the footage or voiceover (images come along), or from the script in
+   * the panel, open it and send Luca the first request: the edit picked on the card and the
+   * notes. Luca starts right away.
    * `spoken`: asked out loud, so Luca's first reply is short enough to read aloud.
    */
   create: (opts?: { spoken?: boolean }) => Promise<boolean>
@@ -108,13 +173,13 @@ function followFirstVideo(): void {
 
 /** After the files change: read new videos, follow the first one's shape and the type's default. */
 function filesChanged(): void {
-  const { files, aspectFrom, typePicked, edit } = useStart.getState()
+  const { files, aspectFrom, typePicked, edit, scriptMode } = useStart.getState()
   const first = files.find((f) => f.kind === 'video')?.path ?? null
   // a shape the person picked stays until they start over with no video at all
   if (first !== aspectFrom)
     useStart.setState({ aspectFrom: first, ...(first ? {} : { aspectPicked: false }) })
   followFirstVideo()
-  const type = kindOf(files) === 'audio' ? 'explainer' : 'talking'
+  const type = scriptMode || kindOf(files) === 'audio' ? 'explainer' : 'talking'
   if (!typePicked && edit.type !== type) useStart.setState({ edit: editOf(type, edit.notes) })
   for (const f of files) {
     if (f.kind !== 'video' || f.path in useStart.getState().footage || reading.has(f.path)) continue
@@ -140,6 +205,8 @@ export const useStart = create<StartStore>((set, get) => ({
   edit: editOf('talking'),
   typePicked: false,
   scriptMode: false,
+  script: emptyScript(),
+  cancelling: false,
   busy: false,
   progress: null,
   seen: [],
@@ -159,7 +226,8 @@ export const useStart = create<StartStore>((set, get) => ({
       }
       next.push(a)
     }
-    set({ files: next, error: null })
+    // footage dropped on the script panel means they'd rather start from that
+    set({ files: next, error: null, ...(kindOf(next) ? { scriptMode: false } : {}) })
     filesChanged()
     for (const f of next) {
       if (f.path in get().previews) continue
@@ -187,7 +255,24 @@ export const useStart = create<StartStore>((set, get) => ({
     get().addFiles(paths)
   },
   setAspect: (aspect) => set({ aspect, aspectPicked: true }),
-  setScriptMode: (scriptMode) => set({ scriptMode }),
+  setScriptMode: (scriptMode) => {
+    // a script is a faceless explainer until they pick another kind; without one, back to the files'
+    if (!get().typePicked) {
+      const type = scriptMode || kindOf(get().files) === 'audio' ? 'explainer' : 'talking'
+      if (get().edit.type !== type) set({ edit: editOf(type, get().edit.notes) })
+    }
+    set({ scriptMode, error: null })
+  },
+  setScript: (patch) => set((s) => ({ script: { ...s.script, ...patch } })),
+  cancelStart: async () => {
+    if (!get().busy || get().cancelling) return
+    set({ cancelling: true })
+    try {
+      await luca.project.cancelStart()
+    } catch {
+      // main may have finished already; the start call says how it ended
+    }
+  },
   setType: (type) => set((s) => ({ edit: editOf(type, s.edit.notes), typePicked: true })),
   toggleStep: (id) =>
     set((s) => {
@@ -218,36 +303,79 @@ export const useStart = create<StartStore>((set, get) => ({
         }))
       )
     }
-    const { files, aspect, edit, footage } = get()
-    const kind = kindOf(files)
+    const { files, aspect, edit, footage, scriptMode, script } = get()
+    // a script is recorded as the voiceover, so it starts like one
+    const scriptText = script.text.trim()
+    const kind: StartKind | null = scriptMode ? (scriptText ? 'audio' : null) : kindOf(files)
     if (!kind) {
-      set({ error: files.length ? IMAGES_ONLY : NO_FOOTAGE })
+      set({ error: scriptMode ? NO_SCRIPT : files.length ? IMAGES_ONLY : NO_FOOTAGE })
+      return false
+    }
+    // a script is recorded with ai33: without a key nothing starts (the panel asks for it)
+    if (scriptMode && useAi33.getState().hasKey === false) {
+      set({ error: NO_AI33_KEY })
       return false
     }
     const voiceOnly = kind === 'audio'
     const videos = files.filter((f) => f.kind === 'video')
-    const lead = videos[0] ?? files.find((f) => f.kind === 'audio')!
+    const lead = scriptMode ? null : (videos[0] ?? files.find((f) => f.kind === 'audio')!)
     const notes = edit.notes?.trim()
-    // what the card showed: a voiceover has no picture to zoom into or name
+    // what the card showed: a voiceover has no picture to zoom into or name, and a script has its
+    // words already, so there are no ums to cut
     const picked: StartEdit = {
       type: edit.type,
-      steps: edit.steps.filter((id) => !(voiceOnly && editStep(id).needsPicture)),
+      steps: edit.steps.filter(
+        (id) => !(voiceOnly && editStep(id).needsPicture) && !(scriptMode && id === 'cut')
+      ),
       ...(notes ? { notes } : {})
     }
-    // all the footage's length once every video is read; a voiceover's comes from the timeline
-    const length =
-      kind === 'video' && videos.every((v) => footage[v.path])
+    // all the footage's length once every video is read; a voiceover's comes from the timeline,
+    // and a script's is about as long as it takes to read aloud
+    const length = scriptMode
+      ? estimateSpoken(scriptText).seconds
+      : kind === 'video' && videos.every((v) => footage[v.path])
         ? videos.reduce((sum, v) => sum + footage[v.path].duration, 0)
         : null
-    set({ busy: true, error: null, progress: { stage: 'preparing' }, seen: ['preparing'] })
+    set({
+      busy: true,
+      cancelling: false,
+      error: null,
+      progress: { stage: scriptMode ? 'voiceover' : 'preparing' },
+      seen: [scriptMode ? 'voiceover' : 'preparing']
+    })
     useProject.setState({ loading: true })
     try {
-      const res = await luca.project.start({
-        name: lead.name.replace(/\.[^.]+$/, ''),
-        aspect,
-        files: files.map((f) => f.path),
-        edit: picked
-      })
+      // the card doesn't know yet whether there is a key: main does
+      if (
+        scriptMode &&
+        !(useAi33.getState().hasKey === true || (await useAi33.getState().checkKey()))
+      ) {
+        set({ error: NO_AI33_KEY })
+        return false
+      }
+      const say = script.say.filter((r) => r.word.trim() && r.as.trim())
+      const res = await luca.project.start(
+        scriptMode
+          ? {
+              name: scriptName(scriptText),
+              aspect,
+              // the recording is the voiceover; pictures dropped on the card come along
+              files: files.filter((f) => f.kind === 'image').map((f) => f.path),
+              script: {
+                text: scriptText,
+                voice: script.voice,
+                language: languageFor(script.language)?.name ?? 'English',
+                ...(say.length ? { say } : {})
+              },
+              edit: picked
+            }
+          : {
+              name: lead!.name.replace(/\.[^.]+$/, ''),
+              aspect,
+              files: files.map((f) => f.path),
+              edit: picked
+            }
+      )
       useProject.setState({ project: res.project, version: 0, previewVersion: 0 })
       set({
         files: [],
@@ -255,7 +383,10 @@ export const useStart = create<StartStore>((set, get) => ({
         aspectFrom: null,
         aspectPicked: false,
         edit: editOf('talking'),
-        typePicked: false
+        typePicked: false,
+        // the script is in the project now; the language and voice are likely the next one's too
+        scriptMode: false,
+        script: { ...get().script, text: '', say: [] }
       })
       if (!useUi.getState().chatOpen) useUi.getState().setChat(true)
       const chat = useChat.getState()
@@ -265,8 +396,10 @@ export const useStart = create<StartStore>((set, get) => ({
         chips: [{ kind: 'edit', label: videoType(picked.type).name }, ...chat.chips]
       })
       // the preview shows Luca at work instead of the unedited video until this turn ends
-      useMaking.getState().begin(res.project.id, kind, length)
-      const request = editRequest(picked, { voiceOnly })
+      useMaking.getState().begin(res.project.id, scriptMode ? 'script' : kind, length, {
+        extraSeconds: picked.steps.includes('music') ? MAKING_MUSIC_EXTRA_SECONDS : 0
+      })
+      const request = editRequest(picked, { voiceOnly, ...(scriptMode ? { scripted: true } : {}) })
       const sent = await chat.send(notes ? `${request}\n\n${notes}` : request, {
         time: 0,
         note: res.brief,
@@ -275,11 +408,12 @@ export const useStart = create<StartStore>((set, get) => ({
       if (!sent) useMaking.getState().cancel()
       return true
     } catch (err) {
-      set({ error: errorMessage(err) })
+      // Cancel was pressed: whatever main rejected with, that is why it stopped
+      set({ error: get().cancelling ? STOPPED : errorMessage(err) })
       return false
     } finally {
       useProject.setState({ loading: false })
-      set({ busy: false })
+      set({ busy: false, cancelling: false })
     }
   }
 }))

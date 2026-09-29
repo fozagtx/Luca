@@ -149,7 +149,8 @@ export const useChat = create<ChatStore>((set, get) => ({
     // and Luca starts editing it right away
     if (!useProject.getState().project) {
       const start = useStart.getState()
-      if (!kindOf(start.files)) {
+      // a script on the start card is what Luca starts from when there is no footage
+      if (!kindOf(start.files) && !(start.scriptMode && start.script.text.trim())) {
         set({ error: NO_FOOTAGE })
         return false
       }

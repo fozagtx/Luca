@@ -40,11 +40,14 @@ import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { formatDuration, relativeDate } from '../../lib/format'
 import { luca } from '../../lib/luca'
+import { useAi33 } from '../../stores/ai33'
 import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
 import { IMAGES_ONLY, kindOf, useStart, type Attachment } from '../../stores/start'
+import { Ai33KeyCard } from '../ai33/Ai33KeyCard'
 import { AssemblyAiKeyCard } from './AssemblyAiKeyCard'
 import { CreateProgressList } from './CreateProgress'
+import { MusicNote, ScriptFields, ScriptGoButton, StartAsk } from './ScriptPanel'
 
 const ASPECTS: SegmentedItem<Aspect>[] = [
   { id: 'landscape', label: '16:9' },
@@ -72,10 +75,14 @@ export function EmptyState(): ReactElement {
   )
 }
 
-/** Home: drop the footage (or a voiceover), say what kind of video it is, and Luca edits it. */
+/**
+ * Home: drop the footage (or a voiceover), or paste a script when there is none, say what kind of
+ * video it is, and Luca edits it.
+ */
 function StartCard(): ReactElement {
-  const { files, busy, progress, seen, error } = useStart()
-  const { addFiles, pickFiles, addNotes, create } = useStart()
+  const { files, busy, progress, seen, error, scriptMode, cancelling } = useStart()
+  const { addFiles, pickFiles, addNotes, create, setScriptMode, cancelStart } = useStart()
+  const scripted = useStart((s) => s.scriptMode && !!s.script.text.trim())
   const openProject = useProject((s) => s.open)
   const loading = useProject((s) => s.loading)
   const [over, setOver] = useState(false)
@@ -86,7 +93,7 @@ function StartCard(): ReactElement {
   const lead = videos[0] ?? files.find((f) => f.kind === 'audio')
 
   const go = async (): Promise<void> => {
-    if (busy || !kind) return
+    if (busy || !(scriptMode ? scripted : kind)) return
     // words typed in the chat meanwhile are notes too
     const draft = useChat.getState().draft
     if (draft.trim()) {
@@ -154,16 +161,36 @@ function StartCard(): ReactElement {
         {busy ? (
           <div className="rise-in flex flex-col gap-4 p-5">
             <div className="text-[13px] font-semibold text-text">
-              {videos.length > 1
-                ? `Starting from your ${videos.length} videos`
-                : `Starting from ${lead?.name ?? 'your video'}`}
+              {scriptMode
+                ? 'Starting from your script'
+                : videos.length > 1
+                  ? `Starting from your ${videos.length} videos`
+                  : `Starting from ${lead?.name ?? 'your video'}`}
             </div>
+            <StartAsk />
             <CreateProgressList
               kind={kind ?? 'video'}
+              script={scriptMode}
               progress={progress}
               seen={seen}
               since={since}
             />
+            {scriptMode ? (
+              // the script, voice and language are still in the panel when it comes back
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-2 self-start"
+                disabled={cancelling}
+                onClick={() => void cancelStart()}
+              >
+                {cancelling ? 'Stopping…' : 'Cancel'}
+              </Button>
+            ) : null}
+          </div>
+        ) : scriptMode ? (
+          <div className={cn(over && 'opacity-0')}>
+            <EditForm script onGo={() => void go()} />
           </div>
         ) : kind ? (
           <div className={cn(over && 'opacity-0')}>
@@ -193,6 +220,13 @@ function StartCard(): ReactElement {
             <Button size="lg" onClick={() => void pickFiles()}>
               Choose files
             </Button>
+            <button
+              type="button"
+              onClick={() => setScriptMode(true)}
+              className="-mt-1 text-[12px] font-medium text-text-2 underline-offset-2 transition-colors hover:text-text hover:underline"
+            >
+              No footage? Start from a script
+            </button>
             {files.length ? (
               <div className="fade-in rounded-[10px] border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[12px] text-danger">
                 {IMAGES_ONLY}
@@ -222,26 +256,40 @@ function StartCard(): ReactElement {
   )
 }
 
-/** With footage in: what kind of video it is, what Luca does, notes, the shape, and go. */
-function EditForm({ onGo }: { onGo: () => void }): ReactElement {
+/**
+ * With footage in (or a script to record): what kind of video it is, what Luca does, notes, the
+ * shape, and go.
+ */
+function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean }): ReactElement {
   const { files, footage, aspect, aspectFrom, edit, busy } = useStart()
   const { setAspect, setType, toggleStep, setNotes } = useStart()
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [keyLater, setKeyLater] = useState(false)
+  const hasAi33 = useAi33((s) => s.hasKey)
   const ref = useRef<HTMLTextAreaElement>(null)
-  const voiceOnly = kindOf(files) === 'audio'
-  // a voiceover has no picture to zoom into or put a name on
-  const steps = EDIT_STEPS.filter((s) => !(voiceOnly && s.needsPicture))
-  const needsWords = steps.some((s) => s.needsWords && edit.steps.includes(s.id))
+  const voiceOnly = script || kindOf(files) === 'audio'
+  // a voiceover has no picture to zoom into or put a name on, and a script has its words already:
+  // there are no ums or pauses to cut
+  const steps = EDIT_STEPS.filter(
+    (s) => !(voiceOnly && s.needsPicture) && !(script && s.id === 'cut')
+  )
+  // the words of a script are known, so nothing waits for AssemblyAI: its card never comes up
+  const needsWords = !script && steps.some((s) => s.needsWords && edit.steps.includes(s.id))
+  // steps that make something with ai33 and are switched on
+  const making = steps.filter((s) => s.needsAi33 && edit.steps.includes(s.id))
   const shape = aspectFrom ? footage[aspectFrom]?.aspect : undefined
   const notes = edit.notes ?? ''
 
   useEffect(() => {
+    // not for a script: its words exist, so the answer would change nothing
+    if (script) return
     void luca.env
       .hasAssemblyAiKey()
       .then(setHasKey)
       .catch(() => undefined)
-  }, [])
+    // the ai33 key, for the Music chip (the script panel reads it itself)
+    void useAi33.getState().checkKey()
+  }, [script])
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -260,7 +308,13 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
   return (
     <div className="rise-in flex flex-col">
       <div className="flex flex-col gap-5 p-4">
-        <Tiles />
+        {script ? <ScriptFields onGo={onGo} /> : <Tiles />}
+        {script && files.length ? (
+          // a logo or screenshots dropped on the card before the script came along
+          <Field label="Pictures that come along">
+            <Tiles />
+          </Field>
+        ) : null}
 
         <Field label="What kind of video is it?">
           <div
@@ -349,6 +403,15 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
               Your key stays in the macOS Keychain.
             </AssemblyAiKeyCard>
           ) : null}
+          {!script && making.length && hasAi33 === false ? (
+            // the chip is switched back off when the card is dismissed
+            <Ai33KeyCard
+              context="start"
+              className="fade-in mt-1"
+              onDismiss={() => making.forEach((s) => toggleStep(s.id))}
+            />
+          ) : null}
+          {making.some((s) => s.id === 'music') ? <MusicNote /> : null}
         </Field>
 
         <Field label="Anything Luca should know?">
@@ -380,14 +443,18 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
             Cropped from {ASPECTS.find((a) => a.id === shape)?.label}
           </span>
         ) : null}
-        <GenerateButton
-          className="ml-auto"
-          label="Edit my video"
-          generatingLabel="Starting"
-          generating={busy}
-          disabled={busy}
-          onClick={onGo}
-        />
+        {script ? (
+          <ScriptGoButton busy={busy} onGo={onGo} />
+        ) : (
+          <GenerateButton
+            className="ml-auto"
+            label="Edit my video"
+            generatingLabel="Starting"
+            generating={busy}
+            disabled={busy}
+            onClick={onGo}
+          />
+        )}
       </div>
     </div>
   )

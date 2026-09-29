@@ -69,6 +69,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const startFiles = useStart((s) => s.files)
   const startPreviews = useStart((s) => s.previews)
   const starting = useStart((s) => s.busy)
+  const scriptMode = useStart((s) => s.scriptMode)
   const footage = !!kindOf(startFiles)
   const disabled = starting
   // a file still on its way in would be missing from the message
@@ -180,9 +181,23 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
       {noProject && !voiceMode ? (
         <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] text-text-3">
           <Sparkles size={11} className="shrink-0 text-accent" />
-          {footage
-            ? 'Say what you want, and Luca starts editing your video.'
-            : 'No project open: drop your video on the start card first.'}
+          {footage ? (
+            'Say what you want, and Luca starts editing your video.'
+          ) : scriptMode ? (
+            'Paste your script on the start card, then press Record and edit.'
+          ) : (
+            <span>
+              No project open: drop your video on the start card, or{' '}
+              <button
+                type="button"
+                onClick={() => useStart.getState().setScriptMode(true)}
+                className="font-medium text-accent hover:underline"
+              >
+                start from a script
+              </button>
+              .
+            </span>
+          )}
         </div>
       ) : null}
       <div

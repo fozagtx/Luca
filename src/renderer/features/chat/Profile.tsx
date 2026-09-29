@@ -1,6 +1,8 @@
 import {
+  AudioWaveform,
   Captions,
   Highlighter,
+  Music,
   Scissors,
   Smartphone,
   Sparkles,
@@ -77,7 +79,9 @@ const suggestions: { icon: LucideIcon; text: string }[] = [
   { icon: Scissors, text: 'Cut the ums and long pauses' },
   { icon: Captions, text: 'Add captions to the whole video' },
   { icon: ZoomIn, text: 'Zoom in on the key lines' },
-  { icon: Wand2, text: 'Add a lower third with my name' }
+  { icon: Wand2, text: 'Add a lower third with my name' },
+  { icon: Music, text: 'Add quiet music under my voice' },
+  { icon: AudioWaveform, text: 'Add a whoosh where the title appears' }
 ]
 
 const starts: { icon: LucideIcon; text: string }[] = [
