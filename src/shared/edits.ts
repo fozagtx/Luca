@@ -13,6 +13,8 @@ export type EditStep = {
   needsWords: boolean
   /** Works on footage of a person or a screen; left out when there is only a voiceover. */
   needsPicture: boolean
+  /** Makes something with ai33 (spends the person's credits), so it needs a connected key. */
+  needsAi33?: boolean
   /** For Luca: what to do. */
   guide: string
 }
@@ -72,6 +74,16 @@ export const EDIT_STEPS: EditStep[] = [
     needsPicture: false,
     guide:
       'An ending card for the last 2–3 s: the product or channel name (or the logo, if the user added one) and one call to action taken from what is said or the notes.'
+  },
+  {
+    id: 'music',
+    name: 'Music',
+    blurb: 'Quiet music under your voice',
+    needsWords: false,
+    needsPicture: false,
+    needsAi33: true,
+    guide:
+      'Music, after the cuts and titles and before the captions: call music_generate once, instrumental, calm and fitting the video type and what is said, under the whole video and quiet behind the voice. The user switched this step on, so do not ask; offer the second take in your reply.'
   },
   {
     id: 'captions',
@@ -149,30 +161,50 @@ export function editStep(id: EditStepId): EditStep {
   return EDIT_STEPS.find((s) => s.id === id)!
 }
 
+/** What a plan is written for: what can hear, what can make things, and where the words come from. */
+export type EditPlanOptions = {
+  canTranscribe: boolean
+  voiceOnly: boolean
+  /** The words are exact already (a voiceover recorded from a script): nothing to cut, and nothing to transcribe. */
+  scripted?: boolean
+  /** ai33 is connected, so the steps that make sound or pictures can run. */
+  canGenerate?: boolean
+}
+
 /**
  * The steps that can run: in Luca's order, without the ones that need words when nothing can
- * transcribe, or a picture when there is only a voiceover.
+ * transcribe, a picture when there is only a voiceover, or ai33 when it isn't connected. A
+ * scripted video has its words and no ums to cut: `cut` is dropped and the steps that need
+ * words can run.
  */
 export function runnableSteps(
   steps: EditStepId[],
-  opts: { canTranscribe: boolean; voiceOnly: boolean }
+  opts: EditPlanOptions
 ): { run: EditStep[]; skipped: EditStep[] } {
   const run: EditStep[] = []
   const skipped: EditStep[] = []
+  const canTranscribe = opts.canTranscribe || !!opts.scripted
   for (const s of EDIT_STEPS) {
     if (!steps.includes(s.id)) continue
+    if (opts.scripted && s.id === 'cut') continue
     if (s.needsPicture && opts.voiceOnly) continue
-    if (s.needsWords && !opts.canTranscribe) skipped.push(s)
+    if ((s.needsWords && !canTranscribe) || (s.needsAi33 && !opts.canGenerate)) skipped.push(s)
     else run.push(s)
   }
   return { run, skipped }
 }
 
 /** The words on the first request, e.g. "Edit my talking video: cut ums & pauses, captions". */
-export function editRequest(edit: StartEdit, opts: { voiceOnly: boolean }): string {
+export function editRequest(
+  edit: StartEdit,
+  opts: { voiceOnly: boolean; scripted?: boolean }
+): string {
   const type = videoType(edit.type)
   const steps = EDIT_STEPS.filter(
-    (s) => edit.steps.includes(s.id) && !(s.needsPicture && opts.voiceOnly)
+    (s) =>
+      edit.steps.includes(s.id) &&
+      !(s.needsPicture && opts.voiceOnly) &&
+      !(opts.scripted && s.id === 'cut')
   ).map((s) => s.name.toLowerCase())
   const what = `Edit my ${type.name.toLowerCase()}`
   return steps.length ? `${what}: ${steps.join(', ')}` : what
@@ -182,10 +214,7 @@ export function editRequest(edit: StartEdit, opts: { voiceOnly: boolean }): stri
  * The edit plan Luca follows, as Markdown: in the first request's brief and in .luca/EDIT.md,
  * where later turns find it.
  */
-export function editGuide(
-  edit: StartEdit,
-  opts: { canTranscribe: boolean; voiceOnly: boolean }
-): string {
+export function editGuide(edit: StartEdit, opts: EditPlanOptions): string {
   const type = videoType(edit.type)
   const { run, skipped } = runnableSteps(edit.steps, opts)
   const out = [
@@ -209,9 +238,22 @@ export function editGuide(
       ''
     )
   }
-  if (skipped.length)
+  if (opts.scripted)
     out.push(
-      `Skipped because Luca can’t hear the words yet (no AssemblyAI key): ${skipped.map((s) => s.name.toLowerCase()).join(', ')}. Say so in one sentence and that they can connect AssemblyAI in the Transcript tab to get them.`,
+      'The voiceover was recorded from the user’s script; its words and times are already exact in transcript.json. Call transcribe to read them (free); never pass force and never call clean_edit. The script is in .luca/SCRIPT.md.',
+      ''
+    )
+  const names = (list: EditStep[]): string => list.map((s) => s.name.toLowerCase()).join(', ')
+  const noWords = skipped.filter((s) => !s.needsAi33)
+  const noAi33 = skipped.filter((s) => s.needsAi33)
+  if (noWords.length)
+    out.push(
+      `Skipped because Luca can’t hear the words yet (no AssemblyAI key): ${names(noWords)}. Say so in one sentence and that they can connect AssemblyAI in the Transcript tab to get them.`,
+      ''
+    )
+  if (noAi33.length)
+    out.push(
+      `Skipped because ai33 isn’t connected: ${names(noAi33)}. Say so in one sentence and that they can connect it under Connections (Cmd+,).`,
       ''
     )
   const notes = edit.notes?.trim()

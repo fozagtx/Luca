@@ -12,7 +12,8 @@ const defaults = (): Settings => ({
   keyterms: [],
   recentProjects: [],
   panes: {},
-  alwaysAllow: {}
+  alwaysAllow: {},
+  ai33: {}
 })
 
 let cache: Settings | null = null

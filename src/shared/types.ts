@@ -1,4 +1,5 @@
 import type { Activity } from './activity'
+import type { Ai33Ask, StartScript, ToolProgress, VoiceRef } from './ai33'
 
 export type Aspect = 'landscape' | 'portrait' | 'square'
 
@@ -40,6 +41,10 @@ export type Clip = {
   volume?: number
   /** data-media-start: where in its media file the clip starts playing (a trimmed start), in seconds. */
   mediaStart?: number
+  /** data-luca-role: a voiceover, music or a sound effect made for this video. */
+  role?: 'voice' | 'music' | 'sfx'
+  /** data-luca-title: the name shown on the clip. */
+  title?: string
 }
 
 export type Track = {
@@ -125,8 +130,18 @@ export type AgentEvent =
       status: ToolStatus
       detail?: string
       activity?: Activity
+      /** How far a long job (voiceover, music, a picture) is, while it runs. */
+      progress?: ToolProgress
     }
-  | { type: 'permission'; id: string; tool: string; input: unknown; rule?: string }
+  | {
+      type: 'permission'
+      id: string
+      tool: string
+      input: unknown
+      rule?: string
+      /** A question Luca's own tools ask (connect ai33, spend credits): the card shows this. */
+      ask?: Ai33Ask
+    }
   | { type: 'permission-resolved'; id: string }
   | { type: 'turn-start' }
   | {
@@ -159,12 +174,16 @@ export type ChatContentPart =
       detail?: string
       /** Plain-language description (older history may not have it). */
       activity?: Activity
+      /** How far a long job (voiceover, music, a picture) is, while it runs. */
+      progress?: ToolProgress
     }
   | {
       type: 'permission'
       id: string
       tool: string
       input: unknown
+      /** A question Luca's own tools ask (connect ai33, spend credits): the card shows this. */
+      ask?: Ai33Ask
       resolved?: PermissionDecision
       /** The turn ended (Stop, restart, a crash) before the person answered: not their "deny". */
       cancelled?: boolean
@@ -307,6 +326,8 @@ export type Settings = {
   alwaysAllow?: Record<string, string[]>
   /** The version that last ran, to tell when Luca was updated. */
   lastVersion?: string
+  /** ai33: the voice last used for each language (only changed through patchAi33Settings). */
+  ai33?: { lastVoice?: Record<string, VoiceRef> }
 }
 
 export type TimelineEdit =
@@ -376,7 +397,8 @@ export type VoiceEvent =
 
 /** Stages of making a new project, pushed while it is created. */
 export type CreateProgress = {
-  stage: 'preparing' | 'copying' | 'scaffolding' | 'media' | 'starting' | 'done' | 'error'
+  stage:
+    'preparing' | 'voiceover' | 'copying' | 'scaffolding' | 'media' | 'starting' | 'done' | 'error'
   message?: string
   /** 0..1 within the stage when measurable. */
   progress?: number
@@ -391,9 +413,11 @@ export type StartArgs = {
   /**
    * Absolute paths, in the order they were added: videos (played back to back), images and at
    * most one audio file. At least one video or the audio; images wait in media/ for Luca (a logo,
-   * screenshots).
+   * screenshots). Empty when `script` is set: the voiceover is recorded from it.
    */
   files: string[]
+  /** A script to record as the voiceover, for a video with no footage. */
+  script?: StartScript
   look?: string | null
   /** What kind of video it is and what Luca does to it; saved as .luca/EDIT.md. */
   edit?: StartEdit
@@ -403,7 +427,8 @@ export type StartArgs = {
 export type VideoTypeId = 'talking' | 'explainer' | 'founder' | 'product'
 
 /** What Luca can do on the first edit (src/shared/edits.ts). */
-export type EditStepId = 'cut' | 'hook' | 'zooms' | 'broll' | 'name' | 'ending' | 'captions'
+export type EditStepId =
+  'cut' | 'hook' | 'zooms' | 'broll' | 'name' | 'ending' | 'music' | 'captions'
 
 /** Picked on the start card before Luca begins. */
 export type StartEdit = {

@@ -2,7 +2,7 @@ import { app, safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-type SecretName = 'assemblyai' | 'pexels' | 'gemini' | 'github'
+type SecretName = 'assemblyai' | 'pexels' | 'gemini' | 'github' | 'ai33'
 
 function file(): string {
   const dir = app.getPath('userData')
@@ -37,7 +37,17 @@ export function getSecret(name: SecretName): string | null {
   return readAll()[name] ?? null
 }
 
+/**
+ * Whether secrets can be stored encrypted (macOS Keychain). Without it they are written as plain
+ * text, which the ai33 key (it spends money) must never be.
+ */
+export function canStoreSecurely(): boolean {
+  return safeStorage.isEncryptionAvailable()
+}
+
 export function setSecret(name: SecretName, value: string): void {
+  if (name === 'ai33' && value.trim() && !canStoreSecurely())
+    throw new Error('The ai33 key can’t be saved without the Keychain.')
   const all = readAll()
   if (value.trim().length === 0) delete all[name]
   else all[name] = value.trim()

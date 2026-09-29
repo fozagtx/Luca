@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, nativeImage, nativeTheme, shell } from 'electron'
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import type { Ai33EstimateReq, Ai33VoiceQuery } from '../shared/ai33'
 import type {
   BackgroundSearch,
   CaptionConfig,
@@ -16,6 +17,12 @@ import type {
   StartArgs,
   TimelineEdit
 } from '../shared/types'
+import { hasAi33Key, initAi33, saveAi33Key, status as ai33Status } from './ai33-account'
+import { answerAsk } from './ai33-ask'
+import { listVoices, voicePreview } from './ai33-speech'
+import { estimate as ai33Estimate } from './ai33-spend'
+import { cancelStart } from './ai33-start'
+import { isScriptProject } from './ai33-store'
 import { activeAgent, agentFor, closeAgent, onTurnEnd } from './agent'
 import {
   addFonts,
@@ -76,6 +83,7 @@ import type { LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, requireProject, setCurrentProject } from './state'
 import { applyEdit, applyTransform, editLabel, peaks, thumbnails } from './media'
+import { refitBeds } from './place'
 import { checkpoint, ensureRepo, history, restore, undo } from './versions'
 import { cancelVoice, micAccess, pushVoiceAudio, startVoice, stopVoice } from './voice'
 import { stopWatching, watchProject } from './watcher'
@@ -96,6 +104,18 @@ function followCaptions(p: Project): void {
   }
 }
 
+/**
+ * Music that outlasts the video (after a cut, or a trim of the video) is shortened to fit; the
+ * caller's checkpoint saves the change with everything else as one version.
+ */
+async function followBeds(p: Project): Promise<void> {
+  try {
+    await refitBeds(p)
+  } catch (err) {
+    console.warn('[luca] fitting the music to the video failed', err)
+  }
+}
+
 /** Fonts that come with Luca that a turn used without adding them go in with that turn's version. */
 function followFonts(p: Project): void {
   try {
@@ -112,6 +132,8 @@ const openDialog = (
   win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts)
 
 export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
+  // ai33 gets its key and data folder, and its notices reach windows opened later
+  initAi33()
   handle(Channels.serverBaseUrl, () => server.baseUrl)
 
   // env
@@ -155,9 +177,10 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     void agentFor(p).start()
     return p
   }
-  onTurnEnd((p, e) => {
+  onTurnEnd(async (p, e) => {
     // a stopped turn's edits are kept, so they get a checkpoint too (undo takes back just them)
     if (e.isError && !e.stopped) return
+    await followBeds(p)
     followCaptions(p)
     followFonts(p)
     checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72)).catch(
@@ -191,6 +214,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     }
   }
   handle(Channels.projectStart, start)
+  handle(Channels.projectStartCancel, () => cancelStart())
   handle(Channels.projectPickMedia, async () => {
     const ext = (set: Set<string>): string[] => [...set].map((e) => e.slice(1))
     const res = await openDialog(getWin(), {
@@ -272,6 +296,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     const p = requireProject()
     const res = await applyEdit(p.dir, edit)
     if (!res.ok) return res
+    await followBeds(p)
     followCaptions(p)
     checkpoint(p.dir, editLabel(edit)).catch(warnCheckpoint)
     return res
@@ -319,6 +344,19 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   // video generation (Gemini)
   handle(Channels.geminiHasKey, hasGeminiKey)
   handle(Channels.geminiSetKey, (key: string) => saveGeminiKey(key))
+
+  // voice, music, sound effects and pictures (ai33)
+  handle(Channels.ai33HasKey, hasAi33Key)
+  handle(Channels.ai33Status, ai33Status)
+  handle(Channels.ai33SetKey, (key: string) => saveAi33Key(key))
+  handle(Channels.ai33Voices, (q: Ai33VoiceQuery) => listVoices(q))
+  handle(Channels.ai33VoicePreview, (voiceId: string) => voicePreview(voiceId))
+  handle(Channels.ai33Estimate, (req: Ai33EstimateReq) => ai33Estimate(req))
+  handle(Channels.ai33AskReply, (id: string, decision: 'allow' | 'deny') => answerAsk(id, decision))
+  handle(Channels.ai33IsScript, () => {
+    const p = currentProject()
+    return p ? isScriptProject(p.dir) : false
+  })
 
   // updates (GitHub releases)
   handle(Channels.updatesStatus, updateStatus)

@@ -62,6 +62,8 @@ type StartStore = {
   edit: StartEdit
   /** The person picked the type; until then it follows the files (a voiceover alone: explainer). */
   typePicked: boolean
+  /** The start card asks for a script to record instead of footage. */
+  scriptMode: boolean
   busy: boolean
   progress: CreateProgress | null
   /** Stages seen during the current create, for the step list. */
@@ -76,6 +78,8 @@ type StartStore = {
    */
   startFrom: (paths: string[]) => Promise<void>
   setAspect: (a: Aspect) => void
+  /** Show the script panel (on) or the drop zone (off) on the start card. */
+  setScriptMode: (on: boolean) => void
   /** Switching type turns on its own steps. */
   setType: (type: VideoTypeId) => void
   toggleStep: (id: EditStepId) => void
@@ -135,6 +139,7 @@ export const useStart = create<StartStore>((set, get) => ({
   aspectPicked: false,
   edit: editOf('talking'),
   typePicked: false,
+  scriptMode: false,
   busy: false,
   progress: null,
   seen: [],
@@ -182,6 +187,7 @@ export const useStart = create<StartStore>((set, get) => ({
     get().addFiles(paths)
   },
   setAspect: (aspect) => set({ aspect, aspectPicked: true }),
+  setScriptMode: (scriptMode) => set({ scriptMode }),
   setType: (type) => set((s) => ({ edit: editOf(type, s.edit.notes), typePicked: true })),
   toggleStep: (id) =>
     set((s) => {

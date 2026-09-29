@@ -576,7 +576,8 @@ export async function runTranscribeOnly(p: Project): Promise<void> {
 
 // ------------------------------------------------------------------ from Luca's own turn
 
-type RefusedReason = 'no-source' | 'no-key' | 'no-speech' | 'busy' | 'already-cut' | 'off-timeline'
+type RefusedReason =
+  'no-source' | 'no-key' | 'no-speech' | 'busy' | 'already-cut' | 'off-timeline' | 'script'
 
 const REFUSED: Record<RefusedReason, string> = {
   'no-source': 'This project has no video or audio to transcribe',
@@ -584,7 +585,8 @@ const REFUSED: Record<RefusedReason, string> = {
   'no-speech': 'No speech was heard in this recording',
   busy: 'A clean edit or transcription is already running',
   'already-cut': 'A clean edit is already on the timeline',
-  'off-timeline': OFF_TIMELINE
+  'off-timeline': OFF_TIMELINE,
+  script: 'The words in this project are already exact, so there is nothing to transcribe or cut.'
 }
 
 /** Why Luca's transcribe or clean_edit didn't run; its tool tells Luca what to say about it. */

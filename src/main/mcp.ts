@@ -30,6 +30,8 @@ import {
   type Phrase
 } from './clean'
 import { library } from './library'
+import type { Ai33Ctx } from './ai33-ctx'
+import { ai33Tools } from './mcp-ai33'
 import { HYPERFRAMES } from './env'
 import {
   generateVideo,
@@ -133,7 +135,9 @@ const REFUSALS: Record<EditRefused['reason'], string> = {
   'already-cut':
     'The ums and pauses are already cut: a clean edit is on the timeline, and it runs once. Call transcribe for the words as they play now. If the user wants more cut, tell them in one short sentence they can change the cuts in the Transcript tab.',
   'off-timeline':
-    'The original recording is no longer on the timeline, so there is nothing to cut. Tell the user in one short sentence.'
+    'The original recording is no longer on the timeline, so there is nothing to cut. Tell the user in one short sentence.',
+  script:
+    'This video’s words come from the user’s script, so they are already exact and there is nothing to transcribe again or cut. Call transcribe without force to read them (it is free) and time everything to them; never call clean_edit on it. If the user wants a different voice or speed, tell them in one short sentence that it means starting again from the script (parts already recorded are not paid for twice).'
 }
 
 const refusal = (err: unknown): string =>
@@ -260,9 +264,13 @@ function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown>
 
 /**
  * Luca's in-process MCP server: the words and the clean edit, catalog search, B-roll, captions and
- * fonts, plus the remocn tools described in the spec.
+ * fonts, plus the remocn tools described in the spec, and (when the agent gives it its ai33
+ * context) the tools that make voiceover, music, sound effects and pictures.
  */
-export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMcpServer> {
+export function lucaMcpServer(
+  projectDir: string,
+  ctx?: Ai33Ctx
+): ReturnType<typeof createSdkMcpServer> {
   return createSdkMcpServer({
     name: 'luca',
     version: '1.0.0',
@@ -845,7 +853,8 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         },
         async ({ clipId, start, track }) =>
           text(await placeComponent(projectDir, { clipId, start, track }))
-      )
+      ),
+      ...(ctx ? ai33Tools(ctx, projectDir) : [])
     ]
   })
 }

@@ -11,11 +11,13 @@ import {
 import { Toaster } from 'sonner'
 import { ErrorBoundary } from './components/ui/error-boundary'
 import { TooltipProvider } from './components/ui/tooltip'
+import { useAi33Notices } from './features/ai33/useAi33Notices'
 import { Chat } from './features/chat/Chat'
 import { CommandPalette } from './features/command/CommandPalette'
 import { GotoSheet } from './features/command/GotoSheet'
 import { ShortcutsSheet } from './features/command/ShortcutsSheet'
 import { useShortcuts } from './features/command/useShortcuts'
+import { Connections } from './features/connections/Connections'
 import { CaptionStudio } from './features/captions/CaptionStudio'
 import { ColorStudio } from './features/color/ColorStudio'
 import { ExportBar, ExportSheet } from './features/export/ExportSheet'
@@ -102,6 +104,7 @@ export default function App(): ReactElement {
   const hasProject = projectDir !== null
   useShortcuts()
   useUpdateNotices()
+  useAi33Notices()
 
   // the chat panel unmounts when hidden, so the draft's project is tracked here
   useEffect(() => {
@@ -237,6 +240,7 @@ export default function App(): ReactElement {
       <CaptionStudio />
       <ColorStudio />
       <UpdatesSheet />
+      <Connections />
       <Toaster
         position="top-center"
         offset={60}
