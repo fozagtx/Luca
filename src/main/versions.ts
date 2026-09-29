@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { simpleGit, type SimpleGit } from 'simple-git'
 import type { Checkpoint } from '../shared/types'
@@ -23,6 +23,24 @@ node_modules/
 *.flac
 .DS_Store
 `
+
+/** A pattern with the slashes that don't change what it ignores taken off, to compare two spellings. */
+const pattern = (line: string): string => line.trim().replace(/^\/+|\/+$/g, '')
+
+/**
+ * What `.gitignore` should hold after Luca has looked at it: the whole default when there is none,
+ * else the file plus the default's lines it lacks (a file written by another tool, like
+ * `hyperframes init`, would otherwise leave generated sound tracked, and undo would delete it).
+ * Null when nothing is missing.
+ */
+export function toppedUpGitignore(existing: string | null): string | null {
+  if (existing === null) return GITIGNORE
+  const has = new Set(existing.split('\n').map(pattern).filter(Boolean))
+  const missing = GITIGNORE.split('\n').filter((l) => l.trim() && !has.has(pattern(l)))
+  if (!missing.length) return null
+  const lead = existing.length && !existing.endsWith('\n') ? '\n' : ''
+  return `${existing}${lead}${existing.trim() ? '\n# Added by Luca\n' : ''}${missing.join('\n')}\n`
+}
 
 function git(dir: string): SimpleGit {
   const env: Record<string, string> = {}
@@ -62,7 +80,8 @@ async function ensureRepoNow(dir: string): Promise<void> {
   const g = git(dir)
   if (!existsSync(join(dir, '.git'))) await g.init()
   const gi = join(dir, '.gitignore')
-  if (!existsSync(gi)) writeFileSync(gi, GITIGNORE)
+  const topped = toppedUpGitignore(existsSync(gi) ? readFileSync(gi, 'utf8') : null)
+  if (topped !== null) writeFileSync(gi, topped)
   const fresh = (await g.raw(['rev-list', '--count', 'HEAD']).catch(() => '0')).trim() === '0'
   await g.add(['-A'])
   const st = await g.status()

@@ -4,21 +4,15 @@ import { extname, join, relative, sep } from 'node:path'
 import { placeWords } from '../shared/captions'
 import type { CleanResult, CleanStatus, Cut, Edl, Project, Transcript } from '../shared/types'
 import { activeAgent, agentFor } from './agent'
+import { isScriptProject } from './ai33-store'
 import { hasTranscript, refreshCaptions } from './captions'
 import { speechClips } from './captions-html'
 import { ffmpegProgress, probeMedia } from './env'
 import { AUDIO_EXT } from './footage'
-import {
-  closingOffset,
-  findTagById,
-  findTags,
-  insertIntoRoot,
-  nextTrackIndex,
-  replaceTag,
-  setAttrs,
-  type TagMatch
-} from './html'
+import { closingOffset, findTagById, findTags, replaceTag, setAttrs, type TagMatch } from './html'
 import { Channels, broadcast } from './ipc'
+import { refitBeds } from './place'
+import { insertAudio, rowFor } from './place-html'
 import { hasSecret } from './secrets'
 import { getSettings } from './settings'
 import { extractAudio, isFiller, transcribe } from './transcribe'
@@ -417,12 +411,24 @@ export async function placeVoiceover(p: Project): Promise<boolean> {
   if (!(duration > 0)) return false
   const id = findTagById(html, 'voiceover') ? 'luca-voiceover' : 'voiceover'
   const src = relative(p.dir, source).split(sep).join('/')
-  const tag = `<audio id="${id}" src="${src}" data-start="0" data-duration="${duration}" data-track-index="${nextTrackIndex(html)}" data-volume="1"></audio>`
-  let out = insertIntoRoot(html, `      ${tag}\n`)
-  if (!out) return false
-  const root = findTags(out).find((t) => t.attrs['data-composition-id'] !== undefined)
-  if (root && num(root.attrs['data-duration'], 0) < duration)
-    out = replaceTag(out, root, setAttrs(root, { 'data-duration': String(duration) }))
+  let out: string
+  try {
+    // the same markup and row rules as every sound Luca places, so the timeline can name the row
+    out = insertAudio(html, {
+      file: src,
+      role: 'voice',
+      start: 0,
+      row: rowFor(html, 'voice', 0, duration),
+      duration,
+      volume: 1,
+      id,
+      title: 'Voiceover',
+      extendRoot: true
+    }).html
+  } catch {
+    // no composition to put it in
+    return false
+  }
   writeFileSync(indexFile, out)
   return true
 }
@@ -478,6 +484,12 @@ export async function applyEdl(
   writeFileSync(join(p.dir, 'edl.json'), JSON.stringify({ ...edl, cuts }, null, 2))
   relink(p, cleanRel, cuts, newDuration)
   writeFileSync(appliedFile(p.dir), JSON.stringify({ file: cleanRel, cuts }, null, 2))
+  // music that now outlasts the shorter video is shortened with it, in the same version
+  try {
+    await refitBeds(p)
+  } catch (err) {
+    console.warn('[clean] fitting the music to the cut video failed', err)
+  }
   // captions on the timeline follow the cut words; saved in the same version as the cut
   try {
     refreshCaptions(p)
@@ -491,6 +503,9 @@ export async function applyEdl(
 
 /** The full pipeline (spec steps 2–10). Step 11 (auto edit) is left to the user's next turn. */
 export async function runCleanEdit(p: Project): Promise<void> {
+  // a script's words are exact: there are no ums to cut, and nothing to send anywhere
+  if (isScriptProject(p.dir))
+    throw new Error('The words in this project are already exact, so there is nothing to cut.')
   if (busy()) throw new Error('A clean edit or transcription is already running')
   task = 'clean'
   try {
@@ -559,7 +574,8 @@ export async function runTranscribeOnly(p: Project): Promise<void> {
   if (busy()) throw new Error('A clean edit or transcription is already running')
   task = 'transcribe'
   try {
-    if (readEdl(p.dir) && existsSync(join(p.dir, 'transcript.json'))) {
+    // a script's words are exact and already there; a cut video's follow the cuts
+    if ((isScriptProject(p.dir) || readEdl(p.dir)) && existsSync(join(p.dir, 'transcript.json'))) {
       setStatus({ stage: 'done', message: 'Transcript ready' })
       return
     }
@@ -690,6 +706,8 @@ async function whenFree(): Promise<void> {
  * turn is saved as one when it ends.
  */
 export async function transcribeInTurn(p: Project, opts: { force?: boolean } = {}): Promise<Heard> {
+  // the words are exact: reading them again is free, transcribing them again would only change them
+  if (opts.force && isScriptProject(p.dir)) throw new EditRefused('script')
   const source = sourcePath(p)
   if (!source) throw new EditRefused('no-source')
   const placed = await placeVoiceover(p)
@@ -729,6 +747,7 @@ export async function cleanEditInTurn(
   extra: Cut[],
   signal?: AbortSignal
 ): Promise<Heard & { cuts: Cut[]; removed: number; before: number }> {
+  if (isScriptProject(p.dir)) throw new EditRefused('script')
   const source = sourcePath(p)
   if (!source) throw new EditRefused('no-source')
   if (cleanOnTimeline(readIndex(p.dir))) throw new EditRefused('already-cut')
