@@ -44,7 +44,7 @@ const SYSTEM_RULES = [
   '6. The words come from transcribe, with their times; never guess what is said. Cutting ums, pauses and retakes goes through clean_edit; never cut the source by hand. Time titles, zooms and B-roll to the times these tools return.',
   '7. Captions of what is said in the video always go through captions_apply: adding them and every change to their style, font, size, position, colors, outline, box or animation (to match a reference image, read its look and pass it as overrides). Never write or edit the captions file by hand; Luca rebuilds it from the transcript and keeps it in sync with every cut. For a font that is not built in (one that comes with Luca, or a Google Fonts link or name the user gives), call font_add first.',
   '7b. A color look on the footage itself (cinematic, moody, warm, cool, black and white, or a named LUT) goes through lut_apply — never write data-color-grading attributes by hand.',
-  '7c. How loud a sound is (footage, voiceover, music, B-roll too loud or too quiet, music fighting the talking) goes through sound_mix — never write data-volume by hand. When you add music or a sound under speech, mix it down with sound_mix right away (about 0.2) so the words stay clear.',
+  '7c. How loud a sound is (footage, voiceover, music, B-roll too loud or too quiet, music fighting the talking) goes through sound_mix — never write data-volume by hand. When you add music or a sound under speech from a file, mix it down with sound_mix right away (about 0.2) so the words stay clear. Music and effects made with music_generate or sfx_generate are already placed at a good level under the voice: leave their level alone unless the person asks for louder or quieter.',
   `8. The person watches the video in Luca’s own preview. Never start a preview or dev server, never open a browser, window or URL, and never use browser-automation tools. To see what a frame looks like, run \`npx ${HYPERFRAMES} snapshot\`; to check an edit, run lint. If playback in Luca seems wrong, check the HTML and lint output and describe what you find; do not try to watch it yourself.`,
   '9. When the user attaches a video and asks to make theirs like it, move like it, or use it as a reference or inspiration, call reference_study with it instead of putting it on the timeline, then follow the instructions it returns.',
   '10. Sound nobody recorded is made with speech_generate (a voiceover from words, a spoken line, or a conversation between voices), music_generate (music under the video) and sfx_generate (a whoosh, a hit, an ambience). They spend the user’s ai33 credits and take from seconds to a few minutes: use them only when the user asks or the edit plan in .luca/EDIT.md switches them on, one item per request unless they ask for more (music already comes with a second take; sfx_generate takes several effects in one call), and say in one short line what you are about to make, and that it takes a minute or two when it does, before you call. The tools place the result on the timeline themselves at a good level: never write audio tags by hand and never change a level the user set. You cannot hear: report what you made, where it plays and how long it is, never how it sounds, and offer one next step (the other take, a different voice or mood). Music is instrumental and sits quietly under the voice, made after the cuts and titles so it fits the final length; a sound effect marks one moment (a title landing, a hit, a turn) and is never a texture under everything. The user’s own music always wins over making some.',
@@ -859,7 +859,10 @@ export class ProjectAgent {
   /** Allow every open permission request (the person switched to full access). */
   allowPending(): void {
     if (!this.pending.size) return
-    for (const [id, p] of this.pending) {
+    for (const [id, p] of [...this.pending]) {
+      // full access is for Luca's own steps: a card that asks to spend credits or to connect a
+      // paid account is always the person's to answer
+      if (p.ask) continue
       const part = this.current?.parts?.find(
         (x): x is Extract<ChatContentPart, { type: 'permission' }> =>
           x.type === 'permission' && x.id === id
@@ -867,8 +870,8 @@ export class ProjectAgent {
       if (part) part.resolved = 'allow'
       this.emit({ type: 'permission-resolved', id })
       p.resolve({ behavior: 'allow' })
+      this.pending.delete(id)
     }
-    this.pending.clear()
     this.pushMessage(this.current)
   }
 
