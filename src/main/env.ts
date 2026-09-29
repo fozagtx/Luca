@@ -43,12 +43,18 @@ export async function loginShellPath(): Promise<string> {
   return loginPath
 }
 
-/** Environment for child processes: login PATH, no ANTHROPIC_API_KEY (it would override the subscription login). */
+/**
+ * Environment for child processes: login PATH, no ANTHROPIC_API_KEY (it would override the
+ * subscription login), and nothing that carries the ai33 key or points at another server (a
+ * command the model runs could otherwise write `$AI33_API_KEY` into a file).
+ */
 export async function childEnv(extra: Record<string, string> = {}): Promise<NodeJS.ProcessEnv> {
   const PATH = await loginShellPath()
   const env: NodeJS.ProcessEnv = { ...process.env, PATH, ...extra }
   delete env.ANTHROPIC_API_KEY
   delete env.ELECTRON_RUN_AS_NODE
+  delete env.AI33_API_KEY
+  delete env.AI33_BASE_URL
   return env
 }
 

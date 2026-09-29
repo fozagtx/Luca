@@ -10,8 +10,8 @@ import {
   type SavedAsset
 } from '../../shared/ai33'
 import type { Project } from '../../shared/types'
-import { downloadTo, getCredits, getHealth } from '../ai33-client'
-import { collect, list, runningCount, upsert, type LedgerEntry } from '../ai33-jobs'
+import { downloadTo, getCredits, getHealth, plainError, takeUrls, thingFor } from '../ai33-client'
+import { collect, list, markCollected, runningCount, type LedgerEntry } from '../ai33-jobs'
 import type { Ai33Ctx, Ai33Tool } from '../ai33-ctx'
 import { LOW_BALANCE } from '../ai33-spend'
 import { findSaved, importGenerated, savedAssets } from '../place'
@@ -23,7 +23,24 @@ const SAVED_LIMIT = 40
 /** The biggest audio file taken from ai33, the same cap as a download made while waiting. */
 const AUDIO_MAX_BYTES = 300 * 1024 * 1024
 
+/** The longest prompt shown for a saved file: it comes from a file in the project and reaches the model. */
+const PROMPT_MAX = 80
+
 const NO_PROJECT = 'No project is open.'
+
+/** A line of text from a file or from ai33, safe to hand to the model: one line, no control characters, short. */
+const oneLine = (text: unknown, max: number): string => {
+  const flat = String(text ?? '')
+    .replace(/\p{Cf}+/gu, '')
+    .replace(/[\p{Cc}\u2028\u2029]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return flat.length > max
+    ? `${Array.from(flat)
+        .slice(0, max - 1)
+        .join('')}…`
+    : flat
+}
 
 const PLACE =
   'The files are saved in the project but not on the timeline. To put one there, call audio_place with its file and a role (voice, music or sfx); it costs no credits. Report what was saved, never how it sounds.'
@@ -81,7 +98,7 @@ function saved(projectDir: string): CallToolResult {
     const listed = all.slice(0, SAVED_LIMIT).map((a) => ({
       file: a.file,
       kind: a.kind,
-      prompt: a.prompt,
+      prompt: oneLine(a.prompt, PROMPT_MAX),
       seconds: a.seconds,
       placedId: a.placedId
     }))
@@ -113,7 +130,7 @@ const slugOf = (text: string, fallback: string): string =>
 /**
  * A finished job's files as project files. Files the background poller (or an earlier collect)
  * already saved are used as they are; otherwise they are downloaded now and checked before they
- * are kept.
+ * are kept. Only as many links as the job makes are followed, whatever ai33 lists.
  */
 async function bringIn(
   p: Project,
@@ -124,7 +141,7 @@ async function bringIn(
   const inProject = (file: string): string => relative(p.dir, resolve(p.dir, file))
   if (entry.dest.length && entry.dest.every((f) => existsSync(resolve(p.dir, f))))
     return entry.dest.map(inProject)
-  const from = urls.audios?.length ? urls.audios : urls.audio ? [urls.audio] : []
+  const from = takeUrls(entry.kind, urls)
   if (!from.length) return []
   const kind = savedKind(entry.kind)
   const have = findSaved(p.dir, kind, entry.requestHash)
@@ -188,31 +205,46 @@ async function collectJobs(
   let cost = 0
   let still: string | null = null
   const failed: string[] = []
+  // a job whose files couldn't be saved is left waiting: collecting again costs nothing
+  let kept = false
   for (const entry of wanted) {
     if (entry.state === 'failed' || entry.state === 'cancelled' || entry.state === 'lost') {
       failed.push(entry.error ?? 'ai33 couldn’t finish it')
       continue
     }
-    const outcome = await collect(entry.jobId)
+    let outcome: Awaited<ReturnType<typeof collect>>
+    try {
+      outcome = await collect(entry.jobId)
+    } catch (err) {
+      const e = plainError(err, thingFor(entry.kind))
+      if (e.kind === 'stopped') throw e
+      failed.push(e.userMessage)
+      // ai33 couldn't be reached: the job is still there; a task that ended badly is not
+      if (['network', 'server', 'rate', 'auth'].includes(e.kind)) kept = true
+      continue
+    }
     if (!outcome) {
       failed.push('ai33 has no record of it')
     } else if (outcome.state === 'working') {
       still ??= entry.jobId
     } else {
-      const got = await bringIn(p, entry, outcome.urls, signal)
-      if (!got.length) {
-        failed.push('ai33 sent nothing to save')
-        continue
+      try {
+        const got = await bringIn(p, entry, outcome.urls, signal)
+        if (!got.length) {
+          failed.push('ai33 sent nothing to save')
+          continue
+        }
+        files.push(...got)
+        cost += outcome.creditCost
+        // only now is it collected; the row keeps its files at ai33 and its cost as they were
+        markCollected(entry.jobId, got)
+      } catch (err) {
+        const e = plainError(err, thingFor(entry.kind))
+        if (e.kind === 'stopped') throw e
+        // it is made and paid for, and stays waiting to be collected again
+        failed.push(e.userMessage)
+        kept = true
       }
-      files.push(...got)
-      cost += outcome.creditCost
-      upsert({
-        ...entry,
-        state: 'done',
-        creditCost: outcome.creditCost,
-        dest: got,
-        collected: true
-      })
     }
   }
 
@@ -228,7 +260,11 @@ async function collectJobs(
     })
   if (!files.length) {
     const why = (failed[0] ?? 'ai33 couldn’t finish it').replace(/[.\s]+$/, '')
-    return fail(`${why}. Nothing was added. Say so in one short sentence and do not try again.`)
+    return fail(
+      kept
+        ? `${why}. Nothing was added. Say so in one short sentence, and that it is kept, so collecting it again later costs nothing.`
+        : `${why}. Nothing was added. Say so in one short sentence and do not try again.`
+    )
   }
 
   const left = await balance(false)
@@ -242,7 +278,11 @@ async function collectJobs(
     tell: [
       `Saved ${files.length} ${files.length === 1 ? 'file' : 'files'} (${formatCredits(cost)} credits).`,
       still ? 'Another job is still being made; it can be collected later.' : '',
-      failed.length ? 'Another job did not finish; say so once.' : ''
+      failed.length
+        ? kept
+          ? 'Another job couldn’t be saved; it is kept and can be collected again later. Say so once.'
+          : 'Another job did not finish; say so once.'
+        : ''
     ]
       .filter(Boolean)
       .join(' ')

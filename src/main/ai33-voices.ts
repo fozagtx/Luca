@@ -69,17 +69,35 @@ const words = (s: string): string =>
     .replace(/\s+/g, ' ')
     .trim()
 
+/** The longest voice name, and the longest language tag, kept from what ai33 sends. */
+const NAME_MAX = 40
+const LANGUAGE_MAX = 30
+const ID_MAX = 120
+
+/**
+ * A string from ai33 that reaches the model (a voice's name, its words): one line, no control or
+ * invisible characters, at most `max` characters. A voice's name is whatever its maker typed.
+ */
+const plain = (text: unknown, max: number): string => {
+  const flat = String(text ?? '')
+    .replace(/\p{Cf}+/gu, '')
+    .replace(/[\p{Cc}\u2028\u2029]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return flat.length > max ? Array.from(flat).slice(0, max).join('').trimEnd() : flat
+}
+
 const title = (s: string): string => s.replace(/(^|\s)(\p{L})/gu, (_m, a, b) => a + b.toUpperCase())
 
 /** A name for people: "vi-VN-HoaiMyNeural" is "Hoai My", "af_bella" is "Bella". */
 export function friendlyName(name: unknown, provider: string, id: string): string {
-  let n = typeof name === 'string' ? name.trim() : ''
-  if (!n) n = id.slice(provider.length + 1)
+  let n = typeof name === 'string' ? plain(name, 200) : ''
+  if (!n) n = plain(id.slice(provider.length + 1), 200)
   const edge = /^[a-z]{2,3}-[A-Z]{2}(?:-[a-z]+)?-([A-Za-z]+?)(?:Multilingual)?Neural$/.exec(n)
-  if (edge) return words(edge[1])
+  if (edge) return plain(words(edge[1]), NAME_MAX)
   const kokoro = /^[a-z]{2}_([a-z]+)$/.exec(n)
-  if (kokoro) return title(kokoro[1])
-  return /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/.test(n) ? title(words(n)) : n
+  if (kokoro) return plain(title(kokoro[1]), NAME_MAX)
+  return plain(/^[a-z0-9]+(?:[-_][a-z0-9]+)+$/.test(n) ? title(words(n)) : n, NAME_MAX)
 }
 
 const VENDORISH =
@@ -92,7 +110,7 @@ function aboutOf(raw: Ai33Raw, gender: Ai33Voice['gender']): string {
   const add = (v: unknown): void => {
     if (typeof v !== 'string') return
     for (const part of v.split(',')) {
-      const t = part.trim()
+      const t = plain(part, 31)
       if (t && t.length <= 30 && !VENDORISH.test(t) && !LOCALE.test(t)) found.push(t)
     }
   }
@@ -103,7 +121,7 @@ function aboutOf(raw: Ai33Raw, gender: Ai33Voice['gender']): string {
   const seen = new Set<string>()
   const descs = found.filter((d) => !seen.has(d.toLowerCase()) && seen.add(d.toLowerCase()))
   if (!descs.length && typeof raw?.description === 'string') {
-    const sentence = raw.description.trim().split(/(?<=[.!?])\s/)[0]
+    const sentence = plain(raw.description, 200).split(/(?<=[.!?])\s/)[0]
     if (sentence && sentence.length <= 60) descs.push(sentence.replace(/[.!?]+$/, ''))
   }
   const first = descs
@@ -124,12 +142,14 @@ function normalize(raw: Ai33Raw, provider: string): Listed | null {
   const rawId = raw?.voice_id ?? raw?.id
   if (rawId === undefined || rawId === null || String(rawId).trim() === '') return null
   const s = String(rawId).trim()
+  // an id is passed back to ai33 as it is, so one that isn't plain is dropped rather than cleaned
+  if (s.length > ID_MAX || /\p{C}/u.test(s)) return null
   const id = s.startsWith(`${provider}_`) ? s : `${provider}_${s}`
   const gender = genderOf(raw)
   const locale = Array.isArray(raw?.tags)
     ? raw.tags.find((t: unknown) => typeof t === 'string' && /^[a-z]{2,3}-[A-Za-z]{2,4}$/.test(t))
     : undefined
-  const language = String(raw?.language ?? raw?.locale ?? locale ?? '').trim()
+  const language = plain(raw?.language ?? raw?.locale ?? locale ?? '', LANGUAGE_MAX)
   const preview = typeof raw?.preview_url === 'string' ? raw.preview_url.trim() : ''
   const previewUrl = /^https:\/\//i.test(preview) ? preview : null
   return {

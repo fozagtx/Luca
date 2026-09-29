@@ -45,18 +45,22 @@ export function declined(tell: string): CallToolResult {
   return okJson({ ok: false, declined: true, tell })
 }
 
-/** A failure as the person and Luca should read it: no claim about credits that isn't certain. */
-function failure(err: unknown): CallToolResult {
+/**
+ * A failure as the person and Luca should read it: no claim about credits that isn't certain. The
+ * error's own words are plain (they can be shown as they are); what Luca is told to do about it
+ * is added here.
+ */
+export function failure(err: unknown): CallToolResult {
   if (err instanceof Declined) return declined(err.tell)
   const e = plainError(err)
   // Stop needs no advice; everything else says whether a retry would be charged again
   if (e.kind === 'stopped') return fail(e.userMessage)
-  if (e.charged === false)
-    return fail(
-      /nothing was charged/i.test(e.userMessage)
-        ? e.userMessage
-        : `${e.userMessage} Nothing was charged.`
-    )
+  if (e.charged === false) {
+    const said = /nothing was charged/i.test(e.userMessage)
+      ? e.userMessage
+      : `${e.userMessage} Nothing was charged.`
+    return fail(e.kind === 'credits' ? `${said} ${CREDITS_TELL}` : said)
+  }
   return fail(`${e.userMessage} ${DO_NOT_RETRY}`)
 }
 
@@ -119,6 +123,10 @@ export function okJson(first: unknown, ...more: ToolContent[]): CallToolResult {
 
 /** Appended to a billed tool's failure: a retry would be charged again. */
 export const DO_NOT_RETRY = 'Do not retry; a retry is a new charge.'
+
+/** What Luca is told to do when ai33 has too few credits. */
+export const CREDITS_TELL =
+  'Tell the user in one short sentence they can add credits with ai33, then ask again. Do not make it another way.'
 
 /** No key, and the person chose not to connect one. */
 export const NO_AI33_DECLINED =

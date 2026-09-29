@@ -116,17 +116,6 @@ function same(name: string, actual: unknown, expected: unknown): boolean {
   )
 }
 
-/** A check that exposes a real bug in src/: green while it fails, with the bug named. */
-function bug(id: string, name: string, ok: unknown, where: string): void {
-  if (ok) {
-    passed++
-    line('ok', `${name} (KNOWN-BUG ${id} no longer reproduces: drop the marker)`)
-    return
-  }
-  knownBugs.push(`${id}: ${name} (${where})`)
-  line('KNOWN-BUG', `${id}: ${name}`, where)
-}
-
 async function section(title: string, body: () => Promise<void>): Promise<void> {
   const t0 = Date.now()
   console.log(`\n${title}`)
@@ -570,7 +559,7 @@ async function sectionErrors(): Promise<void> {
     badKey?.kind === 'auth' &&
       badKey.charged === false &&
       badKey.status === 401 &&
-      badKey.userMessage === 'ai33 didn’t accept the API key. Check it in Connections (Cmd+,).',
+      badKey.userMessage === 'Your ai33 key wasn’t accepted. Check it in Connections (Cmd+,).',
     () => show(badKey)
   )
   scenario('no-credits-401')
@@ -580,7 +569,7 @@ async function sectionErrors(): Promise<void> {
     empty?.kind === 'credits' &&
       empty.charged === false &&
       empty.userMessage ===
-        'There aren’t enough ai33 credits for this (0 left). Tell the user in one short sentence they can add credits with ai33, then ask again. Do not make it another way.',
+        'There aren’t enough ai33 credits for this (0 left). You can add credits with ai33.',
     () => show(empty)
   )
   scenario('no-credits-401', { creditsEndpoint401: true })
@@ -695,14 +684,18 @@ async function sectionErrors(): Promise<void> {
     'refundLine: back / not back / unknown',
     [
       client.refundLine(1000, 1000),
+      client.refundLine(1000, 1500),
       client.refundLine(100_000, 99_500),
-      client.refundLine(1000, 900),
+      client.refundLine(12_480, 12_380),
+      client.refundLine(null, 900),
       client.refundLine(1000, null)
     ],
     [
       'Your credits are back (1,000 left).',
-      'Your credits are back (99,500 left).',
-      'ai33 returns credits for a job that fails. You have 900 credits.',
+      'Your credits are back (1,500 left).',
+      'You have 99,500 credits.',
+      'You have 12,380 credits.',
+      'You have 900 credits.',
       ''
     ]
   )
@@ -733,10 +726,10 @@ async function sectionErrors(): Promise<void> {
     )
   )
   check(
-    'the deadline says it is taking long and may still finish',
+    'the deadline says Luca stopped waiting and that asking again starts it again',
     late?.kind === 'deadline' &&
       late.userMessage ===
-        'Your voiceover is taking a long time at ai33. It may still finish; ask Luca to check it later.',
+        'Your voiceover is still not ready at ai33, so Luca stopped waiting for it. Asking again will start it again.',
     () => show(late)
   )
   pointAtFake()
@@ -863,14 +856,27 @@ async function sectionRunner(): Promise<void> {
   )
   const ledger = jobs.find(done.state === 'done' ? (jobs.get(done.jobId)?.requestHash ?? '') : '')
   check(
-    'the ledger holds it as done, collected, with its task and cost',
+    'the ledger holds it as done, not yet collected (nothing has saved its files), with its task and cost',
     !!ledger &&
       ledger.state === 'done' &&
-      ledger.collected &&
+      !ledger.collected &&
       ledger.taskId === (done.state === 'done' ? done.taskId : null) &&
       ledger.creditCost === (done.state === 'done' ? done.creditCost : -1),
     () => show(ledger)
   )
+  if (done.state === 'done') {
+    jobs.markCollected(done.jobId, ['media/generated/speech/a.mp3'])
+    const kept = jobs.get(done.jobId)
+    check(
+      'markCollected (once the files are saved) marks it collected and keeps its links and cost',
+      kept?.collected === true &&
+        kept.dest[0] === 'media/generated/speech/a.mp3' &&
+        kept.state === 'done' &&
+        kept.urls?.audio === done.urls.audio &&
+        kept.creditCost === done.creditCost,
+      () => show(kept)
+    )
+  }
   check('the ledger file is on disk', readdirSync(dir).includes('jobs.json'))
 
   // network drops in the middle of polling
@@ -977,11 +983,10 @@ async function sectionRunner(): Promise<void> {
     const timer = setTimeout(() => stop.abort(), 1500)
     const gaveUp = await thrown(client.request('/v1/credits', { signal: stop.signal }))
     clearTimeout(timer)
-    bug(
-      'B1',
+    check(
       'a 429 that always says Retry-After: 0 is given up on after a few tries, not asked again without end',
-      gaveUp?.kind === 'rate' && hits <= 10,
-      `src/main/ai33-client.ts:333-339,360-368 (retryAfterMs answers 0, so a wait of 0 never adds to \`waited\` and no try count stops the loop: ${hits} requests in 1.5 s, ended only by the abort)`
+      gaveUp?.kind === 'rate' && hits <= 5,
+      () => `${hits} requests in 1.5 s, ${show(gaveUp?.kind)}`
     )
     await t.close()
     pointAtFake()
@@ -1185,9 +1190,9 @@ async function sectionRunner(): Promise<void> {
   )
   const late = carried.state === 'working' ? await jobs.collect(carried.jobId) : null
   check(
-    'collect hands over the finished job and marks it collected',
+    'collect hands over the finished job and leaves it uncollected until its files are saved',
     late?.state === 'done' &&
-      jobs.get(carried.jobId)?.collected === true &&
+      jobs.get(carried.jobId)?.collected === false &&
       typeof late.urls.audio === 'string',
     () => show(late)
   )
@@ -2456,11 +2461,10 @@ async function sectionSpeechText(): Promise<void> {
       )
     )
   })
-  bug(
-    'B2',
+  check(
     'a long stretch with only tabs (or only no-break spaces) between the words is cut between words, never inside one',
     oddSpaces.every(Boolean),
-    'src/main/ai33-speech-text.ts:64-71 (cutAt looks only for U+0020 and \\n, then cuts at the limit, so the first part ends mid-word)'
+    () => show(oddSpaces)
   )
 
   // dialogue
