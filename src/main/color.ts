@@ -17,16 +17,19 @@ const GRADING_ATTR = 'data-color-grading'
 const readIndex = (dir: string): string => readFileSync(join(dir, 'index.html'), 'utf8')
 
 /**
- * Every <video> in index.html playing the user's own footage (media/, but not B-roll Luca added
- * — grading that would fight the look it was made with).
+ * Every <video> in index.html playing the user's own footage (the first video, which init keeps
+ * at the project root, and media/, but not B-roll Luca added — or a background, in projects from
+ * before B-roll — or animations it rendered: grading those would fight the look they were made
+ * with).
  */
 export function footageVideos(html: string): TagMatch[] {
   return findTags(html, 'video').filter((t) => {
     const src = (t.attrs.src ?? '').replace(/^\.\//, '')
     return (
-      src.startsWith('media/') &&
+      (src.startsWith('media/') || /^[^/:]+$/.test(src)) &&
       !src.startsWith('media/broll/') &&
-      !src.startsWith('media/backgrounds/')
+      !src.startsWith('media/backgrounds/') &&
+      !src.startsWith('media/remocn/')
     )
   })
 }

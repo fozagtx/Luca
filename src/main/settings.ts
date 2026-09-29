@@ -8,7 +8,6 @@ const defaults = (): Settings => ({
   projectsDir: join(homedir(), 'Movies', 'Luca'),
   theme: 'light',
   renderWorkers: 2,
-  defaultAspect: 'landscape',
   keyterms: [],
   recentProjects: [],
   panes: {},

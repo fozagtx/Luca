@@ -1,4 +1,6 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { z } from 'zod'
 import {
   BUILTIN_FONTS,
@@ -12,7 +14,7 @@ import {
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
 import { BUNDLED_LUTS } from '../shared/luts'
 import type { CaptionConfig, Cut, CutReason } from '../shared/types'
-import { applyColor, removeColor } from './color'
+import { applyColor, footageVideos, removeColor } from './color'
 import {
   addFontByName,
   addGoogleFont,
@@ -31,7 +33,7 @@ import {
 } from './clean'
 import { library } from './library'
 import { HYPERFRAMES } from './env'
-import { addBroll, hasPexelsKey, searchBackgrounds } from './pexels'
+import { addBroll, hasPexelsKey, searchBroll } from './pexels'
 import { readProject } from './projects'
 import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
 
@@ -50,6 +52,19 @@ const NO_PEXELS =
 /** Where B-roll goes: over the footage while it keeps playing, never behind it. */
 const BROLL_PLACE =
   'on a track above the footage where the thing is mentioned: full frame (object-fit: cover) for 1.5–4 s as a cutaway, in and out with a quick cut or a ~0.2 s fade, while the voice keeps playing. When the speaker should stay visible, show it as a card or picture-in-picture instead (rounded corners, a soft shadow, clear of the face). Never put it behind the footage.'
+
+/** With only a voiceover there is nothing under B-roll: it is the picture. */
+const BROLL_SCENE =
+  'where the words name it, full frame (object-fit: cover), as one of the video’s scenes: there is no footage under it, so B-roll and the other visuals (animated key words, simple diagrams) play back to back, each on screen while what it shows is said, and the frame is never empty.'
+
+/** Whether index.html plays footage the user brought, which B-roll cuts away from. */
+function hasFootage(projectDir: string): boolean {
+  try {
+    return footageVideos(readFileSync(join(projectDir, 'index.html'), 'utf8')).length > 0
+  } catch {
+    return true
+  }
+}
 
 /** A small still as an image block, or null when it can't be fetched quickly. */
 async function preview(url: string): Promise<Content | null> {
@@ -101,7 +116,9 @@ const REFUSALS: Record<EditRefused['reason'], string> = {
   'already-cut':
     'The ums and pauses are already cut: a clean edit is on the timeline, and it runs once. Call transcribe for the words as they play now. If the user wants more cut, tell them in one short sentence they can change the cuts in the Transcript tab.',
   'off-timeline':
-    'The original recording is no longer on the timeline, so there is nothing to cut. Tell the user in one short sentence.'
+    'The original recording is no longer on the timeline, so there is nothing to cut. Tell the user in one short sentence.',
+  'over-footage':
+    'The voice is a separate voiceover playing over the footage, so cutting ums and pauses out of it would pull it out of step with the picture. Do not cut it; tell the user in one short sentence that they can trim pauses themselves in the timeline.'
 }
 
 const refusal = (err: unknown): string =>
@@ -248,7 +265,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'broll_search finds free stock photos and short clips (Pexels) of things that are mentioned, ' +
       'to show as B-roll, with previews of the best ones; broll_add downloads the chosen one into ' +
       'media/broll, sized for this video, and returns the path to use and how to place it (over ' +
-      'the footage, never behind it). ' +
+      'the footage, never behind it; with only a voiceover, as the scenes themselves). ' +
       'captions_apply puts captions of what is said on the video (from the transcript) and changes ' +
       'their look; Luca keeps them in sync with every cut, so never write or edit them by hand. ' +
       'font_add adds a font that comes with Luca, or downloads a Google Fonts font, into the project ' +
@@ -372,6 +389,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         {
           query: z
             .string()
+            .min(1)
             .describe(
               'what the picture should show, in plain words: "electric car charging", "tokyo street at night", "stock market chart", "coffee beans", "person typing on a laptop"'
             ),
@@ -384,7 +402,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         async ({ query, media, limit }) => {
           if (!hasPexelsKey()) return text({ ok: false, error: NO_PEXELS })
           try {
-            const res = await searchBackgrounds({
+            const res = await searchBroll({
               query,
               media: media === 'photo' || media === 'video' ? media : 'all',
               orientation: readProject(projectDir)?.aspect ?? 'landscape'
@@ -435,13 +453,14 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
               id,
               readProject(projectDir)?.aspect ?? 'landscape'
             )
+            const where = hasFootage(projectDir) ? BROLL_PLACE : BROLL_SCENE
             return text({
               ok: true,
               ...added,
               place:
                 added.media === 'video'
-                  ? `Show it as a muted video clip ${BROLL_PLACE}`
-                  : `Show it with a slow push-in ${BROLL_PLACE}`
+                  ? `Show it as a muted video clip ${where}`
+                  : `Show it with a slow push-in ${where}`
             })
           } catch (err) {
             return text({ ok: false, error: message(err) })

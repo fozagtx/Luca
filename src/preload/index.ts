@@ -75,18 +75,10 @@ const api: LucaApi = {
     onEvent: (cb) => on(C.agentEvent, cb),
     onMessage: (cb) => on(C.agentMessage, cb)
   },
-  catalog: {
-    list: (args) => invoke(C.catalogList, args),
-    add: (name) => invoke(C.catalogAdd, name),
-    remocn: (args) => invoke(C.catalogRemocn, args),
-    remocnPreview: (name) => invoke(C.catalogRemocnPreview, name),
-    remocnStudioStatus: () => invoke(C.catalogRemocnStudioStatus),
-    remocnSetup: () => invoke(C.catalogRemocnSetup)
-  },
-  backgrounds: {
-    hasKey: () => invoke(C.backgroundsHasKey),
-    setKey: (key) => invoke(C.backgroundsSetKey, key),
-    search: (args) => invoke(C.backgroundsSearch, args)
+  broll: {
+    hasKey: () => invoke(C.brollHasKey),
+    setKey: (key) => invoke(C.brollSetKey, key),
+    search: (args) => invoke(C.brollSearch, args)
   },
   updates: {
     status: () => invoke(C.updatesStatus),

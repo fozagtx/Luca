@@ -35,7 +35,7 @@ const SYSTEM_RULES = [
   '2. Before building any visual from scratch (text, titles, lower thirds, callouts, overlays, transitions, effects, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
   `3. Add HyperFrames items with \`npx ${HYPERFRAMES} add <name> --json\`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.`,
   `4. After every edit, run \`npx ${HYPERFRAMES} lint --json\` and fix errors before replying. Always run the CLI as \`npx ${HYPERFRAMES}\` (this exact version, the one Luca uses), never plain \`npx hyperframes\`.`,
-  '5. The footage is the video and fills the frame: never put a stock or animated background behind it. Use broll_search and broll_add only to show something named in what is said (mostly in explainers, faceless and product videos) or when the user asks: a cutaway or a card over the footage for 1.5–4 s while the audio keeps playing. You may tell the user B-roll comes from Pexels.',
+  '5. When there is footage, it is the video and fills the frame: never put a stock or animated background behind it. Use broll_search and broll_add only to show something named in what is said (mostly in explainers, faceless and product videos) or when the user asks: a cutaway or a card over the footage for 1.5–4 s while the audio keeps playing. With only a voiceover, the visuals you make (B-roll, animated key words, simple diagrams) are the picture and follow what is said. You may tell the user B-roll comes from Pexels.',
   '6. The words come from transcribe, with their times; never guess what is said. Cutting ums, pauses and retakes goes through clean_edit; never cut the source by hand. Time titles, zooms and B-roll to the times these tools return.',
   '7. Captions of what is said in the video always go through captions_apply: adding them and every change to their style, font, size, position, colors, outline, box or animation (to match a reference image, read its look and pass it as overrides). Never write or edit the captions file by hand; Luca rebuilds it from the transcript and keeps it in sync with every cut. For a font that is not built in (one that comes with Luca, or a Google Fonts link or name the user gives), call font_add first.',
   '7b. A color look on the footage itself (cinematic, moody, warm, cool, black and white, or a named LUT) goes through lut_apply — never write data-color-grading attributes by hand.',
@@ -134,6 +134,19 @@ function describeInput(name: string, input: Record<string, unknown>): string {
   return JSON.stringify(input, null, 2)
 }
 
+/**
+ * A chip saved in the chat history as it is today: projects started before the editing pivot
+ * saved start-step choices (`style`) and picked backgrounds, which read as the edit and as
+ * B-roll now; catalog items can't be added from the chat any more, so theirs are dropped.
+ */
+function currentChip(chip: Chip): Chip[] {
+  const old = chip as unknown as { kind: string; label?: string }
+  if (old.kind === 'style') return [{ kind: 'edit', label: old.label ?? '' }]
+  if (old.kind === 'background') return [{ ...(chip as object), kind: 'broll' } as Chip]
+  if (old.kind === 'catalog') return []
+  return [chip]
+}
+
 let signedIn = false
 
 /** true = logged in, false = not, null = unknown (old CLI without `auth status`). */
@@ -189,6 +202,7 @@ export class ProjectAgent {
       if (!line.trim()) continue
       try {
         const m = JSON.parse(line) as ChatMessage
+        if (m.chips) m.chips = m.chips.flatMap(currentChip)
         // a turn cut off by a crash or quit was saved mid-step; those steps can't finish now
         for (const p of m.parts ?? []) {
           if (p.type === 'tool' && p.status === 'running') p.status = 'error'
@@ -426,8 +440,6 @@ export class ProjectAgent {
           type: 'image',
           source: { type: 'base64', media_type: 'image/png', data: chip.png }
         })
-      } else if (chip.kind === 'catalog') {
-        lines.push(`Catalog item: ${chip.name} (${chip.type}, ${chip.source ?? 'hyperframes'})`)
       } else if (chip.kind === 'clip') {
         lines.push(
           `Timeline clip ${chip.clipId} on track ${chip.track}, ${chip.start.toFixed(2)}s–${chip.end.toFixed(2)}s`
@@ -437,7 +449,7 @@ export class ProjectAgent {
       } else if (chip.kind === 'broll') {
         const len = chip.duration ? `, ${Math.round(chip.duration)}s` : ''
         lines.push(
-          `B-roll the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with broll_add {"id":"${chip.id}"} and show it at the playhead time (or where it best fits what is being said around then) as a cutaway over the footage, unless they ask for something else.`
+          `B-roll the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with broll_add {"id":"${chip.id}"} and show it at the playhead time (or where it best fits what is being said around then) as broll_add says to place it (a cutaway over the footage, or with only a voiceover a scene of its own), unless they ask for something else.`
         )
       } else if (chip.kind === 'edit') {
         // a start-card choice: the full plan is in the first request's brief (and .luca/EDIT.md)
@@ -456,16 +468,22 @@ export class ProjectAgent {
     if (turn.context && typeof turn.context === 'object') {
       const ctx = turn.context as { time?: number; note?: string; voice?: boolean }
       if (typeof ctx.time === 'number') lines.push(`Playhead is at ${ctx.time.toFixed(2)}s.`)
-      // technical detail the UI keeps out of the visible message (e.g. a catalog snippet)
+      // detail the UI keeps out of the visible message (e.g. the start brief)
       if (typeof ctx.note === 'string' && ctx.note.trim()) lines.push(ctx.note.trim())
       if (ctx.voice)
         lines.push(
           'The user said this out loud in voice mode (speech recognition, so allow for misheard words) and your reply will be read aloud: answer in one or two short spoken sentences, with no markdown, lists or code.'
         )
     }
-    if (existsSync(join(lucaDir(this.project.dir), 'LOOK.md')))
+    const own = lucaDir(this.project.dir)
+    if (existsSync(join(own, 'LOOK.md')))
       lines.push('An active Look is set: read .luca/LOOK.md and follow it for every visual choice.')
-    else if (existsSync(join(lucaDir(this.project.dir), 'EDIT.md')))
+    // projects started before video types kept the look picked at the start here
+    else if (existsSync(join(own, 'STYLE.md')))
+      lines.push(
+        'The user picked a look when they started this video (.luca/STYLE.md): keep new titles, text and motion in that look unless they ask for something else.'
+      )
+    if (existsSync(join(own, 'EDIT.md')))
       lines.push(
         'The user described this video when they started (.luca/EDIT.md): keep new edits in line with it unless they ask otherwise.'
       )
@@ -702,8 +720,8 @@ export class ProjectAgent {
                     ...part.activity,
                     done:
                       r.total > 0
-                        ? `Found ${r.total} component${r.total === 1 ? '' : 's'} for “${q}”`
-                        : `No components matched “${q}”`
+                        ? `Found ${r.total} option${r.total === 1 ? '' : 's'} for “${q}”`
+                        : `Nothing ready-made for “${q}”`
                   }
                 }
               } catch {
