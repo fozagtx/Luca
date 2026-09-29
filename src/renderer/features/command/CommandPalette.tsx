@@ -7,6 +7,7 @@ import {
   FolderOpen,
   History,
   House,
+  ImagePlay,
   Mic,
   Moon,
   RefreshCw,
@@ -14,8 +15,7 @@ import {
   Plus,
   Scissors,
   Sun,
-  Upload,
-  Wallpaper
+  Upload
 } from 'lucide-react'
 import type { ReactElement } from 'react'
 import { luca } from '../../lib/luca'
@@ -81,10 +81,15 @@ export function CommandPalette(): ReactElement {
       needsProject: true
     },
     {
-      id: 'background',
-      label: 'Choose a background…',
-      icon: <Wallpaper size={14} strokeWidth={1.5} />,
-      run: () => ui.setBackgrounds(true)
+      id: 'broll',
+      label: 'Find B-roll…',
+      shortcut: '⌘2',
+      icon: <ImagePlay size={14} strokeWidth={1.5} />,
+      run: () => {
+        ui.setTab('broll')
+        requestAnimationFrame(() => document.getElementById('broll-search')?.focus())
+      },
+      needsProject: true
     },
     {
       id: 'look',

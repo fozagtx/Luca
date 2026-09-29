@@ -1,19 +1,13 @@
-import { ArrowUpRight, Wallpaper } from 'lucide-react'
+import { ArrowUpRight, ImagePlay } from 'lucide-react'
 import { useState, type ReactElement } from 'react'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { cn } from '../../lib/cn'
-import { useBackgrounds } from '../../stores/backgrounds'
+import { useBroll } from '../../stores/broll'
 
 /** Connects Pexels with the person's own free API key (checked with Pexels, kept with safeStorage). */
-export function PexelsKeyCard({
-  className,
-  autoFocus
-}: {
-  className?: string
-  autoFocus?: boolean
-}): ReactElement {
-  const saveKey = useBackgrounds((s) => s.saveKey)
+export function PexelsKeyCard({ className }: { className?: string }): ReactElement {
+  const saveKey = useBroll((s) => s.saveKey)
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -33,18 +27,16 @@ export function PexelsKeyCard({
   return (
     <div className={cn('card p-3 text-[11.5px] leading-[1.45] text-text-2', className)}>
       <div className="flex items-center gap-1.5 text-[12px] font-medium text-text">
-        <Wallpaper size={13} className="text-text-3" /> Backgrounds from Pexels
+        <ImagePlay size={13} className="text-text-3" /> B-roll from Pexels
       </div>
       <p className="mt-1">
-        Pexels is a free library of photos and short videos. Connect it with your free API key to
-        browse backgrounds here, put one behind your video, and let Luca choose them for you. The
-        key stays on this Mac.
+        Connect Pexels with a free API key to find B-roll photos and clips of what you talk about,
+        here or by asking Luca. The key stays on this Mac.
       </p>
       <div className="mt-2 flex gap-1.5">
         <Input
           type="password"
           value={key}
-          autoFocus={autoFocus}
           onChange={(e) => setKey(e.target.value)}
           placeholder="Pexels API key"
           aria-label="Pexels API key"

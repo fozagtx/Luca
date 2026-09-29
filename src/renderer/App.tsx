@@ -16,7 +16,6 @@ import { CommandPalette } from './features/command/CommandPalette'
 import { GotoSheet } from './features/command/GotoSheet'
 import { ShortcutsSheet } from './features/command/ShortcutsSheet'
 import { useShortcuts } from './features/command/useShortcuts'
-import { BackgroundSheet } from './features/backgrounds/BackgroundSheet'
 import { CaptionStudio } from './features/captions/CaptionStudio'
 import { ColorStudio } from './features/color/ColorStudio'
 import { ExportBar, ExportSheet } from './features/export/ExportSheet'
@@ -113,7 +112,7 @@ export default function App(): ReactElement {
   useEffect(() => {
     void init()
   }, [init])
-  // Home belongs to the start card and its steps: the sidebar stays out of the way there
+  // Home belongs to the start card: the sidebar stays out of the way there
   useEffect(() => {
     if (!hasProject) setSidebar(false)
   }, [hasProject, setSidebar])
@@ -239,7 +238,6 @@ export default function App(): ReactElement {
       <ShortcutsSheet />
       <CaptionStudio />
       <ColorStudio />
-      <BackgroundSheet />
       <UpdatesSheet />
       <Toaster
         position="top-center"

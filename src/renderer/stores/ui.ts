@@ -2,7 +2,7 @@ import type { Theme } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 
-export type SidebarTab = 'inspiration' | 'catalog' | 'transcript' | 'looks' | 'backgrounds'
+export type SidebarTab = 'transcript' | 'broll' | 'looks'
 
 type UiStore = {
   sidebarOpen: boolean
@@ -20,8 +20,6 @@ type UiStore = {
   captionsOpen: boolean
   colorOpen: boolean
   shortcutsOpen: boolean
-  /** The background picker sheet. */
-  backgroundsOpen: boolean
   theme: Theme
   setTheme: (t: Theme, persist?: boolean) => void
   toggleTheme: () => void
@@ -33,7 +31,6 @@ type UiStore = {
   setCaptions: (open: boolean) => void
   setColor: (open: boolean) => void
   setShortcuts: (open: boolean) => void
-  setBackgrounds: (open: boolean) => void
   setTab: (t: SidebarTab) => void
   setPalette: (open: boolean) => void
   setHistory: (open: boolean) => void
@@ -45,10 +42,10 @@ type UiStore = {
 }
 
 export const useUi = create<UiStore>((set, get) => ({
-  // hidden until asked for (⇧⌘S): new videos get their look from the start steps instead
+  // hidden until asked for (⇧⌘S): Luca makes the first edit from what was picked on the start card
   sidebarOpen: false,
   chatOpen: true,
-  tab: 'inspiration',
+  tab: 'transcript',
   paletteOpen: false,
   historyOpen: false,
   exportOpen: false,
@@ -60,7 +57,6 @@ export const useUi = create<UiStore>((set, get) => ({
   captionsOpen: false,
   colorOpen: false,
   shortcutsOpen: false,
-  backgroundsOpen: false,
   theme: 'light',
   setTheme: (theme, persist = true) => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
@@ -76,7 +72,6 @@ export const useUi = create<UiStore>((set, get) => ({
   setCaptions: (captionsOpen) => set({ captionsOpen }),
   setColor: (colorOpen) => set({ colorOpen }),
   setShortcuts: (shortcutsOpen) => set({ shortcutsOpen }),
-  setBackgrounds: (backgroundsOpen) => set({ backgroundsOpen }),
   setTab: (tab) => set({ tab, sidebarOpen: true }),
   setPalette: (paletteOpen) => set({ paletteOpen }),
   setHistory: (historyOpen) => set({ historyOpen }),
