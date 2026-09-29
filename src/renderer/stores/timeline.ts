@@ -118,7 +118,7 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
     if (!t) return false
     const patch = (
       fn: (c: Clip) => Clip,
-      refs = new Set(e.op === 'mute' ? e.refs : [e.ref])
+      refs = new Set(e.op === 'mute' || e.op === 'volume' ? e.refs : [e.ref])
     ): Timeline => ({
       ...t,
       tracks: t.tracks.map((tr) => ({
@@ -128,6 +128,7 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
     })
     let optimistic: Timeline | null = null
     if (e.op === 'mute') optimistic = patch((c) => ({ ...c, volume: e.muted ? 0 : 1 }))
+    else if (e.op === 'volume') optimistic = patch((c) => ({ ...c, volume: e.volume }))
     else if (e.op === 'move')
       optimistic = patch((c) => ({ ...c, start: e.time, end: e.time + (c.end - c.start) }))
     else if (e.op === 'trim')

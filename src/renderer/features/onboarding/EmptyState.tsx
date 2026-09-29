@@ -1,6 +1,6 @@
 import { Menu } from '@base-ui/react/menu'
-import { EDIT_STEPS, VIDEO_TYPES, videoType } from '@shared/edits'
-import type { Aspect, VideoTypeId } from '@shared/types'
+import { editStep, STYLES, VIDEO_TYPES, videoType } from '@shared/edits'
+import type { Aspect, StyleId, VideoTypeId } from '@shared/types'
 import {
   AudioLines,
   Check,
@@ -11,7 +11,6 @@ import {
   ImagePlus,
   Lightbulb,
   MoreHorizontal,
-  Package,
   Plus,
   Rocket,
   Smartphone,
@@ -44,10 +43,18 @@ import { luca } from '../../lib/luca'
 import { useAi33 } from '../../stores/ai33'
 import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
-import { IMAGES_ONLY, isStopped, kindOf, useStart, type Attachment } from '../../stores/start'
+import {
+  attachmentOf,
+  IMAGES_ONLY,
+  isStopped,
+  kindOf,
+  useStart,
+  type Attachment
+} from '../../stores/start'
 import { Ai33KeyCard } from '../ai33/Ai33KeyCard'
 import { AssemblyAiKeyCard } from './AssemblyAiKeyCard'
 import { CreateProgressList } from './CreateProgress'
+import { HomeGradient } from './HomeGradient'
 import { MusicNote, ScriptFields, ScriptGoButton, StartAsk } from './ScriptPanel'
 
 const ASPECTS: SegmentedItem<Aspect>[] = [
@@ -56,20 +63,32 @@ const ASPECTS: SegmentedItem<Aspect>[] = [
   { id: 'square', label: '1:1' }
 ]
 
+const STYLE_ITEMS: SegmentedItem<StyleId>[] = STYLES.map((s) => ({
+  id: s.id,
+  label: s.name
+}))
+
 const TYPE_ICONS: Record<VideoTypeId, LucideIcon> = {
-  talking: Smartphone,
-  explainer: Lightbulb,
-  founder: Rocket,
-  product: Package
+  launch: Rocket,
+  concept: Lightbulb,
+  tutorial: Clapperboard,
+  talking: Smartphone
 }
 
 export function EmptyState(): ReactElement {
   return (
-    <div className="scroll h-full">
-      <div className="flex min-h-full flex-col items-center px-8 py-10">
-        <div className="my-auto flex w-full max-w-[760px] flex-col gap-10">
-          <StartCard />
-          <Recent />
+    <div className="relative h-full overflow-hidden">
+      {/* the gradient and scrim sit outside the scroller, so they fill the pane at any scroll */}
+      <HomeGradient />
+      {/* a light scrim keeps the gradient soft behind the cards; legibility is on the blocks */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-bg/25" />
+      <div className="scroll relative h-full">
+        <div className="flex min-h-full flex-col items-center px-8">
+          {/* top-aligned: opening the form or switching a style never re-centers the card */}
+          <div className="flex w-full max-w-[760px] flex-col gap-8 pt-8 pb-16">
+            <StartCard />
+            <Recent />
+          </div>
         </div>
       </div>
     </div>
@@ -87,11 +106,14 @@ function StartCard(): ReactElement {
   const openProject = useProject((s) => s.open)
   const loading = useProject((s) => s.loading)
   const [over, setOver] = useState(false)
+  const [briefOpen, setBriefOpen] = useState(false)
   const [since, setSince] = useState<number | undefined>()
   const kind = kindOf(files)
   const videos = files.filter((f) => f.kind === 'video')
   // the video (or voiceover) the project starts from, named on the progress card
   const lead = videos[0] ?? files.find((f) => f.kind === 'audio')
+  // the edit form shows for media, or once "Start from a brief" opens it for words only
+  const formOpen = kind !== 'brief' || briefOpen
 
   const go = async (): Promise<void> => {
     if (busy || !(scriptMode ? scripted : kind)) return
@@ -119,19 +141,20 @@ function StartCard(): ReactElement {
     // isolate: the glow while the project starts sits behind the card. data-space: voices, chips
     // and "Say it right" are chosen with Space here (see useShortcuts)
     <section data-space className="isolate flex flex-col items-center gap-6">
-      <div className="flex flex-col items-center gap-3 text-center">
+      {/* the hero sits straight on the gradient: white type with a soft shadow reads in both themes */}
+      <div className="flex w-full flex-col items-center gap-3 pt-2 text-center">
         <img
           src={logo}
           alt=""
           draggable={false}
           className="size-16 rounded-[16px] shadow-[0_10px_24px_rgba(0,0,0,0.18)] transition-transform duration-300 hover:scale-105 hover:-rotate-2"
         />
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-text">
-          Drop your video. Luca edits it.
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-white [text-shadow:0_1px_12px_rgba(0,0,0,0.35)]">
+          Describe it. Luca makes the explainer.
         </h1>
-        <p className="max-w-[480px] text-[13px] leading-relaxed text-text-2">
-          Talking to camera, a faceless explainer, a founder update or a product demo. Short or
-          long, portrait or landscape.
+        <p className="max-w-[520px] text-[13px] leading-relaxed text-white/85 [text-shadow:0_1px_12px_rgba(0,0,0,0.35)]">
+          Launch films, concept explainers, tutorials and talking videos. Say what it’s about, pick
+          motion design or a classic edit, and Luca makes the whole thing.
         </p>
       </div>
 
@@ -167,11 +190,11 @@ function StartCard(): ReactElement {
                 ? 'Starting from your script'
                 : videos.length > 1
                   ? `Starting from your ${videos.length} videos`
-                  : `Starting from ${lead?.name ?? 'your video'}`}
+                  : `Starting from ${lead?.name ?? 'your brief'}`}
             </div>
             <StartAsk />
             <CreateProgressList
-              kind={kind ?? 'video'}
+              kind={kind}
               script={scriptMode}
               progress={progress}
               seen={seen}
@@ -194,12 +217,12 @@ function StartCard(): ReactElement {
           <div className={cn(over && 'opacity-0')}>
             <EditForm script onGo={() => void go()} />
           </div>
-        ) : kind ? (
+        ) : formOpen ? (
           <div className={cn(over && 'opacity-0')}>
             <EditForm onGo={() => void go()} />
           </div>
         ) : (
-          // nothing to edit yet: the drop zone (images wait here for a video or a voiceover)
+          // nothing to make yet: the drop zone, or start from the brief alone
           <div
             className={cn(
               'flex flex-col items-center gap-4 px-6 py-10 text-center',
@@ -214,14 +237,21 @@ function StartCard(): ReactElement {
               </span>
             )}
             <div className="flex flex-col gap-1">
-              <div className="text-[15px] font-semibold text-text">Drop a video or a voiceover</div>
+              <div className="text-[15px] font-semibold text-text">
+                Drop a video, a voiceover or screenshots — or just describe it
+              </div>
               <div className="text-[12px] text-text-3">
-                Several clips play back to back. A logo or screenshots can come along too.
+                Footage plays back to back; a logo, screenshots and music can come along.
               </div>
             </div>
-            <Button size="lg" onClick={() => void pickFiles()}>
-              Choose files
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="lg" onClick={() => void pickFiles()}>
+                Choose files
+              </Button>
+              <Button size="lg" variant="ghost" onClick={() => setBriefOpen(true)}>
+                Start from a brief
+              </Button>
+            </div>
             <Button variant="secondary" size="md" onClick={() => setScriptMode(true)}>
               No footage? Start from a script
             </Button>
@@ -292,30 +322,49 @@ function StartError({ className }: { className?: string }): ReactElement | null 
 }
 
 /**
- * With footage in (or a script to record): what kind of video it is, what Luca does, notes, the
- * shape, and go.
+ * The card's form: the style, the kind of video, a reference, the steps, the brief, and go. With a
+ * script to record it leads with the script fields.
  */
 function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean }): ReactElement {
-  const { files, footage, aspect, aspectFrom, edit, busy } = useStart()
-  const { setAspect, setType, toggleStep, setNotes } = useStart()
+  const { files, footage, aspect, aspectFrom, edit, busy, reference } = useStart()
+  const { setAspect, setType, setStyle, toggleStep, setNotes, setReference, clearReference } =
+    useStart()
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [keyLater, setKeyLater] = useState(false)
   const hasAi33 = useAi33((s) => s.hasKey)
   // a script typed before footage was dropped is kept, out of sight
   const savedScript = useStart((s) => !script && !!s.script.text.trim())
   const ref = useRef<HTMLTextAreaElement>(null)
-  const voiceOnly = script || kindOf(files) === 'audio'
-  // a voiceover has no picture to zoom into or put a name on, and a script has its words already:
-  // there are no ums or pauses to cut
-  const steps = EDIT_STEPS.filter(
-    (s) => !(voiceOnly && s.needsPicture) && !(script && s.id === 'cut')
-  )
+  const kind = kindOf(files)
+  const brief = kind === 'brief'
+  // a voiceover, a brief or a script has no picture to zoom into or put a name on, and a script has
+  // its words already: there are no ums or pauses to cut
+  const voiceOnly = script || kind !== 'video'
+  const steps = videoType(edit.type)
+    .steps[edit.style].map(editStep)
+    .filter((s) => !(voiceOnly && s.needsPicture) && !(script && s.id === 'cut'))
   // the words of a script are known, so nothing waits for AssemblyAI: its card never comes up
   const needsWords = !script && steps.some((s) => s.needsWords && edit.steps.includes(s.id))
   // steps that make something with ai33 and are switched on
   const making = steps.filter((s) => s.needsAi33 && edit.steps.includes(s.id))
   const shape = aspectFrom ? footage[aspectFrom]?.aspect : undefined
   const notes = edit.notes ?? ''
+  const style = STYLES.find((s) => s.id === edit.style) ?? STYLES[0]
+
+  const pickReference = async (): Promise<void> => {
+    const paths = await luca.project.pickMedia()
+    const video = paths.find((p) => attachmentOf(p)?.kind === 'video')
+    if (video) setReference(video)
+  }
+  const dropReference = (e: DragEvent): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    const video = [...e.dataTransfer.files]
+      .map((f) => luca.project.pathForFile(f))
+      .filter(Boolean)
+      .find((p) => attachmentOf(p)?.kind === 'video')
+    if (video) setReference(video)
+  }
 
   useEffect(() => {
     // not for a script: its words exist, so the answer would change nothing
@@ -359,11 +408,24 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
           </Field>
         ) : null}
 
+        <Field label="How should it be made?">
+          <div className="flex flex-col gap-1.5">
+            <Segmented
+              items={STYLE_ITEMS}
+              value={edit.style}
+              onChange={setStyle}
+              ariaLabel="Style"
+              className="h-8 w-fit"
+            />
+            <span className="text-[11px] leading-[1.4] text-text-3">{style.blurb}</span>
+          </div>
+        </Field>
+
         <Field label="What kind of video is it?">
           <div
             role="radiogroup"
             aria-label="What kind of video is it?"
-            className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2"
+            className="grid grid-cols-2 gap-2 md:grid-cols-4"
           >
             {VIDEO_TYPES.map((t) => {
               const Icon = TYPE_ICONS[t.id]
@@ -376,7 +438,7 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
                   aria-checked={on}
                   onClick={() => setType(t.id)}
                   className={cn(
-                    'flex flex-col gap-2 rounded-[12px] border p-2.5 text-left transition-[background-color,border-color,box-shadow] duration-150',
+                    'flex h-full flex-col gap-2 rounded-[12px] border p-2.5 text-left transition-[background-color,border-color,box-shadow] duration-150',
                     on
                       ? 'border-accent bg-secondary shadow-[0_0_0_1px_var(--accent)]'
                       : 'border-border bg-bg hover:border-border-strong'
@@ -392,7 +454,7 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
                       <Icon size={14} strokeWidth={1.8} />
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-[12.5px] font-medium text-text">
+                      <span className="block text-[12.5px] font-medium whitespace-normal text-text">
                         {t.name}
                       </span>
                       <span className="block truncate text-[10.5px] text-text-3">{t.who}</span>
@@ -407,8 +469,44 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
           </div>
         </Field>
 
+        <Field label="Reference video (optional)">
+          <div className="flex flex-col gap-1.5">
+            <div className="text-[11px] leading-[1.4] text-text-3">
+              Luca studies its motion and structure and builds yours the same way
+            </div>
+            {reference ? (
+              <div className="flex items-center gap-2 rounded-[10px] border border-border bg-bg px-2.5 py-2">
+                <Clapperboard size={14} strokeWidth={1.7} className="shrink-0 text-text-3" />
+                <span className="min-w-0 flex-1 truncate text-[12px] text-text">
+                  {reference.split('/').pop()}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Remove the reference"
+                  onClick={clearReference}
+                  className="flex size-5 shrink-0 items-center justify-center rounded-full text-text-3 transition-colors hover:bg-hover hover:text-text"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void pickReference()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={dropReference}
+                className="flex items-center justify-center gap-2 rounded-[10px] border border-dashed border-border-strong px-3 py-2.5 text-[12px] text-text-3 transition-colors hover:border-accent hover:text-accent"
+              >
+                <Film size={14} strokeWidth={1.7} />
+                Pick a video or drop it here
+              </button>
+            )}
+          </div>
+        </Field>
+
         <Field label="What Luca will do">
-          <div className="flex flex-wrap gap-1.5">
+          {/* two chip rows reserved: Motion and Classic lists differ in length, the card doesn't move */}
+          <div className="flex min-h-[68px] flex-wrap content-start gap-1.5">
             {steps.map((s) => {
               const on = edit.steps.includes(s.id)
               return (
@@ -434,7 +532,7 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
               )
             })}
           </div>
-          {needsWords && hasKey === false && !keyLater ? (
+          {needsWords && !brief && hasKey === false && !keyLater ? (
             <AssemblyAiKeyCard
               className="fade-in mt-1"
               autoFocus={false}
@@ -457,17 +555,25 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
           {making.some((s) => s.id === 'music') ? <MusicNote /> : null}
         </Field>
 
-        <Field label="Anything Luca should know?">
-          <textarea
-            ref={ref}
-            id="start-notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            onKeyDown={onKey}
-            placeholder={videoType(edit.type).example}
-            rows={2}
-            className="block w-full resize-none rounded-[10px] border border-border bg-bg px-3 py-2.5 text-[13px] leading-[20px] text-text transition-colors placeholder:text-text-3 focus:border-border-strong"
-          />
+        <Field label={brief ? 'Your brief' : 'About the video'}>
+          <div className="flex flex-col gap-1.5">
+            <textarea
+              ref={ref}
+              id="start-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onKeyDown={onKey}
+              placeholder={videoType(edit.type).example}
+              rows={brief ? 3 : 2}
+              required={brief}
+              className="block w-full resize-none rounded-[10px] border border-border bg-bg px-3 py-2.5 text-[13px] leading-[20px] text-text transition-colors placeholder:text-text-3 focus:border-border-strong"
+            />
+            {brief ? (
+              <span className="text-[11px] leading-[1.4] text-text-3">
+                Paste the script or describe the product; a link helps
+              </span>
+            ) : null}
+          </div>
         </Field>
       </div>
 
@@ -493,7 +599,7 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
         ) : (
           <GenerateButton
             className="ml-auto"
-            label="Edit my video"
+            label="Make it"
             generatingLabel="Starting"
             generating={busy}
             disabled={busy}
@@ -595,9 +701,11 @@ function Recent(): ReactElement | null {
   if (recent.length === 0 || busy) return null
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between px-0.5">
-        <h2 className="text-[13px] font-semibold text-text">Recent</h2>
-        <span className="text-[11px] text-text-3">
+      <div className="flex items-baseline justify-between px-2 py-1">
+        <h2 className="text-[13px] font-semibold text-white [text-shadow:0_1px_12px_rgba(0,0,0,0.35)]">
+          Recent
+        </h2>
+        <span className="text-[11px] text-white/70 [text-shadow:0_1px_12px_rgba(0,0,0,0.35)]">
           {recent.length} project{recent.length === 1 ? '' : 's'}
         </span>
       </div>

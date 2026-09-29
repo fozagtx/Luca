@@ -11,13 +11,7 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
-import type {
-  AddedBackground,
-  Aspect,
-  Background,
-  BackgroundResults,
-  BackgroundSearch
-} from '../shared/types'
+import type { AddedBroll, Aspect, BrollItem, BrollResults, BrollSearch } from '../shared/types'
 import { SIZE } from './projects'
 import { getSecret, setSecret } from './secrets'
 
@@ -29,10 +23,8 @@ type PexelsPhoto = {
   height: number
   url: string
   alt: string | null
-  avg_color: string | null
   photographer: string
-  photographer_url: string
-  src: { original: string; large: string; medium: string }
+  src: { original: string }
 }
 
 type PexelsVideoFile = {
@@ -50,7 +42,7 @@ type PexelsVideo = {
   url: string
   image: string
   duration: number
-  user: { name: string; url: string }
+  user: { name: string }
   video_files: PexelsVideoFile[]
 }
 
@@ -173,7 +165,7 @@ function pickFile(files: PexelsVideoFile[], minShort: number): PexelsVideoFile |
   return mp4.find((f) => short(f) >= minShort) ?? mp4[mp4.length - 1] ?? null
 }
 
-function fromPhoto(p: PexelsPhoto, orientation: Aspect): Background {
+function fromPhoto(p: PexelsPhoto, orientation: Aspect): BrollItem {
   const [tw, th] = THUMB[orientation]
   return {
     id: `photo:${p.id}`,
@@ -182,15 +174,11 @@ function fromPhoto(p: PexelsPhoto, orientation: Aspect): Background {
     height: p.height,
     title: titleOf(p.url, p.alt, 'Photo'),
     thumb: sized(p.src.original, tw, th),
-    poster: p.src.large,
-    color: p.avg_color,
-    author: p.photographer,
-    authorUrl: p.photographer_url,
-    url: p.url
+    author: p.photographer
   }
 }
 
-function fromVideo(v: PexelsVideo, orientation: Aspect): Background {
+function fromVideo(v: PexelsVideo, orientation: Aspect): BrollItem {
   const [tw, th] = THUMB[orientation]
   return {
     id: `video:${v.id}`,
@@ -200,12 +188,8 @@ function fromVideo(v: PexelsVideo, orientation: Aspect): Background {
     duration: v.duration,
     title: titleOf(v.url, null, 'Video'),
     thumb: sized(v.image, tw, th),
-    poster: v.image,
     preview: pickFile(v.video_files, 540)?.link,
-    color: null,
-    author: v.user.name,
-    authorUrl: v.user.url,
-    url: v.url
+    author: v.user.name
   }
 }
 
@@ -224,38 +208,31 @@ function remember(photos: PexelsPhoto[], videos: PexelsVideo[]): void {
 }
 
 /** Photos and short videos for plain words, interleaved (video first: they move). */
-export async function searchBackgrounds(s: BackgroundSearch): Promise<BackgroundResults> {
+export async function searchBroll(s: BrollSearch): Promise<BrollResults> {
   const media = s.media ?? 'all'
   const page = Math.max(1, Math.floor(s.page ?? 1))
-  const query = s.query?.trim() ?? ''
+  const query = s.query.trim()
+  if (!query) throw new Error('Say what the B-roll should show.')
   const orientation = s.orientation ?? 'landscape'
   const per = media === 'all' ? 12 : 24
   const [photos, videos] = await Promise.all([
     media === 'video'
       ? null
-      : query
-        ? get<PhotoPage>('/v1/search', { query, orientation, per_page: per, page })
-        : get<PhotoPage>('/v1/curated', { per_page: per, page }),
+      : get<PhotoPage>('/v1/search', { query, orientation, per_page: per, page }),
     media === 'photo'
       ? null
-      : query
-        ? get<VideoPage>('/videos/search', {
-            query,
-            orientation,
-            per_page: per,
-            page,
-            max_duration: MAX_VIDEO_SECONDS
-          })
-        : get<VideoPage>('/videos/popular', {
-            per_page: per,
-            page,
-            max_duration: MAX_VIDEO_SECONDS
-          })
+      : get<VideoPage>('/videos/search', {
+          query,
+          orientation,
+          per_page: per,
+          page,
+          max_duration: MAX_VIDEO_SECONDS
+        })
   ])
   const ps = photos?.photos ?? []
   const vs = (videos?.videos ?? []).filter(usable)
   remember(ps, vs)
-  const items: Background[] = []
+  const items: BrollItem[] = []
   for (let i = 0; i < Math.max(ps.length, vs.length); i++) {
     if (vs[i]) items.push(fromVideo(vs[i], orientation))
     if (ps[i]) items.push(fromPhoto(ps[i], orientation))
@@ -303,7 +280,7 @@ function credit(folder: string, line: string): void {
  * Download B-roll into the project's media/broll, sized for its composition: a photo cropped to
  * the frame, a video as the smallest file that fills it. Files already there are reused.
  */
-export async function addBroll(dir: string, id: string, aspect: Aspect): Promise<AddedBackground> {
+export async function addBroll(dir: string, id: string, aspect: Aspect): Promise<AddedBroll> {
   const { photo, video } = await lookup(id)
   const [w, h] = SIZE[aspect]
   const folder = join(dir, 'media', 'broll')

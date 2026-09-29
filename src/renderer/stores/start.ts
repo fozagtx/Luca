@@ -7,6 +7,7 @@ import type {
   FootageInfo,
   StartEdit,
   StartKind,
+  StyleId,
   VideoTypeId
 } from '@shared/types'
 import { create } from 'zustand'
@@ -32,18 +33,20 @@ export function attachmentOf(path: string): Attachment | null {
   return null
 }
 
-/** What the files start: footage, a voiceover, or nothing yet (no files, or images alone). */
-export function kindOf(files: Attachment[]): StartKind | null {
+/** What the files start: footage, a voiceover, or only the brief (no files, or images alone). */
+export function kindOf(files: Attachment[]): StartKind {
   if (files.some((f) => f.kind === 'video')) return 'video'
   if (files.some((f) => f.kind === 'audio')) return 'audio'
-  return null
+  return 'brief'
 }
 
-/** Nothing to edit yet. */
+/** Nothing to describe a video with yet. */
 export const NO_FOOTAGE = 'Add your video first: drop it on the start card.'
 /** Images come along with a video or a voiceover, but can't start one. */
 export const IMAGES_ONLY =
   'Add a video or a voiceover too; images come along as extras, like a logo or screenshots.'
+/** A brief start needs the words. */
+export const NO_BRIEF = 'Tell Luca what the video is about first.'
 
 /** The script panel has nothing to record yet. */
 export const NO_SCRIPT = 'Paste your script first.'
@@ -119,9 +122,19 @@ export function scriptName(text: string): string {
   return name || 'Script video'
 }
 
-/** A video type with the steps it suggests, keeping the notes. */
-function editOf(type: VideoTypeId, notes?: string): StartEdit {
-  return { type, steps: [...videoType(type).steps], ...(notes ? { notes } : {}) }
+/** The type picked for them until they choose: footage talks, a voiceover explains, words launch. */
+export function defaultType(kind: StartKind): VideoTypeId {
+  return kind === 'video' ? 'talking' : kind === 'audio' ? 'concept' : 'launch'
+}
+
+/** A video type and style with the steps they suggest, keeping the notes. */
+function editOf(type: VideoTypeId, style: StyleId, notes?: string): StartEdit {
+  return {
+    type,
+    style,
+    steps: [...videoType(type).steps[style]],
+    ...(notes ? { notes } : {})
+  }
 }
 
 type StartStore = {
@@ -134,9 +147,9 @@ type StartStore = {
   /** The video the aspect was read from (the first one); whether the person then picked one. */
   aspectFrom: string | null
   aspectPicked: boolean
-  /** What kind of video it is, what Luca does to it and the person's notes. */
+  /** What kind of video it is, how Luca builds it, what Luca does to it and the brief. */
   edit: StartEdit
-  /** The person picked the type; until then it follows the files (a voiceover alone: explainer). */
+  /** The person picked the type; until then it follows the files (a voiceover alone: concept). */
   typePicked: boolean
   /** The start card asks for a script to record instead of footage. */
   scriptMode: boolean
@@ -144,6 +157,8 @@ type StartStore = {
   script: ScriptDraft
   /** Cancel was pressed and main hasn't stopped yet. */
   cancelling: boolean
+  /** A reference video Luca studies and builds the same way; it never goes on the timeline. */
+  reference: string | null
   busy: boolean
   progress: CreateProgress | null
   /** Stages seen during the current create, for the step list. */
@@ -163,8 +178,12 @@ type StartStore = {
   setScript: (patch: Partial<ScriptDraft>) => void
   /** Stop recording the script: the start call then rejects and the panel comes back as it was. */
   cancelStart: () => Promise<void>
-  /** Switching type turns on its own steps. */
+  /** Switching type turns on its own steps for the picked style. */
   setType: (type: VideoTypeId) => void
+  /** Switching style turns on the type's steps for that style. */
+  setStyle: (style: StyleId) => void
+  setReference: (path: string | null) => void
+  clearReference: () => void
   toggleStep: (id: EditStepId) => void
   setNotes: (notes: string) => void
   /** Words said or typed in the chat: after the notes already there, on a new paragraph. */
@@ -198,8 +217,9 @@ function filesChanged(): void {
   if (first !== aspectFrom)
     useStart.setState({ aspectFrom: first, ...(first ? {} : { aspectPicked: false }) })
   followFirstVideo()
-  const type = scriptMode || kindOf(files) === 'audio' ? 'explainer' : 'talking'
-  if (!typePicked && edit.type !== type) useStart.setState({ edit: editOf(type, edit.notes) })
+  const type = scriptMode ? 'concept' : defaultType(kindOf(files))
+  if (!typePicked && edit.type !== type)
+    useStart.setState({ edit: editOf(type, edit.style, edit.notes) })
   for (const f of files) {
     if (f.kind !== 'video' || f.path in useStart.getState().footage || reading.has(f.path)) continue
     reading.add(f.path)
@@ -221,11 +241,12 @@ export const useStart = create<StartStore>((set, get) => ({
   aspect: 'landscape',
   aspectFrom: null,
   aspectPicked: false,
-  edit: editOf('talking'),
+  edit: editOf('launch', 'motion'),
   typePicked: false,
   scriptMode: false,
   script: emptyScript(),
   cancelling: false,
+  reference: null,
   busy: false,
   progress: null,
   seen: [],
@@ -248,6 +269,10 @@ export const useStart = create<StartStore>((set, get) => ({
     // footage dropped on the script panel means they'd rather start from that (the script stays,
     // and the footage form says so)
     set({ files: next, error: null, ...(kindOf(next) ? { scriptMode: false } : {}) })
+    // the chat's "add your video first" is answered once there is something to edit
+    const asked = useChat.getState().error
+    if (kindOf(next) && (asked === NO_FOOTAGE || asked === IMAGES_ONLY))
+      useChat.setState({ error: null })
     filesChanged()
     for (const f of next) {
       if (f.path in get().previews) continue
@@ -276,10 +301,10 @@ export const useStart = create<StartStore>((set, get) => ({
   },
   setAspect: (aspect) => set({ aspect, aspectPicked: true }),
   setScriptMode: (scriptMode) => {
-    // a script is a faceless explainer until they pick another kind; without one, back to the files'
+    // a script is a faceless concept until they pick another kind; without one, back to the files'
     if (!get().typePicked) {
-      const type = scriptMode || kindOf(get().files) === 'audio' ? 'explainer' : 'talking'
-      if (get().edit.type !== type) set({ edit: editOf(type, get().edit.notes) })
+      const type = scriptMode ? 'concept' : defaultType(kindOf(get().files))
+      if (get().edit.type !== type) set({ edit: editOf(type, get().edit.style, get().edit.notes) })
     }
     set({ scriptMode, error: null })
   },
@@ -293,7 +318,11 @@ export const useStart = create<StartStore>((set, get) => ({
       // main may have finished already; the start call says how it ended
     }
   },
-  setType: (type) => set((s) => ({ edit: editOf(type, s.edit.notes), typePicked: true })),
+  setType: (type) =>
+    set((s) => ({ edit: editOf(type, s.edit.style, s.edit.notes), typePicked: true })),
+  setStyle: (style) => set((s) => ({ edit: editOf(s.edit.type, style, s.edit.notes) })),
+  setReference: (path) => set({ reference: path }),
+  clearReference: () => set({ reference: null }),
   toggleStep: (id) =>
     set((s) => {
       const on = s.edit.steps.includes(id)
@@ -323,12 +352,17 @@ export const useStart = create<StartStore>((set, get) => ({
         }))
       )
     }
-    const { files, aspect, edit, footage, scriptMode, script } = get()
+    const { files, aspect, edit, footage, reference, scriptMode, script } = get()
     // a script is recorded as the voiceover, so it starts like one
     const scriptText = script.text.trim()
+    const notes = edit.notes?.trim()
     const kind: StartKind | null = scriptMode ? (scriptText ? 'audio' : null) : kindOf(files)
     if (!kind) {
       set({ error: scriptMode ? NO_SCRIPT : files.length ? IMAGES_ONLY : NO_FOOTAGE })
+      return false
+    }
+    if (kind === 'brief' && (notes?.length ?? 0) < 12) {
+      set({ error: NO_BRIEF })
       return false
     }
     // a script is recorded with ai33: without a key nothing starts (the panel asks for it)
@@ -336,18 +370,19 @@ export const useStart = create<StartStore>((set, get) => ({
       set({ error: NO_AI33_KEY })
       return false
     }
-    const voiceOnly = kind === 'audio'
+    const voiceOnly = kind !== 'video'
     const videos = files.filter((f) => f.kind === 'video')
-    const lead = scriptMode ? null : (videos[0] ?? files.find((f) => f.kind === 'audio')!)
-    const notes = edit.notes?.trim()
-    // what the card showed: a voiceover has no picture to zoom into or name, and a script has its
-    // words already, so there are no ums to cut
+    const lead = scriptMode ? null : (videos[0] ?? files.find((f) => f.kind === 'audio'))
+    // what the card showed: a voiceover or brief has no picture to zoom into or name, and a
+    // script has its words already, so there are no ums to cut
     const picked: StartEdit = {
       type: edit.type,
+      style: edit.style,
       steps: edit.steps.filter(
         (id) => !(voiceOnly && editStep(id).needsPicture) && !(scriptMode && id === 'cut')
       ),
-      ...(notes ? { notes } : {})
+      ...(notes ? { notes } : {}),
+      ...(reference ? { reference } : {})
     }
     // all the footage's length once every video is read; a voiceover's comes from the timeline,
     // and a script's is about as long as it takes to read aloud
@@ -390,7 +425,7 @@ export const useStart = create<StartStore>((set, get) => ({
               edit: picked
             }
           : {
-              name: lead!.name.replace(/\.[^.]+$/, ''),
+              ...(lead ? { name: lead.name.replace(/\.[^.]+$/, '') } : {}),
               aspect,
               files: files.map((f) => f.path),
               edit: picked
@@ -402,8 +437,9 @@ export const useStart = create<StartStore>((set, get) => ({
         previews: {},
         aspectFrom: null,
         aspectPicked: false,
-        edit: editOf('talking'),
+        edit: editOf('launch', 'motion'),
         typePicked: false,
+        reference: null,
         // the script is in the project now; the language and voice are likely the next one's too
         scriptMode: false,
         script: { ...get().script, text: '', say: [] }
@@ -419,7 +455,11 @@ export const useStart = create<StartStore>((set, get) => ({
       useMaking.getState().begin(res.project.id, scriptMode ? 'script' : kind, length, {
         extraSeconds: picked.steps.includes('music') ? MAKING_MUSIC_EXTRA_SECONDS : 0
       })
-      const request = editRequest(picked, { voiceOnly, ...(scriptMode ? { scripted: true } : {}) })
+      const request = editRequest(picked, {
+        voiceOnly,
+        brief: kind === 'brief',
+        ...(scriptMode ? { scripted: true } : {})
+      })
       const sent = await chat.send(notes ? `${request}\n\n${notes}` : request, {
         time: 0,
         note: res.brief,

@@ -3,6 +3,7 @@ import { accessSync, constants } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
+import { HYPERFRAMES } from '../shared/hyperframes'
 import type { EnvStatus } from '../shared/types'
 import { hasSecret } from './secrets'
 
@@ -125,7 +126,7 @@ export function run(
 }
 
 /** The HyperFrames CLI that Luca and its agent both run, pinned so every project reads the same. */
-export const HYPERFRAMES = 'hyperframes@0.8.78'
+export { HYPERFRAMES }
 
 let hyperframesBinP: Promise<string | null> | null = null
 

@@ -50,13 +50,13 @@ type MakingStore = {
 export const MAKING_MUSIC_EXTRA_SECONDS = 150
 
 /** A first guess in seconds for a minute of footage, before this Mac has edited any. */
-const GUESS: Record<MakingKind, number> = { video: 150, audio: 240, script: 200 }
+const GUESS: Record<MakingKind, number> = { video: 150, audio: 240, brief: 300, script: 200 }
 /**
  * More for every minute after the first: transcribing, cutting and captioning a 10-minute video
  * takes far longer than a 30-second clip, and a voiceover needs every visual made. A script
  * comes with its words and times, so there is nothing to transcribe or cut.
  */
-const PER_MINUTE: Record<MakingKind, number> = { video: 45, audio: 75, script: 70 }
+const PER_MINUTE: Record<MakingKind, number> = { video: 45, audio: 75, brief: 0, script: 70 }
 /** How long past edits took next to their first guess (2 = twice as long), per kind. */
 const TIMES_KEY = 'luca.edit-times'
 

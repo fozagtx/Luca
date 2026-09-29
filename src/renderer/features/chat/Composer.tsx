@@ -1,11 +1,18 @@
+import { Menu } from '@base-ui/react/menu'
+import type { ApprovalMode } from '@shared/types'
 import {
   ArrowUp,
   AudioLines,
+  Check,
   CircleAlert,
+  Clapperboard,
   Crosshair,
+  ImagePlus,
   LoaderCircle,
   Mic,
   Paperclip,
+  ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Square,
   X
@@ -23,12 +30,12 @@ import { EdgeGlow } from '../../components/ui/edge-glow'
 import { Thumb } from '../../components/ui/thumb'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
-import { catalogChip, hasCatalogDrag, readCatalogDrag } from '../../lib/drag'
 import { useChat, type PendingMedia } from '../../stores/chat'
 import { luca } from '../../lib/luca'
 import { stopLuca, useQueue } from '../../stores/queue'
 import { usePlayer } from '../../stores/player'
-import { kindOf, useStart } from '../../stores/start'
+import { useProject } from '../../stores/project'
+import { kindOf, useStart, type Attachment } from '../../stores/start'
 import { useVoice } from '../../stores/voice'
 import { AssemblyAiKeyCard } from '../onboarding/AssemblyAiKeyCard'
 import { ChipPill } from './Message'
@@ -48,7 +55,6 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const draft = useChat((s) => s.draft)
   const setDraft = useChat((s) => s.setDraft)
   const chips = useChat((s) => s.chips)
-  const addChip = useChat((s) => s.addChip)
   const removeChip = useChat((s) => s.removeChip)
   const attaching = useChat((s) => s.attaching)
   const attach = useChat((s) => s.attach)
@@ -70,16 +76,16 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const startPreviews = useStart((s) => s.previews)
   const starting = useStart((s) => s.busy)
   const scriptMode = useStart((s) => s.scriptMode)
+  const media = kindOf(startFiles) !== 'brief'
   // a script typed on the start card is what a message here starts from, so it records, not edits
   const scripted = useStart((s) => s.scriptMode && !!s.script.text.trim())
-  const footage = !!kindOf(startFiles)
   const disabled = starting
   // a file still on its way in would be missing from the message
-  const canSend = (hasText || (noProject && footage)) && attaching.length === 0
+  const canSend = (hasText || (noProject && media)) && attaching.length === 0
   const sendLabel = noProject
-    ? scripted && !footage
+    ? scripted && !media
       ? 'Record and edit'
-      : 'Edit my video'
+      : 'Make it'
     : working
       ? 'Add to the queue'
       : 'Send'
@@ -152,7 +158,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
       // isolate: the glow while Luca works sits behind the box, not behind the panel
       className="isolate shrink-0 px-3 pt-1 pb-3"
       onDragOver={(e) => {
-        if (!hasCatalogDrag(e.dataTransfer) && !fileDrop(e.dataTransfer)) return
+        if (!fileDrop(e.dataTransfer)) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
         if (!over) setOver(true)
@@ -160,16 +166,9 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
       onDragLeave={() => setOver(false)}
       onDrop={(e) => {
         setOver(false)
-        if (fileDrop(e.dataTransfer)) {
-          e.preventDefault()
-          addFiles([...e.dataTransfer.files])
-          return
-        }
-        const d = readCatalogDrag(e.dataTransfer)
-        if (!d) return
+        if (!fileDrop(e.dataTransfer)) return
         e.preventDefault()
-        addChip(catalogChip(d))
-        ref.current?.focus()
+        addFiles([...e.dataTransfer.files])
       }}
     >
       {error ? <Notice text={error} onDismiss={() => useChat.setState({ error: null })} /> : null}
@@ -189,13 +188,13 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
       {noProject && !voiceMode ? (
         <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] text-text-3">
           <Sparkles size={11} className="shrink-0 text-accent" />
-          {footage ? (
-            'Say what you want, and Luca starts editing your video.'
+          {media ? (
+            'Say what you want, and Luca starts making your video.'
           ) : scriptMode ? (
             'Paste your script on the start card, then press Record and edit.'
           ) : (
             <span>
-              No project open: drop your video on the start card, or{' '}
+              Describe the video you want, and Luca makes it — or{' '}
               <button
                 type="button"
                 onClick={() => useStart.getState().setScriptMode(true)}
@@ -237,6 +236,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                   src={startPreviews[f.path] ?? null}
                   lazy={false}
                   className="size-10 rounded-[7px] ring-1 ring-border"
+                  fallback={<KindIcon kind={f.kind} />}
                 />
                 <button
                   type="button"
@@ -275,14 +275,14 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
               rows={1}
               placeholder={
                 noProject
-                  ? footage
+                  ? media
                     ? 'Anything Luca should know? (optional)'
                     : scriptMode
                       ? scripted
                         ? 'Add notes for your script…'
                         : 'Paste your script on the start card first…'
-                      : 'Drop your video on the start card first…'
-                  : 'Ask Luca to edit your video…'
+                      : 'Describe the video you want…'
+                  : 'Tell Luca what to change…'
               }
               className={cn(
                 'block w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13px] leading-[20px] text-text placeholder:text-text-3 select-text',
@@ -324,6 +324,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                   {grab ? 'Click the preview' : 'Grab'}
                 </button>
               </Tip>
+              <ApprovalsPill disabled={disabled} />
               <span className="ml-auto min-w-0 truncate pr-1 text-[10.5px] text-text-3">
                 {starting
                   ? 'Getting your video ready…'
@@ -333,7 +334,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                       ? '↩ to add to the queue'
                       : canSend
                         ? noProject
-                          ? scripted && !footage
+                          ? scripted && !media
                             ? '↩ to record and edit'
                             : '↩ to start editing'
                           : '↩ to send'
@@ -427,6 +428,96 @@ function AddingPill({ file }: { file: PendingMedia }): ReactElement {
         <span className="text-text-3 tabular-nums">{Math.round(file.progress * 100)}%</span>
       ) : null}
     </span>
+  )
+}
+
+/** A start file with no picture (a voiceover, or one still being read): what kind it is. */
+function KindIcon({ kind }: { kind: Attachment['kind'] }): ReactElement {
+  const Icon = kind === 'audio' ? AudioLines : kind === 'video' ? Clapperboard : ImagePlus
+  return (
+    <div className="flex h-full w-full items-center justify-center text-text-3">
+      <Icon size={14} strokeWidth={1.6} />
+    </div>
+  )
+}
+
+const APPROVAL_MODES: { mode: ApprovalMode; title: string; body: string }[] = [
+  {
+    mode: 'ask',
+    title: 'Ask first',
+    body: 'Luca asks before running commands that aren’t on its safe list.'
+  },
+  {
+    mode: 'full',
+    title: 'Full access',
+    body: 'Every step runs without asking. Edits still stay inside the project folder and media/ and renders/ stay untouched.'
+  }
+]
+
+/** How Luca's steps are approved: a card for each one, or full access. */
+function ApprovalsPill({ disabled }: { disabled: boolean }): ReactElement {
+  const mode = useProject((s) => s.settings?.approvals) ?? 'ask'
+  const full = mode === 'full'
+  const Icon = full ? ShieldAlert : ShieldCheck
+  return (
+    <Menu.Root>
+      <Tip label="How Luca's steps are approved" side="top">
+        <Menu.Trigger
+          disabled={disabled}
+          aria-label="How Luca's steps are approved"
+          onMouseDown={(e: MouseEvent) => e.stopPropagation()}
+          onClick={(e: MouseEvent) => e.stopPropagation()}
+          className={cn(
+            'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40',
+            full ? 'text-warning' : 'text-text-2 hover:bg-hover hover:text-text'
+          )}
+        >
+          <Icon size={13} strokeWidth={1.9} />
+          {full ? 'Full access' : 'Ask first'}
+        </Menu.Trigger>
+      </Tip>
+      <Menu.Portal>
+        <Menu.Positioner side="top" align="start" sideOffset={6} className="z-50">
+          <Menu.Popup className="tip-popup min-w-[280px] rounded-[10px] border border-border bg-bg p-1 shadow-popover outline-none">
+            <div className="px-2.5 pt-1.5 pb-1 text-[11px] text-text-3">
+              How should Luca’s steps be approved?
+            </div>
+            {APPROVAL_MODES.map((m) => {
+              const ItemIcon = m.mode === 'full' ? ShieldAlert : ShieldCheck
+              const selected = m.mode === mode
+              return (
+                <Menu.Item
+                  key={m.mode}
+                  onClick={() => void useProject.getState().setApprovals(m.mode)}
+                  className="flex cursor-default items-start gap-2.5 rounded-[6px] px-2.5 py-2 outline-none data-[highlighted]:bg-hover"
+                >
+                  <ItemIcon
+                    size={13}
+                    strokeWidth={1.9}
+                    className={cn(
+                      'mt-0.5 shrink-0',
+                      m.mode === 'full' ? 'text-warning' : 'text-text-3'
+                    )}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className={cn(
+                        'block text-[12.5px] font-medium',
+                        m.mode === 'full' ? 'text-warning' : 'text-text'
+                      )}
+                    >
+                      {m.title}
+                    </span>
+                    <span className="block text-[11px] leading-[1.4] text-text-3">{m.body}</span>
+                  </span>
+                  {selected ? <Check size={13} className="mt-0.5 shrink-0 text-text" /> : null}
+                </Menu.Item>
+              )
+            })}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   )
 }
 

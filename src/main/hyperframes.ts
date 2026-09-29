@@ -102,10 +102,10 @@ function readCache(file: string): CatalogItem[] | null {
  * cache, else the copy bundled with Luca (captured from hyperframes@0.8.78) so the library is
  * never empty offline or when the CLI fails.
  */
-export async function catalog(opts: { refresh?: boolean; cwd: string }): Promise<CatalogItem[]> {
+export async function catalog(opts: { cwd: string }): Promise<CatalogItem[]> {
   const cacheFile = join(appDataDir(), 'catalog.json')
   const fresh = existsSync(cacheFile) && Date.now() - statSync(cacheFile).mtimeMs < DAY
-  if (!opts.refresh && fresh) {
+  if (fresh) {
     const cached = readCache(cacheFile)
     if (cached) return cached
   }

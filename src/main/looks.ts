@@ -194,8 +194,13 @@ export async function applyLook(p: Project, slug: string): Promise<void> {
   )
   const current = readProject(p.dir) ?? p
   writeProject({ ...current, look: slug })
-  if (failures.length)
-    throw new Error(`Look applied, but some catalog items failed:\n${failures.join('\n')}`)
+  if (failures.length) {
+    // the CLI's own words are for the log; people get what it means for their video
+    console.warn('[looks] adding catalog items failed:\n' + failures.join('\n'))
+    throw new Error(
+      `Look applied, but ${failures.length} of its titles or effects couldn’t be added.`
+    )
+  }
 }
 
 export function removeLook(slug: string): void {

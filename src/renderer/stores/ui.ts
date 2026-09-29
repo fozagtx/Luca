@@ -2,7 +2,7 @@ import type { Theme } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 
-export type SidebarTab = 'transcript' | 'broll' | 'looks'
+export type SidebarTab = 'transcript' | 'broll' | 'looks' | 'sound'
 
 type UiStore = {
   sidebarOpen: boolean
@@ -11,7 +11,6 @@ type UiStore = {
   paletteOpen: boolean
   historyOpen: boolean
   exportOpen: boolean
-  settingsOpen: boolean
   gotoOpen: boolean
   windowActive: boolean
   /** macOS fullscreen: the traffic lights are gone, so the toolbar drops its inset. */
@@ -19,6 +18,8 @@ type UiStore = {
   captionsOpen: boolean
   colorOpen: boolean
   shortcutsOpen: boolean
+  /** The Connections sheet (⌘,): the ai33 key and account. */
+  settingsOpen: boolean
   theme: Theme
   setTheme: (t: Theme, persist?: boolean) => void
   toggleTheme: () => void
@@ -30,11 +31,11 @@ type UiStore = {
   setCaptions: (open: boolean) => void
   setColor: (open: boolean) => void
   setShortcuts: (open: boolean) => void
+  setSettings: (open: boolean) => void
   setTab: (t: SidebarTab) => void
   setPalette: (open: boolean) => void
   setHistory: (open: boolean) => void
   setExport: (open: boolean) => void
-  setSettings: (open: boolean) => void
   setGoto: (open: boolean) => void
   setWindowActive: (a: boolean) => void
 }
@@ -47,13 +48,13 @@ export const useUi = create<UiStore>((set, get) => ({
   paletteOpen: false,
   historyOpen: false,
   exportOpen: false,
-  settingsOpen: false,
   gotoOpen: false,
   windowActive: true,
   fullscreen: false,
   captionsOpen: false,
   colorOpen: false,
   shortcutsOpen: false,
+  settingsOpen: false,
   theme: 'light',
   setTheme: (theme, persist = true) => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
@@ -69,11 +70,11 @@ export const useUi = create<UiStore>((set, get) => ({
   setCaptions: (captionsOpen) => set({ captionsOpen }),
   setColor: (colorOpen) => set({ colorOpen }),
   setShortcuts: (shortcutsOpen) => set({ shortcutsOpen }),
+  setSettings: (settingsOpen) => set({ settingsOpen }),
   setTab: (tab) => set({ tab, sidebarOpen: true }),
   setPalette: (paletteOpen) => set({ paletteOpen }),
   setHistory: (historyOpen) => set({ historyOpen }),
   setExport: (exportOpen) => set({ exportOpen }),
-  setSettings: (settingsOpen) => set({ settingsOpen }),
   setGoto: (gotoOpen) => set({ gotoOpen }),
   setWindowActive: (windowActive) => set({ windowActive })
 }))

@@ -112,9 +112,7 @@ function Account(): ReactElement {
       <p className="text-text-3">
         Credits are ai33’s own unit. Luca shows what each job used, so you can see the scale.
       </p>
-      <p className="text-text-3">
-        AssemblyAI, Pexels and Gemini keys are still added where you use them.
-      </p>
+      <p className="text-text-3">AssemblyAI and Pexels keys are still added where you use them.</p>
       <p className="border-t border-border pt-3 text-[11px] text-text-3">
         Music, voices and sound effects made with ai33 have terms of use. If you sell your videos,
         check ai33’s terms. Luca keeps a note of each one in your project folder.

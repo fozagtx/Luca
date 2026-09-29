@@ -14,6 +14,11 @@ const STEPS: Record<StartKind, Step[]> = {
     { id: 'copying', label: 'Copying your voiceover (the original stays untouched)' },
     { id: 'scaffolding', label: 'Building the timeline' },
     { id: 'starting', label: 'Opening the project' }
+  ],
+  brief: [
+    { id: 'preparing', label: 'Getting ready' },
+    { id: 'scaffolding', label: 'Building the timeline' },
+    { id: 'starting', label: 'Opening the project' }
   ]
 }
 
@@ -34,6 +39,9 @@ const SCRIPT_STAGE: Partial<Record<CreateProgress['stage'], string>> = {
   starting: 'starting'
 }
 
+/** Shown only when a reference is being studied, before the project opens. */
+const STUDYING: Step = { id: 'studying', label: 'Studying your reference' }
+
 /** The real stages of making a project, as main reports them. */
 export function CreateProgressList({
   kind,
@@ -50,7 +58,10 @@ export function CreateProgressList({
   seen?: CreateProgress['stage'][]
   since?: number
 }): ReactElement {
-  const steps = script ? SCRIPT_STEPS : STEPS[kind]
+  const base = script ? SCRIPT_STEPS : STEPS[kind]
+  const steps = seen.includes('studying')
+    ? [...base.slice(0, -1), STUDYING, base[base.length - 1]]
+    : base
   const stage = progress?.stage ?? 'preparing'
   // the stage as a step of this list: a script folds several stages into one step
   const stepOf = (s: CreateProgress['stage']): string | undefined =>

@@ -80,6 +80,7 @@ export function buildTimeline(data: HfTimeline, html: string): Timeline {
 
   // clip volumes and trimmed starts aren't in the CLI's JSON; read them from the tags
   const volumes = new Map<string, number>()
+  const muted = new Set<string>()
   const mediaStarts = new Map<string, number>()
   // what Luca wrote for the clips it made: which sound it is and the name to show
   const made = new Map<string, { role?: Role; title?: string }>()
@@ -88,6 +89,7 @@ export function buildTimeline(data: HfTimeline, html: string): Timeline {
     if (!id) continue
     if (t.name === 'video' || t.name === 'audio') {
       volumes.set(id, Number(t.attrs['data-volume'] ?? 1))
+      if ('muted' in t.attrs) muted.add(id)
       const ms = Number(t.attrs['data-media-start'])
       if (ms > 0) mediaStarts.set(id, ms)
     }
@@ -129,6 +131,7 @@ export function buildTimeline(data: HfTimeline, html: string): Timeline {
         : volumes.has(id)
           ? { volume: volumes.get(id) }
           : {}),
+      ...(muted.has(row.elementId ?? id) ? { muted: true } : {}),
       ...(mediaStarts.has(row.elementId ?? id)
         ? { mediaStart: mediaStarts.get(row.elementId ?? id) }
         : {}),

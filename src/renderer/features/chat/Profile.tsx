@@ -1,11 +1,14 @@
 import {
   AudioWaveform,
   Captions,
-  Highlighter,
+  Clapperboard,
+  Film,
+  Lightbulb,
   Music,
+  Rocket,
   Scissors,
-  Smartphone,
   Sparkles,
+  Type,
   Undo2,
   Wand2,
   ZoomIn,
@@ -44,8 +47,8 @@ export function LucaAvatar({
 }
 
 const facts: { icon: LucideIcon; label: string }[] = [
-  { icon: Scissors, label: 'Edits your video' },
-  { icon: Sparkles, label: 'Cuts, captions & zooms' },
+  { icon: Sparkles, label: 'Builds it from a brief' },
+  { icon: Clapperboard, label: 'Motion design, done for you' },
   { icon: Undo2, label: 'Every change can be undone' }
 ]
 
@@ -64,7 +67,7 @@ export function LucaProfile({ compact, live }: { compact: boolean; live: boolean
       >
         Luca
       </div>
-      <div className="mt-0.5 text-[12px] text-text-2">Your video editing partner</div>
+      <div className="mt-0.5 text-[12px] text-text-2">Makes your explainer video</div>
       <div className="mt-2.5 flex flex-wrap justify-center gap-x-3 gap-y-1">
         {facts.map((f) => (
           <span key={f.label} className="inline-flex items-center gap-1 text-[11px] text-text-3">
@@ -90,9 +93,10 @@ const suggestions: { icon: LucideIcon; text: string }[] = [
 ]
 
 const starts: { icon: LucideIcon; text: string }[] = [
-  { icon: Smartphone, text: 'Make it a snappy TikTok' },
-  { icon: Highlighter, text: 'Highlight the key words in yellow' },
-  { icon: Sparkles, text: 'Keep it calm and professional' }
+  { icon: Rocket, text: 'A 15-second launch film for my product' },
+  { icon: Lightbulb, text: 'Explain how it works in 30 seconds' },
+  { icon: Film, text: 'Make it move like this reference video' },
+  { icon: Type, text: 'Warm white, black UI, one accent color' }
 ]
 
 /**

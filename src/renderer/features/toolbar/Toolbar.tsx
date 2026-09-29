@@ -18,9 +18,7 @@ import { cn } from '../../lib/cn'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
-import higgsfield from '../../assets/higgsfield.png'
 import { goHome } from '../command/go-home'
-import { GeminiButton } from '../gemini/GeminiButton'
 import { HistoryPopover } from '../history/HistoryPopover'
 
 const swap =
@@ -56,30 +54,6 @@ export function ThemeToggle(): ReactElement {
           )}
         />
       </Button>
-    </Tip>
-  )
-}
-
-/** Higgsfield integration (search and generate media from chat) is planned; announce it. */
-function Higgsfield(): ReactElement {
-  return (
-    <Tip label="Higgsfield: find and generate media right from chat. Coming soon">
-      <span
-        role="note"
-        aria-label="Higgsfield, coming soon"
-        className="no-drag inline-flex h-7 items-center gap-1.5 rounded-full border border-border bg-bg py-0.5 pr-1 pl-0.5 select-none"
-      >
-        <img
-          src={higgsfield}
-          alt=""
-          draggable={false}
-          className="size-[22px] rounded-full ring-1 ring-black/5"
-        />
-        <span className="text-[12px] font-medium text-text">Higgsfield</span>
-        <span className="rounded-full bg-[#d9f94a] px-1.5 py-[3px] text-[9.5px] leading-none font-semibold tracking-[0.02em] text-[#111] uppercase">
-          Coming soon
-        </span>
-      </span>
     </Tip>
   )
 }
@@ -122,6 +96,8 @@ export function Toolbar(): ReactElement {
           <Button
             variant="icon"
             active={sidebarOpen}
+            // Transcript, B-roll and Looks work on the open project: nothing to show on Home
+            disabled={!project}
             onClick={() => setSidebar(!sidebarOpen)}
             aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
             aria-pressed={sidebarOpen}
@@ -133,9 +109,6 @@ export function Toolbar(): ReactElement {
             )}
           </Button>
         </Tip>
-        <div className="mx-1.5 h-4 w-px bg-border" />
-        <GeminiButton />
-        <Higgsfield />
       </div>
 
       <span className="max-w-[40vw] min-w-0 truncate px-3 text-[13px] font-semibold tracking-[-0.01em] text-text">

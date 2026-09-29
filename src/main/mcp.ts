@@ -1,4 +1,6 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+import { readFileSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import {
   BUILTIN_FONTS,
@@ -10,9 +12,10 @@ import {
   type CaptionAnim
 } from '../shared/captions'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
+import { REFERENCE_STUDY } from '../shared/motion'
 import { BUNDLED_LUTS } from '../shared/luts'
 import type { CaptionConfig, Cut, CutReason } from '../shared/types'
-import { applyColor, removeColor } from './color'
+import { applyColor, footageVideos, removeColor } from './color'
 import {
   addFontByName,
   addGoogleFont,
@@ -33,18 +36,12 @@ import { library } from './library'
 import type { Ai33Ctx } from './ai33-ctx'
 import { ai33Tools } from './mcp-ai33'
 import { HYPERFRAMES } from './env'
-import {
-  generateVideo,
-  hasGeminiKey,
-  MAX_EXTENDED_SECONDS,
-  MAX_SECONDS,
-  MIN_SECONDS,
-  RESOLUTIONS,
-  type MadeVideo,
-  type VideoResolution
-} from './gemini'
-import { addBroll, hasPexelsKey, searchBackgrounds } from './pexels'
-import { readProject } from './projects'
+import { readTimeline } from './hyperframes'
+import { applyEdit } from './media'
+import { soundClips, soundOf } from '../shared/sound'
+import { addBroll, hasPexelsKey, searchBroll } from './pexels'
+import { readProject, safeJoin } from './projects'
+import { studyReference } from './reference'
 import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
 
 const text = (data: unknown): { content: { type: 'text'; text: string }[] } => ({
@@ -62,6 +59,19 @@ const NO_PEXELS =
 /** Where B-roll goes: over the footage while it keeps playing, never behind it. */
 const BROLL_PLACE =
   'on a track above the footage where the thing is mentioned: full frame (object-fit: cover) for 1.5–4 s as a cutaway, in and out with a quick cut or a ~0.2 s fade, while the voice keeps playing. When the speaker should stay visible, show it as a card or picture-in-picture instead (rounded corners, a soft shadow, clear of the face). Never put it behind the footage.'
+
+/** With only a voiceover there is nothing under B-roll: it is the picture. */
+const BROLL_SCENE =
+  'where the words name it, full frame (object-fit: cover), as one of the video’s scenes: there is no footage under it, so B-roll and the other visuals (animated key words, simple diagrams) play back to back, each on screen while what it shows is said, and the frame is never empty.'
+
+/** Whether index.html plays footage the user brought, which B-roll cuts away from. */
+function hasFootage(projectDir: string): boolean {
+  try {
+    return footageVideos(readFileSync(join(projectDir, 'index.html'), 'utf8')).length > 0
+  } catch {
+    return true
+  }
+}
 
 /** A small still as an image block, or null when it can't be fetched quickly. */
 async function preview(url: string): Promise<Content | null> {
@@ -86,28 +96,6 @@ const categoryIds = CATEGORIES.map((c) => c.id) as [
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
-// ------------------------------------------------------------------ generated video
-
-const NO_GEMINI =
-  'Gemini is not connected yet (no API key). Tell the user in one short sentence to click Gemini in the toolbar and paste their Gemini API key, then ask again. Do not make the video another way.'
-
-const secs = (n: number): string => `${Math.round(n * 10) / 10} s`
-
-/** Where a new clip goes, in words Luca can act on. */
-function placement(v: MadeVideo): string {
-  const general =
-    'It has its own sound; keep it unless it fights the voice or music already there (then mute or lower it).'
-  const f = v.from
-  if (!f)
-    return `Put it on the timeline where it belongs, as a full-frame video clip (object-fit: cover) unless it is meant to be smaller. ${general}`
-  const end = f.start + f.seconds
-  if (f.mode === 'edit')
-    return `It is the changed version of ${f.file} from ${secs(f.start)} to ${secs(end)} of that file. Put it where that part of the clip plays now, in its place (same track, position and size), or wherever the user asked. ${general}`
-  return f.includesSource
-    ? `It starts with ${f.file} from ${secs(f.start)} on (lightly adjusted so the join is seamless) and then continues it. Put it in place of ${f.file} from that point, so the video carries straight on. ${general}`
-    : `It continues ${f.file} from its end (${secs(end)} into that file). Put it straight after that clip on the same track. ${general}`
-}
-
 // ------------------------------------------------------------------ captions
 
 const styleIds = CAPTION_STYLES.map((s) => s.id) as [string, ...string[]]
@@ -120,6 +108,8 @@ const NO_SPEECH =
   'This project has no video or audio with speech, so there is nothing to caption. Offer animated titles or text instead.'
 const OFF_TIMELINE =
   'The video the transcript belongs to is no longer on the timeline, so there are no words to caption. Tell the user in one short sentence.'
+/** Brief-only projects have nothing to hear. */
+const NO_HEAR = 'This video has no footage or voiceover to hear.'
 
 // ------------------------------------------------------------------ words and cuts
 
@@ -136,6 +126,8 @@ const REFUSALS: Record<EditRefused['reason'], string> = {
     'The ums and pauses are already cut: a clean edit is on the timeline, and it runs once. Call transcribe for the words as they play now. If the user wants more cut, tell them in one short sentence they can change the cuts in the Transcript tab.',
   'off-timeline':
     'The original recording is no longer on the timeline, so there is nothing to cut. Tell the user in one short sentence.',
+  'over-footage':
+    'The voice is a separate voiceover playing over the footage, so cutting ums and pauses out of it would pull it out of step with the picture. Do not cut it; tell the user in one short sentence that they can trim pauses themselves in the timeline.',
   script:
     'This video’s words come from the user’s script, so they are already exact and there is nothing to transcribe again or cut. Call transcribe without force to read them (it is free) and time everything to them; never call clean_edit on it. If the user wants a different voice or speed, tell them in one short sentence that it means starting again from the script (a different voice or speed is recorded and charged again; only an identical retry is free).'
 }
@@ -288,14 +280,12 @@ export function lucaMcpServer(
       'broll_search finds free stock photos and short clips (Pexels) of things that are mentioned, ' +
       'to show as B-roll, with previews of the best ones; broll_add downloads the chosen one into ' +
       'media/broll, sized for this video, and returns the path to use and how to place it (over ' +
-      'the footage, never behind it). ' +
+      'the footage, never behind it; with only a voiceover, as the scenes themselves). ' +
       'captions_apply puts captions of what is said on the video (from the transcript) and changes ' +
       'their look; Luca keeps them in sync with every cut, so never write or edit them by hand. ' +
       'font_add adds a font that comes with Luca, or downloads a Google Fonts font, into the project ' +
       'so any text can use it offline. ' +
       'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it. ' +
-      'video_generate makes a new video clip with Gemini Omni, or edits or continues a clip in the ' +
-      'project, and saves it in media/generated. ' +
       'speech_generate records words as a voiceover, a line or a conversation and places it (it ' +
       'never changes the video’s words or captions); voice_search lists voices the user can listen ' +
       'to; music_generate makes instrumental music (two takes) and puts it under the video; ' +
@@ -318,6 +308,7 @@ export function lucaMcpServer(
         async ({ force }) => {
           const p = readProject(projectDir)
           if (!p) return text({ ok: false, error: 'No project is open.' })
+          if (!p.source) return text({ ok: false, error: NO_HEAR })
           try {
             const h = await transcribeInTurn(p, { force })
             return heardResult({ ok: true, words: h.words, seconds: h.seconds }, h)
@@ -352,6 +343,7 @@ export function lucaMcpServer(
         async ({ cuts }, extra) => {
           const p = readProject(projectDir)
           if (!p) return text({ ok: false, error: 'No project is open.' })
+          if (!p.source) return text({ ok: false, error: NO_HEAR })
           const signal = (extra as { signal?: AbortSignal } | undefined)?.signal
           try {
             const own: Cut[] = (cuts ?? []).map((c) => ({ ...c, text: c.text ?? '' }))
@@ -421,6 +413,7 @@ export function lucaMcpServer(
         {
           query: z
             .string()
+            .min(1)
             .describe(
               'what the picture should show, in plain words: "electric car charging", "tokyo street at night", "stock market chart", "coffee beans", "person typing on a laptop"'
             ),
@@ -433,7 +426,7 @@ export function lucaMcpServer(
         async ({ query, media, limit }) => {
           if (!hasPexelsKey()) return text({ ok: false, error: NO_PEXELS })
           try {
-            const res = await searchBackgrounds({
+            const res = await searchBroll({
               query,
               media: media === 'photo' || media === 'video' ? media : 'all',
               orientation: readProject(projectDir)?.aspect ?? 'landscape'
@@ -484,13 +477,14 @@ export function lucaMcpServer(
               id,
               readProject(projectDir)?.aspect ?? 'landscape'
             )
+            const where = hasFootage(projectDir) ? BROLL_PLACE : BROLL_SCENE
             return text({
               ok: true,
               ...added,
               place:
                 added.media === 'video'
-                  ? `Show it as a muted video clip ${BROLL_PLACE}`
-                  : `Show it with a slow push-in ${BROLL_PLACE}`
+                  ? `Show it as a muted video clip ${where}`
+                  : `Show it with a slow push-in ${where}`
             })
           } catch (err) {
             return text({ ok: false, error: message(err) })
@@ -608,6 +602,7 @@ export function lucaMcpServer(
         async (args) => {
           const p = readProject(projectDir)
           if (!p) return text({ ok: false, error: 'No project is open.' })
+          if (!p.source) return text({ ok: false, error: NO_HEAR })
           // a voiceover's words play once it is on the timeline
           await placeVoiceover(p).catch(() => false)
           const state = captionState(p)
@@ -721,109 +716,92 @@ export function lucaMcpServer(
         }
       ),
       tool(
-        'video_generate',
-        [
-          'Make a video clip with Gemini Omni (it comes with sound), or change or continue a clip in the project. It spends the user’s Gemini credits and takes a few minutes, so use it only when they ask for a generated or edited clip, and make one clip per request unless they ask for more.',
-          `- New footage: a prompt. ${MIN_SECONDS}–${MAX_SECONDS} s per clip.`,
-          '- From pictures: firstFrame starts the clip on a picture; add lastFrame to end on another one (the same picture for both makes a loop). To restyle a still (a picture the user attached) and bring it to life, pass it in images and describe the new look and the motion.',
-          '- People, products, a look or a motion to use from pictures or clips: images / videoRefs, referred to in the prompt as <IMAGE_REF_0>, <IMAGE_REF_1>… and <VIDEO_REF_0>… in the order given.',
-          `- Change a clip (restyle it, relight it, add or remove something, change the weather or season): video. Omni reads up to ${MAX_SECONDS} s of it, from start. Keep edit prompts short and end them with "Keep everything else the same."`,
-          `- Continue a clip: extend. Adds up to ${MAX_SECONDS} s each time, up to ${MAX_EXTENDED_SECONDS} s in all.`,
-          'Clips made here are edited and continued from Gemini’s own copy, so pass their media/generated file as it is.',
-          'Prompting: describe subject, action, setting, camera, light and sound like a director. Omni cuts between several shots unless you say "a single continuous shot, no cuts". Say what the sound should be (music, ambience, "no dialogue"). Timing works in words ("after 3 s…") or as "[0-3s] … [3-6s] …". Text on screen is rendered as written.',
-          'Returns the file, its size, length and frames from it to look at. If it clearly misses what the user asked, say so and offer to try again rather than retrying on your own.'
-        ].join('\n'),
+        'sound_mix',
+        'Set how loud each sound is: footage sound, voiceover, music, B-roll. Levels are 0 (silent) to 2 (twice as loud), 1 as recorded. Music under someone talking belongs around 0.15–0.3. Call with no changes to list the sounds and their levels.',
         {
-          prompt: z.string().describe('what to make or change, in plain words'),
-          video: z
-            .string()
-            .optional()
-            .describe('a clip in the project to change (project path, e.g. media/generated/…)'),
-          extend: z.string().optional().describe('a clip in the project to continue'),
-          start: z
-            .number()
-            .min(0)
-            .optional()
-            .describe(
-              `seconds into video/extend where the part Omni reads begins; default: the start of a clip to change, the last ${MAX_SECONDS} s of a clip to continue`
-            ),
-          firstFrame: z.string().optional().describe('a picture in the project to start on'),
-          lastFrame: z.string().optional().describe('a picture to end on (needs firstFrame)'),
-          images: z
-            .array(z.string())
-            .max(8)
-            .optional()
-            .describe('pictures in the project to use as references (<IMAGE_REF_n>)'),
-          videoRefs: z
-            .array(z.string())
-            .max(5)
-            .optional()
-            .describe(
-              'clips in the project to use as references (<VIDEO_REF_n>); about 3 s each is ideal, up to 3 clips'
-            ),
-          seconds: z
-            .number()
-            .int()
-            .min(MIN_SECONDS)
-            .max(MAX_SECONDS)
-            .optional()
-            .describe('length of the new clip (or of the part added); default: Gemini picks'),
-          aspect: z
-            .enum(['16:9', '9:16'])
-            .optional()
-            .describe(
-              'Omni makes 16:9 or 9:16; default: the one nearest this video’s shape (or the clip being changed)'
-            ),
-          resolution: z
-            .enum(RESOLUTIONS as [VideoResolution, ...VideoResolution[]])
-            .optional()
-            .describe(
-              'default: enough for this video (1080p); 720p and 360p are quicker and cheaper, 4k is the slowest'
-            ),
-          width: z
-            .number()
-            .int()
-            .min(64)
-            .max(4096)
-            .optional()
-            .describe(
-              'exact width in pixels when the user asks for a size (with height); Omni’s frame is cropped and scaled to it. Default: this video’s frame (a square video is cropped from 16:9)'
-            ),
-          height: z.number().int().min(64).max(4096).optional(),
-          sound: z
-            .enum(['keep', 'new'])
-            .optional()
-            .describe(
-              'for video/extend: keep the clip’s own sound (default) or have Omni make all-new sound'
+          changes: z
+            .array(
+              z.object({
+                target: z
+                  .string()
+                  .describe(
+                    'a clip id, or a group: "footage", "voiceover", "music", "broll" or "all"'
+                  ),
+                volume: z.number().min(0).max(2).describe('0 silent, 1 as recorded, 2 louder')
+              })
             )
+            .optional()
+            .describe('the levels to set; leave out to just list the sounds')
         },
-        async (args, extra) => {
-          if (!hasGeminiKey()) return text({ ok: false, error: NO_GEMINI })
+        async ({ changes }) => {
           const p = readProject(projectDir)
           if (!p) return text({ ok: false, error: 'No project is open.' })
-          const signal = (extra as { signal?: AbortSignal } | undefined)?.signal
           try {
-            const v = await generateVideo(projectDir, p.aspect, args, signal)
-            const content: Content[] = [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  ok: true,
-                  file: v.file,
-                  size: `${v.width}x${v.height}`,
-                  seconds: v.seconds,
-                  sound: v.hasSound,
-                  made: `${v.resolution} ${v.aspect}${v.reframed ? `, cropped and scaled to ${v.width}x${v.height}` : ''}`,
-                  ...(v.from ? { from: v.from } : {}),
-                  place: placement(v),
-                  ...(v.frames.length
-                    ? { frames: 'Frames from its start, middle and end follow.' }
-                    : {})
+            const timeline = await readTimeline(projectDir)
+            const clips = soundClips(timeline)
+            const byId = new Map(clips.map((c) => [c.id.replace(/^#/, '').toLowerCase(), c]))
+            const sounds = (
+              list: typeof clips
+            ): { id: string; name: string; start: number; end: number; volume: number }[] =>
+              list.map((c) => ({
+                id: c.id,
+                name: soundOf(c, p).name,
+                start: c.start,
+                end: c.end,
+                volume: c.volume ?? 1
+              }))
+            for (const change of changes ?? []) {
+              const key = change.target.toLowerCase()
+              const refs =
+                key === 'all'
+                  ? clips.map((c) => c.ref)
+                  : byId.has(key)
+                    ? [byId.get(key)!.ref]
+                    : clips.filter((c) => soundOf(c, p).key === key).map((c) => c.ref)
+              if (!refs.length) {
+                return text({
+                  ok: false,
+                  error: `No sound called "${change.target}". The sounds are: ${[...new Set(clips.map((c) => soundOf(c, p).name))].join(', ') || 'none'} — or a clip id: ${clips.map((c) => c.id).join(', ') || 'none'}.`
                 })
-              },
-              ...v.frames.map((data): Content => ({ type: 'image', data, mimeType: 'image/jpeg' }))
-            ]
-            return { content }
+              }
+              const res = await applyEdit(projectDir, {
+                op: 'volume',
+                refs,
+                volume: change.volume
+              })
+              if (!res.ok) return text({ ok: false, error: res.error })
+            }
+            const after = changes?.length ? await readTimeline(projectDir) : timeline
+            return text({ ok: true, sounds: sounds(soundClips(after)) })
+          } catch (err) {
+            return text({ ok: false, error: message(err) })
+          }
+        }
+      ),
+      tool(
+        'reference_study',
+        'Study a video the user gave as a reference or inspiration ("make mine like this", "move like this"). It is never put on the timeline: Luca pulls 2 frames a second into contact sheets it can read, and returns them with the instructions to follow — reverse-engineer the beats, keep the motion, change the content.',
+        {
+          file: z
+            .string()
+            .describe(
+              'absolute path of the reference video, or a path inside the project like media/x.mp4'
+            )
+        },
+        async ({ file }) => {
+          const p = readProject(projectDir)
+          if (!p) return text({ ok: false, error: 'No project is open.' })
+          try {
+            const r = await studyReference(
+              projectDir,
+              isAbsolute(file) ? file : safeJoin(projectDir, file)
+            )
+            return text({
+              ok: true,
+              seconds: r.seconds,
+              sheets: r.sheets,
+              instructions: REFERENCE_STUDY(r.sheets, r.seconds)
+            })
           } catch (err) {
             return text({ ok: false, error: message(err) })
           }

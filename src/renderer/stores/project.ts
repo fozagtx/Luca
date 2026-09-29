@@ -1,4 +1,4 @@
-import type { Project, RecentProject, Settings } from '@shared/types'
+import type { ApprovalMode, Project, RecentProject, Settings } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 
@@ -17,6 +17,7 @@ type ProjectStore = {
   open: (dir: string) => Promise<void>
   close: () => Promise<void>
   refreshRecent: () => Promise<void>
+  setApprovals: (mode: ApprovalMode) => Promise<void>
   setError: (e: string | null) => void
 }
 
@@ -70,6 +71,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
   },
 
   refreshRecent: async () => set({ recent: await luca.project.recent() }),
+  setApprovals: async (mode) => set({ settings: await luca.settings.update({ approvals: mode }) }),
   setError: (error) => set({ error })
 }))
 

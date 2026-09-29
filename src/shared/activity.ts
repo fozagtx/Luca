@@ -165,14 +165,14 @@ function bash(command: string, titleOf?: TitleOf): Activity {
     switch (sub) {
       case 'add': {
         const what =
-          arg && !arg.startsWith('-') ? (titleOf?.(arg) ?? titleCase(arg)) : 'a component'
+          arg && !arg.startsWith('-') ? (titleOf?.(arg) ?? titleCase(arg)) : 'a title or effect'
         return act('add', `Adding ${what}`, `Added ${what}`)
       }
       case 'lint':
       case 'validate':
         return act('check', 'Checking the edit', 'Checked the edit')
       case 'catalog':
-        return act('search', 'Browsing the component library', 'Browsed the component library')
+        return act('search', 'Looking for a title or effect', 'Looked for a title or effect')
       case 'snapshot':
         return act('look', 'Looking at a frame', 'Looked at a frame')
       case 'timeline':
@@ -229,8 +229,12 @@ export function describeActivity(
     case 'mcp__luca__catalog_search': {
       const q = String(input.query ?? '').trim()
       return q
-        ? act('search', `Finding components for “${q}”`, `Searched components for “${q}”`)
-        : act('search', 'Browsing the component library', 'Browsed the component library')
+        ? act(
+            'search',
+            `Finding a title or effect for “${q}”`,
+            `Looked for a title or effect for “${q}”`
+          )
+        : act('search', 'Looking for a title or effect', 'Looked for a title or effect')
     }
     case 'mcp__luca__transcribe':
       return act('media', 'Listening to the video', 'Listened to the video')
@@ -244,12 +248,6 @@ export function describeActivity(
     }
     case 'mcp__luca__broll_add':
       return act('media', 'Adding B-roll', 'Added B-roll')
-    case 'mcp__luca__video_generate':
-      if (input.extend)
-        return act('media', 'Continuing the clip with Gemini', 'Continued the clip with Gemini')
-      if (input.video)
-        return act('media', 'Changing the clip with Gemini', 'Changed the clip with Gemini')
-      return act('media', 'Making a video with Gemini', 'Made a video with Gemini')
     case 'mcp__luca__remocn_install': {
       const name = String(input.name ?? 'component')
       const what = titleOf?.(name) ?? titleCase(name)
@@ -278,10 +276,16 @@ export function describeActivity(
       return act('add', 'Adding the sound to the video', 'Added the sound to the video')
     case 'mcp__luca__ai33_status':
       return act('other', 'Checking your credits', 'Checked your credits')
-    case 'mcp__luca__lut_apply':
-      return act('edit', 'Grading the color', 'Graded the color')
     case 'mcp__luca__captions_apply':
       return act('edit', 'Styling the captions', 'Styled the captions')
+    case 'mcp__luca__sound_mix':
+      return act('edit', 'Mixing the sound', 'Mixed the sound')
+    case 'mcp__luca__reference_study':
+      return act('look', 'Studying the reference', 'Studied the reference')
+    case 'mcp__luca__lut_apply':
+      return input.lut === 'none'
+        ? act('edit', 'Removing the color grade', 'Removed the color grade')
+        : act('edit', 'Grading the footage', 'Graded the footage')
     case 'mcp__luca__font_add': {
       // a pasted link says nothing to people; a family name does
       const font = String(input.font ?? '').trim()

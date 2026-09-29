@@ -10,6 +10,7 @@ import { Composer } from './Composer'
 import { AssistantMessage, UserMessage } from './Message'
 import { LucaAvatar, LucaProfile, Suggestions } from './Profile'
 import { QueueTray } from './Queue'
+import { VoiceStage } from './VoiceRecorder'
 
 // a streamed reply or a new step re-renders its own message, not the whole conversation
 const UserItem = memo(UserMessage)
@@ -136,6 +137,7 @@ function Messages({
           )}
         </div>
       </div>
+      <VoiceStage />
       <button
         type="button"
         aria-label="Scroll to the latest message"
