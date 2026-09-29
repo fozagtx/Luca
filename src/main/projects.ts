@@ -11,6 +11,7 @@ import {
 } from 'node:fs'
 import { basename, extname, join, relative } from 'node:path'
 import { editGuide, videoType } from '../shared/edits'
+import { BRIEF_ONLY, MOTION_GUIDE, REFERENCE_STUDY } from '../shared/motion'
 import type {
   Aspect,
   CreateProgress,
@@ -47,6 +48,7 @@ import {
   setAttrs
 } from './html'
 import { Channels, broadcast } from './ipc'
+import { studyReference } from './reference'
 import { snapshot } from './hyperframes'
 import { poster } from './media'
 import { hasSecret } from './secrets'
@@ -101,6 +103,8 @@ This video is edited inside Luca. The person sees the preview in Luca itself: ne
 2. Register one paused root timeline per composition: \`window.__timelines["composition-id"] = gsap.timeline({ paused: true })\`. Scene timelines added to the root must not be paused
 3. Videos use \`muted\` with a separate \`<audio>\` element for the audio track
 4. Only deterministic logic — no \`Date.now()\`, no \`Math.random()\`, no network fetches
+
+If .luca/MOTION.md exists this video is motion style: read it before your first edit in a session and follow it. If .luca/REFERENCE.md exists, its shot list is the structure to follow.
 `
   writeFileSync(join(dir, 'CLAUDE.md'), notes)
   writeFileSync(join(dir, 'AGENTS.md'), notes)
@@ -133,14 +137,12 @@ export const SIZE: Record<Aspect, [number, number]> = {
   square: [1080, 1080]
 }
 
-/** Footage (one video or more) or a voiceover; images alone or nothing can't start a project. */
+/** Footage (one video or more), a voiceover, or only the brief (no video or audio file). */
 export function startKind(files: string[]): StartKind {
   const exts = files.map((f) => extname(f).toLowerCase())
   if (exts.some((e) => VIDEO_EXT.has(e))) return 'video'
   if (exts.some((e) => AUDIO_EXT.has(e))) return 'audio'
-  throw new Error(
-    'Add a video or a voiceover to start. Images can come along as extras, like a logo or screenshots.'
-  )
+  return 'brief'
 }
 
 /** Keep a copy of the create call's progress so a late listener sees the current stage. */
@@ -180,71 +182,114 @@ export async function startProject(
   const images = ofType(IMAGE_EXT)
   const audio = ofType(AUDIO_EXT)[0] ?? null
   // the first video (or the voiceover), never an image that happened to be added before it
-  const main = kind === 'video' ? videos[0] : audio!
+  const main = kind === 'video' ? videos[0] : audio
   const settings = getSettings()
-  const name = (args.name?.trim() || basename(main, extname(main))).slice(0, 80)
+  const fallbackName =
+    args.edit?.notes?.trim().split(/\s+/).slice(0, 6).join(' ') || 'Untitled explainer'
+  const name = (args.name?.trim() || (main ? basename(main, extname(main)) : fallbackName)).slice(
+    0,
+    80
+  )
   const { dir, id } = uniqueDir(settings.projectsDir, slugify(name))
   // prepared videos wait next to the project, on the same disk, so moving them in is instant
   const staging = join(settings.projectsDir, `.${id}-preparing`)
 
+  const extrasLine = (added: string[]): string =>
+    ` The user also added ${added.length === 1 ? 'this file' : 'these files'}, in the order they added them: ${added.join(', ')}. Use ${added.length === 1 ? 'it' : 'them'} where ${added.length === 1 ? 'it fits' : 'they fit'} (images: a logo, screenshots or pictures of what is said; audio: the voiceover when the footage is silent, music under the voice otherwise).`
+
   try {
     report({ stage: 'preparing', message: 'Getting ready' })
-    const probes = await probeAll(videos)
-    // footage without sound and a voiceover: the voiceover is what is said
-    const voiceover = kind === 'video' && audio && !probes[0].audio ? audio : null
-    // images (and a soundtrack next to footage that has its own sound) wait in media/
-    const extras = kind === 'video' ? [...images, ...(audio && !voiceover ? [audio] : [])] : images
-    const ready = await prepareAll(videos, probes, staging, report)
-    const initFile = await safelyNamed(kind === 'video' ? ready[0] : main, staging)
-    const initArgs = ['init', id, '--non-interactive', '--resolution', RESOLUTION[args.aspect]]
-    if (kind === 'video') initArgs.push('--video', initFile, '--skip-transcribe')
-    else initArgs.push('--audio', initFile, '--skip-transcribe')
-    report({
-      stage: 'copying',
-      message:
-        kind === 'audio'
-          ? 'Copying your voiceover'
-          : videos.length > 1
-            ? 'Copying your videos'
-            : 'Copying your video'
-    })
-    const res = await runHyperframes(initArgs, {
-      cwd: settings.projectsDir,
-      timeoutMs: 240_000,
-      onStdout: (text) => {
-        // "Video: 1920x1080, 12.3s" — real steps, shown as they happen
-        const line = text
-          .split('\n')
-          .map((l) => l.trim())
-          .find((l) => /^(Video|Audio):/.test(l))
-        if (line) report({ stage: 'scaffolding', message: line })
-      }
-    })
-    if (res.code !== 0 || !existsSync(join(dir, 'index.html'))) {
-      throw new Error(
-        `Couldn't set up the project (${res.code}): ${(res.stderr || res.stdout).trim().slice(-800)}`
-      )
-    }
-    writeProjectNotes(dir)
-
-    // the file as it is in the project: init renames the footage it converts
-    let source = kind === 'video' ? findSource(dir) : basename(initFile)
+    let source: string
     let brief: string
-    if (kind === 'video') {
-      const clips = await placeClips(dir, source, videos, ready, probes, report)
-      const voice = voiceover ? await importVoiceover(dir, voiceover, report) : null
-      if (voice) source = basename(voice.src)
-      brief = videoBrief(clips, args.aspect, voice)
-    } else brief = await voiceoverBrief(dir, source, args.aspect)
-    if (extras.length) {
-      const added = await importExtras(dir, extras, report)
-      brief += ` The user also added ${added.length === 1 ? 'this file' : 'these files'}, in the order they added them: ${added.join(', ')}. Use ${added.length === 1 ? 'it' : 'them'} where ${added.length === 1 ? 'it fits' : 'they fit'} (images: a logo, screenshots or pictures of what is said; audio: the voiceover when the footage is silent, music under the voice otherwise).`
+    if (kind === 'brief') {
+      // words only: a blank composition; any images or music wait in media/
+      const res = await runHyperframes(
+        [
+          'init',
+          id,
+          '--non-interactive',
+          '--resolution',
+          RESOLUTION[args.aspect],
+          '--example',
+          'blank'
+        ],
+        { cwd: settings.projectsDir, timeoutMs: 240_000 }
+      )
+      if (res.code !== 0 || !existsSync(join(dir, 'index.html'))) {
+        throw new Error(
+          `Couldn't set up the project (${res.code}): ${(res.stderr || res.stdout).trim().slice(-800)}`
+        )
+      }
+      writeProjectNotes(dir)
+      source = ''
+      brief = BRIEF_ONLY
+      if (args.files.length) brief += extrasLine(await importExtras(dir, args.files, report))
+    } else {
+      const probes = await probeAll(videos)
+      // footage without sound and a voiceover: the voiceover is what is said
+      const voiceover = kind === 'video' && audio && !probes[0].audio ? audio : null
+      // images (and a soundtrack next to footage that has its own sound) wait in media/
+      const extras =
+        kind === 'video' ? [...images, ...(audio && !voiceover ? [audio] : [])] : images
+      const ready = await prepareAll(videos, probes, staging, report)
+      const initFile = await safelyNamed(kind === 'video' ? ready[0] : main!, staging)
+      const initArgs = ['init', id, '--non-interactive', '--resolution', RESOLUTION[args.aspect]]
+      if (kind === 'video') initArgs.push('--video', initFile, '--skip-transcribe')
+      else initArgs.push('--audio', initFile, '--skip-transcribe')
+      report({
+        stage: 'copying',
+        message:
+          kind === 'audio'
+            ? 'Copying your voiceover'
+            : videos.length > 1
+              ? 'Copying your videos'
+              : 'Copying your video'
+      })
+      const res = await runHyperframes(initArgs, {
+        cwd: settings.projectsDir,
+        timeoutMs: 240_000,
+        onStdout: (text) => {
+          // "Video: 1920x1080, 12.3s" — real steps, shown as they happen
+          const line = text
+            .split('\n')
+            .map((l) => l.trim())
+            .find((l) => /^(Video|Audio):/.test(l))
+          if (line) report({ stage: 'scaffolding', message: line })
+        }
+      })
+      if (res.code !== 0 || !existsSync(join(dir, 'index.html'))) {
+        throw new Error(
+          `Couldn't set up the project (${res.code}): ${(res.stderr || res.stdout).trim().slice(-800)}`
+        )
+      }
+      writeProjectNotes(dir)
+
+      // the file as it is in the project: init renames the footage it converts
+      source = kind === 'video' ? findSource(dir) : basename(initFile)
+      if (kind === 'video') {
+        const clips = await placeClips(dir, source, videos, ready, probes, report)
+        const voice = voiceover ? await importVoiceover(dir, voiceover, report) : null
+        if (voice) source = basename(voice.src)
+        brief = videoBrief(clips, args.aspect, voice)
+      } else brief = await voiceoverBrief(dir, source, args.aspect)
+      if (extras.length) brief += extrasLine(await importExtras(dir, extras, report))
     }
     // the edit picked on the start card: in the first request, and kept for later turns
-    const edit: StartEdit = args.edit ?? { type: 'talking', steps: videoType('talking').steps }
+    const edit: StartEdit = args.edit ?? {
+      type: 'talking',
+      style: 'motion',
+      steps: videoType('talking').steps.motion
+    }
+    if (edit.style === 'motion') writeFileSync(join(lucaDir(dir), 'MOTION.md'), MOTION_GUIDE + '\n')
+    if (edit.reference) {
+      report({ stage: 'studying', message: 'Studying your reference' })
+      const r = await studyReference(dir, edit.reference)
+      brief += `\n\n${REFERENCE_STUDY(r.sheets, r.seconds)}`
+    }
     const guide = editGuide(edit, {
-      canTranscribe: hasSecret('assemblyai'),
-      voiceOnly: kind === 'audio'
+      canTranscribe: kind !== 'brief' && hasSecret('assemblyai'),
+      voiceOnly: kind !== 'video',
+      hearNothing: kind === 'brief'
     })
     writeFileSync(join(lucaDir(dir), 'EDIT.md'), guide + '\n')
     brief += `\n\n${guide}`

@@ -10,7 +10,7 @@ import type {
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 import { errorMessage, useProject } from './project'
-import { attachmentOf, IMAGES_ONLY, kindOf, NO_FOOTAGE, useStart } from './start'
+import { attachmentOf, NO_FOOTAGE, useStart } from './start'
 
 /** A file on its way into the project for the chat; videos can take a moment to get ready. */
 export type PendingMedia = { id: number; name: string; media: MediaKind; progress?: number }
@@ -143,8 +143,9 @@ export const useChat = create<ChatStore>((set, get) => ({
     // and Luca starts editing it right away
     if (!useProject.getState().project) {
       const start = useStart.getState()
-      if (!kindOf(start.files)) {
-        set({ error: start.files.length ? IMAGES_ONLY : NO_FOOTAGE })
+      // a typed or spoken message with no media is the brief itself; nothing at all can't start
+      if (!text.trim() && !start.files.length) {
+        set({ error: NO_FOOTAGE })
         return false
       }
       if (!opts?.keepDraft) set({ draft: '', auto: null, error: null })

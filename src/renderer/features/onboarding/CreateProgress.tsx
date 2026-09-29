@@ -14,8 +14,16 @@ const STEPS: Record<StartKind, Step[]> = {
     { id: 'copying', label: 'Copying your voiceover (the original stays untouched)' },
     { id: 'scaffolding', label: 'Building the timeline' },
     { id: 'starting', label: 'Opening the project' }
+  ],
+  brief: [
+    { id: 'preparing', label: 'Getting ready' },
+    { id: 'scaffolding', label: 'Building the timeline' },
+    { id: 'starting', label: 'Opening the project' }
   ]
 }
+
+/** Shown only when a reference is being studied, before the project opens. */
+const STUDYING: Step = { id: 'studying', label: 'Studying your reference' }
 
 /** The real stages of making a project, as main reports them. */
 export function CreateProgressList({
@@ -30,7 +38,10 @@ export function CreateProgressList({
   seen?: CreateProgress['stage'][]
   since?: number
 }): ReactElement {
-  const steps = STEPS[kind]
+  const base = STEPS[kind]
+  const steps = seen.includes('studying')
+    ? [...base.slice(0, -1), STUDYING, base[base.length - 1]]
+    : base
   const stage = progress?.stage ?? 'preparing'
   const known = (id: string): boolean => steps.some((s) => s.id === id)
   const current =

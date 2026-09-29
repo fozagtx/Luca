@@ -6,6 +6,7 @@ import type {
   FootageInfo,
   StartEdit,
   StartKind,
+  StyleId,
   VideoTypeId
 } from '@shared/types'
 import { create } from 'zustand'
@@ -30,22 +31,34 @@ export function attachmentOf(path: string): Attachment | null {
   return null
 }
 
-/** What the files start: footage, a voiceover, or nothing yet (no files, or images alone). */
-export function kindOf(files: Attachment[]): StartKind | null {
+/** What the files start: footage, a voiceover, or only the brief (no files, or images alone). */
+export function kindOf(files: Attachment[]): StartKind {
   if (files.some((f) => f.kind === 'video')) return 'video'
   if (files.some((f) => f.kind === 'audio')) return 'audio'
-  return null
+  return 'brief'
 }
 
-/** Nothing to edit yet. */
+/** Nothing to describe a video with yet. */
 export const NO_FOOTAGE = 'Add your video first: drop it on the start card.'
 /** Images come along with a video or a voiceover, but can't start one. */
 export const IMAGES_ONLY =
   'Add a video or a voiceover too; images come along as extras, like a logo or screenshots.'
+/** A brief start needs the words. */
+export const NO_BRIEF = 'Tell Luca what the video is about first.'
 
-/** A video type with the steps it suggests, keeping the notes. */
-function editOf(type: VideoTypeId, notes?: string): StartEdit {
-  return { type, steps: [...videoType(type).steps], ...(notes ? { notes } : {}) }
+/** The type picked for them until they choose: footage talks, a voiceover explains, words launch. */
+export function defaultType(kind: StartKind): VideoTypeId {
+  return kind === 'video' ? 'talking' : kind === 'audio' ? 'concept' : 'launch'
+}
+
+/** A video type and style with the steps they suggest, keeping the notes. */
+function editOf(type: VideoTypeId, style: StyleId, notes?: string): StartEdit {
+  return {
+    type,
+    style,
+    steps: [...videoType(type).steps[style]],
+    ...(notes ? { notes } : {})
+  }
 }
 
 type StartStore = {
@@ -58,10 +71,12 @@ type StartStore = {
   /** The video the aspect was read from (the first one); whether the person then picked one. */
   aspectFrom: string | null
   aspectPicked: boolean
-  /** What kind of video it is, what Luca does to it and the person's notes. */
+  /** What kind of video it is, how Luca builds it, what Luca does to it and the brief. */
   edit: StartEdit
-  /** The person picked the type; until then it follows the files (a voiceover alone: explainer). */
+  /** The person picked the type; until then it follows the files (a voiceover alone: concept). */
   typePicked: boolean
+  /** A reference video Luca studies and builds the same way; it never goes on the timeline. */
+  reference: string | null
   busy: boolean
   progress: CreateProgress | null
   /** Stages seen during the current create, for the step list. */
@@ -76,8 +91,12 @@ type StartStore = {
    */
   startFrom: (paths: string[]) => Promise<void>
   setAspect: (a: Aspect) => void
-  /** Switching type turns on its own steps. */
+  /** Switching type turns on its own steps for the picked style. */
   setType: (type: VideoTypeId) => void
+  /** Switching style turns on the type's steps for that style. */
+  setStyle: (style: StyleId) => void
+  setReference: (path: string | null) => void
+  clearReference: () => void
   toggleStep: (id: EditStepId) => void
   setNotes: (notes: string) => void
   /** Words said or typed in the chat: after the notes already there, on a new paragraph. */
@@ -110,8 +129,9 @@ function filesChanged(): void {
   if (first !== aspectFrom)
     useStart.setState({ aspectFrom: first, ...(first ? {} : { aspectPicked: false }) })
   followFirstVideo()
-  const type = kindOf(files) === 'audio' ? 'explainer' : 'talking'
-  if (!typePicked && edit.type !== type) useStart.setState({ edit: editOf(type, edit.notes) })
+  const type = defaultType(kindOf(files))
+  if (!typePicked && edit.type !== type)
+    useStart.setState({ edit: editOf(type, edit.style, edit.notes) })
   for (const f of files) {
     if (f.kind !== 'video' || f.path in useStart.getState().footage || reading.has(f.path)) continue
     reading.add(f.path)
@@ -133,8 +153,9 @@ export const useStart = create<StartStore>((set, get) => ({
   aspect: 'landscape',
   aspectFrom: null,
   aspectPicked: false,
-  edit: editOf('talking'),
+  edit: editOf('launch', 'motion'),
   typePicked: false,
+  reference: null,
   busy: false,
   progress: null,
   seen: [],
@@ -186,7 +207,11 @@ export const useStart = create<StartStore>((set, get) => ({
     get().addFiles(paths)
   },
   setAspect: (aspect) => set({ aspect, aspectPicked: true }),
-  setType: (type) => set((s) => ({ edit: editOf(type, s.edit.notes), typePicked: true })),
+  setType: (type) =>
+    set((s) => ({ edit: editOf(type, s.edit.style, s.edit.notes), typePicked: true })),
+  setStyle: (style) => set((s) => ({ edit: editOf(s.edit.type, style, s.edit.notes) })),
+  setReference: (path) => set({ reference: path }),
+  clearReference: () => set({ reference: null }),
   toggleStep: (id) =>
     set((s) => {
       const on = s.edit.steps.includes(id)
@@ -216,21 +241,23 @@ export const useStart = create<StartStore>((set, get) => ({
         }))
       )
     }
-    const { files, aspect, edit, footage } = get()
+    const { files, aspect, edit, footage, reference } = get()
     const kind = kindOf(files)
-    if (!kind) {
-      set({ error: files.length ? IMAGES_ONLY : NO_FOOTAGE })
+    const notes = edit.notes?.trim()
+    if (kind === 'brief' && (notes?.length ?? 0) < 12) {
+      set({ error: NO_BRIEF })
       return false
     }
-    const voiceOnly = kind === 'audio'
+    const voiceOnly = kind !== 'video'
     const videos = files.filter((f) => f.kind === 'video')
-    const lead = videos[0] ?? files.find((f) => f.kind === 'audio')!
-    const notes = edit.notes?.trim()
-    // what the card showed: a voiceover has no picture to zoom into or name
+    const lead = videos[0] ?? files.find((f) => f.kind === 'audio')
+    // what the card showed: a voiceover or brief has no picture to zoom into or name
     const picked: StartEdit = {
       type: edit.type,
+      style: edit.style,
       steps: edit.steps.filter((id) => !(voiceOnly && editStep(id).needsPicture)),
-      ...(notes ? { notes } : {})
+      ...(notes ? { notes } : {}),
+      ...(reference ? { reference } : {})
     }
     // all the footage's length once every video is read; a voiceover's comes from the timeline
     const length =
@@ -241,7 +268,7 @@ export const useStart = create<StartStore>((set, get) => ({
     useProject.setState({ loading: true })
     try {
       const res = await luca.project.start({
-        name: lead.name.replace(/\.[^.]+$/, ''),
+        ...(lead ? { name: lead.name.replace(/\.[^.]+$/, '') } : {}),
         aspect,
         files: files.map((f) => f.path),
         edit: picked
@@ -252,8 +279,9 @@ export const useStart = create<StartStore>((set, get) => ({
         previews: {},
         aspectFrom: null,
         aspectPicked: false,
-        edit: editOf('talking'),
-        typePicked: false
+        edit: editOf('launch', 'motion'),
+        typePicked: false,
+        reference: null
       })
       if (!useUi.getState().chatOpen) useUi.getState().setChat(true)
       const chat = useChat.getState()
@@ -264,7 +292,7 @@ export const useStart = create<StartStore>((set, get) => ({
       })
       // the preview shows Luca at work instead of the unedited video until this turn ends
       useMaking.getState().begin(res.project.id, kind, length)
-      const request = editRequest(picked, { voiceOnly })
+      const request = editRequest(picked, { voiceOnly, brief: kind === 'brief' })
       const sent = await chat.send(notes ? `${request}\n\n${notes}` : request, {
         time: 0,
         note: res.brief,

@@ -1,6 +1,6 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import {
   BUILTIN_FONTS,
@@ -12,6 +12,7 @@ import {
   type CaptionAnim
 } from '../shared/captions'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
+import { REFERENCE_STUDY } from '../shared/motion'
 import { BUNDLED_LUTS } from '../shared/luts'
 import type { CaptionConfig, Cut, CutReason } from '../shared/types'
 import { applyColor, footageVideos, removeColor } from './color'
@@ -33,8 +34,12 @@ import {
 } from './clean'
 import { library } from './library'
 import { HYPERFRAMES } from './env'
+import { readTimeline } from './hyperframes'
+import { applyEdit } from './media'
+import { soundClips, soundOf } from '../shared/sound'
 import { addBroll, hasPexelsKey, searchBroll } from './pexels'
-import { readProject } from './projects'
+import { readProject, safeJoin } from './projects'
+import { studyReference } from './reference'
 import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
 
 const text = (data: unknown): { content: { type: 'text'; text: string }[] } => ({
@@ -101,6 +106,8 @@ const NO_SPEECH =
   'This project has no video or audio with speech, so there is nothing to caption. Offer animated titles or text instead.'
 const OFF_TIMELINE =
   'The video the transcript belongs to is no longer on the timeline, so there are no words to caption. Tell the user in one short sentence.'
+/** Brief-only projects have nothing to hear. */
+const NO_HEAR = 'This video has no footage or voiceover to hear.'
 
 // ------------------------------------------------------------------ words and cuts
 
@@ -286,6 +293,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         async ({ force }) => {
           const p = readProject(projectDir)
           if (!p) return text({ ok: false, error: 'No project is open.' })
+          if (!p.source) return text({ ok: false, error: NO_HEAR })
           try {
             const h = await transcribeInTurn(p, { force })
             return heardResult({ ok: true, words: h.words, seconds: h.seconds }, h)
@@ -320,6 +328,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         async ({ cuts }, extra) => {
           const p = readProject(projectDir)
           if (!p) return text({ ok: false, error: 'No project is open.' })
+          if (!p.source) return text({ ok: false, error: NO_HEAR })
           const signal = (extra as { signal?: AbortSignal } | undefined)?.signal
           try {
             const own: Cut[] = (cuts ?? []).map((c) => ({ ...c, text: c.text ?? '' }))
@@ -578,6 +587,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         async (args) => {
           const p = readProject(projectDir)
           if (!p) return text({ ok: false, error: 'No project is open.' })
+          if (!p.source) return text({ ok: false, error: NO_HEAR })
           // a voiceover's words play once it is on the timeline
           await placeVoiceover(p).catch(() => false)
           const state = captionState(p)
@@ -685,6 +695,98 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
             return text(
               `Applied ${info?.name ?? lut} at ${Math.round(level * 100)}% to ${state.targets} clip${state.targets === 1 ? '' : 's'}`
             )
+          } catch (err) {
+            return text({ ok: false, error: message(err) })
+          }
+        }
+      ),
+      tool(
+        'sound_mix',
+        'Set how loud each sound is: footage sound, voiceover, music, B-roll. Levels are 0 (silent) to 2 (twice as loud), 1 as recorded. Music under someone talking belongs around 0.15–0.3. Call with no changes to list the sounds and their levels.',
+        {
+          changes: z
+            .array(
+              z.object({
+                target: z
+                  .string()
+                  .describe(
+                    'a clip id, or a group: "footage", "voiceover", "music", "broll" or "all"'
+                  ),
+                volume: z.number().min(0).max(2).describe('0 silent, 1 as recorded, 2 louder')
+              })
+            )
+            .optional()
+            .describe('the levels to set; leave out to just list the sounds')
+        },
+        async ({ changes }) => {
+          const p = readProject(projectDir)
+          if (!p) return text({ ok: false, error: 'No project is open.' })
+          try {
+            const timeline = await readTimeline(projectDir)
+            const clips = soundClips(timeline)
+            const byId = new Map(clips.map((c) => [c.id.replace(/^#/, '').toLowerCase(), c]))
+            const sounds = (
+              list: typeof clips
+            ): { id: string; name: string; start: number; end: number; volume: number }[] =>
+              list.map((c) => ({
+                id: c.id,
+                name: soundOf(c, p).name,
+                start: c.start,
+                end: c.end,
+                volume: c.volume ?? 1
+              }))
+            for (const change of changes ?? []) {
+              const key = change.target.toLowerCase()
+              const refs =
+                key === 'all'
+                  ? clips.map((c) => c.ref)
+                  : byId.has(key)
+                    ? [byId.get(key)!.ref]
+                    : clips.filter((c) => soundOf(c, p).key === key).map((c) => c.ref)
+              if (!refs.length) {
+                return text({
+                  ok: false,
+                  error: `No sound called "${change.target}". The sounds are: ${[...new Set(clips.map((c) => soundOf(c, p).name))].join(', ') || 'none'} — or a clip id: ${clips.map((c) => c.id).join(', ') || 'none'}.`
+                })
+              }
+              const res = await applyEdit(projectDir, {
+                op: 'volume',
+                refs,
+                volume: change.volume
+              })
+              if (!res.ok) return text({ ok: false, error: res.error })
+            }
+            const after = changes?.length ? await readTimeline(projectDir) : timeline
+            return text({ ok: true, sounds: sounds(soundClips(after)) })
+          } catch (err) {
+            return text({ ok: false, error: message(err) })
+          }
+        }
+      ),
+      tool(
+        'reference_study',
+        'Study a video the user gave as a reference or inspiration ("make mine like this", "move like this"). It is never put on the timeline: Luca pulls 2 frames a second into contact sheets it can read, and returns them with the instructions to follow — reverse-engineer the beats, keep the motion, change the content.',
+        {
+          file: z
+            .string()
+            .describe(
+              'absolute path of the reference video, or a path inside the project like media/x.mp4'
+            )
+        },
+        async ({ file }) => {
+          const p = readProject(projectDir)
+          if (!p) return text({ ok: false, error: 'No project is open.' })
+          try {
+            const r = await studyReference(
+              projectDir,
+              isAbsolute(file) ? file : safeJoin(projectDir, file)
+            )
+            return text({
+              ok: true,
+              seconds: r.seconds,
+              sheets: r.sheets,
+              instructions: REFERENCE_STUDY(r.sheets, r.seconds)
+            })
           } catch (err) {
             return text({ ok: false, error: message(err) })
           }

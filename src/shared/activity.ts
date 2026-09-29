@@ -257,6 +257,10 @@ export function describeActivity(
     }
     case 'mcp__luca__captions_apply':
       return act('edit', 'Styling the captions', 'Styled the captions')
+    case 'mcp__luca__sound_mix':
+      return act('edit', 'Mixing the sound', 'Mixed the sound')
+    case 'mcp__luca__reference_study':
+      return act('look', 'Studying the reference', 'Studied the reference')
     case 'mcp__luca__lut_apply':
       return input.lut === 'none'
         ? act('edit', 'Removing the color grade', 'Removed the color grade')

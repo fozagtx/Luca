@@ -69,11 +69,11 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const startFiles = useStart((s) => s.files)
   const startPreviews = useStart((s) => s.previews)
   const starting = useStart((s) => s.busy)
-  const footage = !!kindOf(startFiles)
+  const media = kindOf(startFiles) !== 'brief'
   const disabled = starting
   // a file still on its way in would be missing from the message
-  const canSend = (hasText || (noProject && footage)) && attaching.length === 0
-  const sendLabel = noProject ? 'Edit my video' : working ? 'Add to the queue' : 'Send'
+  const canSend = (hasText || (noProject && media)) && attaching.length === 0
+  const sendLabel = noProject ? 'Make it' : working ? 'Add to the queue' : 'Send'
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -173,9 +173,9 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
       {noProject && !voiceMode ? (
         <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] text-text-3">
           <Sparkles size={11} className="shrink-0 text-accent" />
-          {footage
-            ? 'Say what you want, and Luca starts editing your video.'
-            : 'No project open: drop your video on the start card first.'}
+          {media
+            ? 'Say what you want, and Luca starts making your video.'
+            : 'Describe the video you want, and Luca makes it.'}
         </div>
       ) : null}
       <div
@@ -246,10 +246,10 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
               rows={1}
               placeholder={
                 noProject
-                  ? footage
+                  ? media
                     ? 'Anything Luca should know? (optional)'
-                    : 'Drop your video on the start card first…'
-                  : 'Ask Luca to edit your video…'
+                    : 'Describe the video you want…'
+                  : 'Tell Luca what to change…'
               }
               className={cn(
                 'block w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13px] leading-[20px] text-text placeholder:text-text-3 select-text',

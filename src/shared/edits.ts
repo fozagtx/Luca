@@ -3,7 +3,8 @@
  * (names, blurbs, which steps are on) and main (the edit plan that goes in the first request and
  * .luca/EDIT.md).
  */
-import type { EditStepId, StartEdit, VideoTypeId } from './types'
+import { MOTION_GUIDE } from './motion'
+import type { EditStepId, StartEdit, StyleId, VideoTypeId } from './types'
 
 export type EditStep = {
   id: EditStepId
@@ -81,8 +82,73 @@ export const EDIT_STEPS: EditStep[] = [
     needsPicture: false,
     guide:
       'Captions of everything said, last, with captions_apply, in the caption look this video type asks for; keep them clear of faces and of the titles you added.'
+  },
+  {
+    id: 'plan',
+    name: 'Beat map & stills first',
+    blurb: 'Plans every beat, shows 4 frames before building',
+    needsWords: false,
+    needsPicture: false,
+    guide:
+      'Before building: write the beat map (what happens on each beat, how each scene turns into the next, the camera move, the colors, the fonts) to .luca/PLAN.md, then render 4 stills (the opening, the main composition, the fastest transition, the end card) and look at each one zoomed in: hierarchy, spacing, type size, palette drift, stray shapes, cut-off text, overlaps. Fix them, then build the film.'
+  },
+  {
+    id: 'motion',
+    name: 'Morphing motion',
+    blurb: 'Nothing fades or cuts; scenes grow out of each other',
+    needsWords: false,
+    needsPicture: false,
+    guide:
+      'The motion follows .luca/MOTION.md: one continuous take, every scene made out of the previous one, springs that land soft, one camera move per scene, something on every beat.'
+  },
+  {
+    id: 'sound',
+    name: 'Music & sound on the beat',
+    blurb: 'Every click, whoosh and drop has a real sound',
+    needsWords: false,
+    needsPicture: false,
+    guide:
+      'Sound: the music the user gave is the clock (find its BPM and its drop; the biggest change lands on the drop). A sound effect for every event (a click on the press, a whoosh with the move, an impact on a reveal), placed by its peak, from the files the user gave; never synthesize one. Mix music under speech with sound_mix. If there is no music or no sound effects, say so in one line and ask the user to drop them in the chat.'
+  },
+  {
+    id: 'critique',
+    name: 'Director’s review',
+    blurb: 'Checks its own work frame by frame before you see it',
+    needsWords: false,
+    needsPicture: false,
+    guide:
+      'Before showing the user: review it like a harsh motion director who did not build it. Step through every fast moment frame by frame with snapshots and flag any fast move followed by a dead stop, text moving before it is readable, a sound off its hit, anything that fades, anything that looks like a template. Make the 5 fixes that improve it most, then reply.'
   }
 ]
+
+/** How Luca builds the video: morphing motion design, or a classic edit. */
+export type Style = {
+  id: StyleId
+  name: string
+  blurb: string
+  /** For Luca: the look and the way scenes move. */
+  guide: string
+}
+
+export const STYLES: Style[] = [
+  {
+    id: 'motion',
+    name: 'Motion',
+    blurb: 'Apple-keynote motion design: nothing cuts, everything morphs, on the beat',
+    guide: MOTION_GUIDE
+  },
+  {
+    id: 'classic',
+    name: 'Classic',
+    blurb: 'A clean edit: cuts, captions, zooms and B-roll',
+    guide:
+      'A classic edit of the footage or voiceover: clean cuts, punch-in zooms, titles, B-roll and captions. Polished and readable, never flashy.'
+  }
+]
+
+export function styleOf(id: string | undefined): Style {
+  return STYLES.find((s) => s.id === id) ?? STYLES[0]
+}
 
 export type VideoType = {
   id: VideoTypeId
@@ -90,59 +156,78 @@ export type VideoType = {
   /** Who it is for, in two or three words. */
   who: string
   blurb: string
-  /** The notes box's example. */
+  /** The brief box's example. */
   example: string
-  /** On by default. */
-  steps: EditStepId[]
+  /** On by default, for each way of building the video. */
+  steps: Record<StyleId, EditStepId[]>
   /** For Luca: what this kind of video needs from the edit. */
   guide: string
 }
 
 export const VIDEO_TYPES: VideoType[] = [
   {
+    id: 'launch',
+    name: 'Product launch',
+    who: 'For launches',
+    blurb: 'A launch film or feature reveal for your product',
+    example: 'e.g. “Acme, an AI that orders food for you — acme.app. 15 seconds, lime accent”',
+    steps: {
+      motion: ['plan', 'motion', 'sound', 'ending', 'critique'],
+      classic: ['cut', 'zooms', 'ending', 'captions']
+    },
+    guide:
+      'A product launch film: show the product doing its one thing. A user’s request goes in, the result comes out, the product’s real screens or a clean UI you draw in HTML stand in for it, and it ends on the product name and one call to action. Short (15–30 s unless asked), one idea per beat.'
+  },
+  {
+    id: 'concept',
+    name: 'Concept explainer',
+    who: 'For faceless channels & educators',
+    blurb: 'Explain how something works: an idea, a process, a number',
+    example: 'e.g. “how compound interest works, for beginners, keep it simple”',
+    steps: {
+      motion: ['plan', 'motion', 'broll', 'sound', 'captions', 'critique'],
+      classic: ['cut', 'hook', 'broll', 'captions']
+    },
+    guide:
+      'A concept explainer: the picture follows the idea. Key words and numbers as animated text, simple diagrams and charts for comparisons and steps, B-roll of what is named, one visual per idea and a new one every 3–6 s; never an empty frame. With a voiceover the voice carries it; without one the words on screen do.'
+  },
+  {
+    id: 'tutorial',
+    name: 'Tutorial',
+    who: 'For makers',
+    blurb: 'A screen recording walked through step by step',
+    example: 'e.g. “how to set up the export button, 3 steps, number them”',
+    steps: {
+      motion: ['plan', 'zooms', 'motion', 'sound', 'ending', 'critique'],
+      classic: ['cut', 'zooms', 'hook', 'ending', 'captions']
+    },
+    guide:
+      'A tutorial over a screen recording: zoom into the part of the screen being used, a short callout for each step (“1. Pick a file”), numbered steps, the cursor’s clicks made visible, and an ending card with what the viewer can now do.'
+  },
+  {
     id: 'talking',
     name: 'Talking video',
-    who: 'For creators',
-    blurb: 'You on camera: a phone clip, a vlog, a hot take',
-    example: 'e.g. “make it a snappy TikTok, highlight the key words in yellow”',
-    steps: ['cut', 'hook', 'zooms', 'captions'],
+    who: 'For creators & founders',
+    blurb: 'You on camera: a take, an update, a pitch',
+    example: 'e.g. “I’m Sam, founder of Acme, this is our launch update”',
+    steps: {
+      motion: ['cut', 'hook', 'motion', 'name', 'captions'],
+      classic: ['cut', 'hook', 'zooms', 'name', 'captions']
+    },
     guide:
-      'A creator talking to camera, for TikTok, Reels, Shorts or YouTube. Tight pacing with no dead air, a hook in the first 2 seconds, punch-in zooms on the key lines, and bold captions (2–4 words a line, the spoken word highlighted, big enough to read on a phone). Keep the person’s face clear of text.'
-  },
-  {
-    id: 'explainer',
-    name: 'Faceless explainer',
-    who: 'For faceless channels',
-    blurb: 'A voiceover or screen recording that explains something',
-    example: 'e.g. “it’s about how compound interest works, keep it simple”',
-    steps: ['cut', 'hook', 'broll', 'captions'],
-    guide:
-      'A faceless explainer (YouTube automation style): the voice carries it and the picture follows what is said. With only a voiceover, the whole screen is visuals: B-roll of what is said, key words and numbers as animated text, simple diagrams or charts for comparisons and steps (catalog_search); change the visual every 3–6 s and never leave an empty frame. Over a screen recording, zoom into the part being talked about and point at it with short callouts. Clean, readable captions (4–6 words a line).'
-  },
-  {
-    id: 'founder',
-    name: 'Founder video',
-    who: 'For founders',
-    blurb: 'An update, a story or a pitch, told by you',
-    example: 'e.g. “I’m Sam, founder of Acme. This is our launch update”',
-    steps: ['cut', 'zooms', 'name', 'captions'],
-    guide:
-      'A founder talking about their company: an update, a story, a pitch, a hiring or fundraising video. Polished and credible, never flashy: clean cuts, gentle punch-ins, the founder’s name and role on screen, the product or logo shown when it is named, calm captions (sentence case, 4–6 words a line).'
-  },
-  {
-    id: 'product',
-    name: 'Product video',
-    who: 'For launches',
-    blurb: 'A demo, a launch or a feature walkthrough',
-    example: 'e.g. “a 30-second launch video for our new export button”',
-    steps: ['cut', 'zooms', 'ending', 'captions'],
-    guide:
-      'A short product video: a demo, a launch or a feature walkthrough, often a screen recording with a voiceover. Show the product: zoom into the part of the screen being used, a short text callout for each feature (“1-click export”), keep it moving, and end on the product name and one call to action.'
+      'A person talking to camera: a creator’s take, a founder’s update or pitch. Tight pacing with no dead air, a hook in the first 2 seconds, the speaker’s name and role on screen, the product or logo shown when it is named, captions that stay clear of the face.'
   }
 ]
 
+/** Old type ids still mean their new kind: a saved card or an old project keeps working. */
+const LEGACY_TYPE: Record<string, VideoTypeId> = {
+  product: 'launch',
+  explainer: 'concept',
+  founder: 'talking'
+}
+
 export function videoType(id: string | undefined): VideoType {
-  return VIDEO_TYPES.find((t) => t.id === id) ?? VIDEO_TYPES[0]
+  return VIDEO_TYPES.find((t) => t.id === id || t.id === LEGACY_TYPE[id ?? '']) ?? VIDEO_TYPES[0]
 }
 
 export function editStep(id: EditStepId): EditStep {
@@ -150,8 +235,8 @@ export function editStep(id: EditStepId): EditStep {
 }
 
 /**
- * The steps that can run: in Luca's order, without the ones that need words when nothing can
- * transcribe, or a picture when there is only a voiceover.
+ * The steps that can run, in the order the type puts them, without the ones that need words
+ * when nothing can transcribe, or a picture when there is only a voiceover.
  */
 export function runnableSteps(
   steps: EditStepId[],
@@ -159,8 +244,8 @@ export function runnableSteps(
 ): { run: EditStep[]; skipped: EditStep[] } {
   const run: EditStep[] = []
   const skipped: EditStep[] = []
-  for (const s of EDIT_STEPS) {
-    if (!steps.includes(s.id)) continue
+  for (const id of steps) {
+    const s = editStep(id)
     if (s.needsPicture && opts.voiceOnly) continue
     if (s.needsWords && !opts.canTranscribe) skipped.push(s)
     else run.push(s)
@@ -168,13 +253,18 @@ export function runnableSteps(
   return { run, skipped }
 }
 
-/** The words on the first request, e.g. "Edit my talking video: cut ums & pauses, captions". */
-export function editRequest(edit: StartEdit, opts: { voiceOnly: boolean }): string {
+/** The words on the first request, e.g. "Make my product launch: beat map & stills first, …". */
+export function editRequest(
+  edit: StartEdit,
+  opts: { voiceOnly: boolean; brief?: boolean }
+): string {
   const type = videoType(edit.type)
-  const steps = EDIT_STEPS.filter(
-    (s) => edit.steps.includes(s.id) && !(s.needsPicture && opts.voiceOnly)
-  ).map((s) => s.name.toLowerCase())
-  const what = `Edit my ${type.name.toLowerCase()}`
+  const steps = edit.steps
+    .map(editStep)
+    .filter((s) => !(s.needsPicture && opts.voiceOnly))
+    .map((s) => s.name.toLowerCase())
+  // Luca builds motion films and briefs; it edits classic footage and voiceovers
+  const what = `${edit.style === 'motion' || opts.brief ? 'Make' : 'Edit'} my ${type.name.toLowerCase()}`
   return steps.length ? `${what}: ${steps.join(', ')}` : what
 }
 
@@ -184,16 +274,20 @@ export function editRequest(edit: StartEdit, opts: { voiceOnly: boolean }): stri
  */
 export function editGuide(
   edit: StartEdit,
-  opts: { canTranscribe: boolean; voiceOnly: boolean }
+  opts: { canTranscribe: boolean; voiceOnly: boolean; hearNothing?: boolean }
 ): string {
   const type = videoType(edit.type)
+  const style = styleOf(edit.style)
   const { run, skipped } = runnableSteps(edit.steps, opts)
   const out = [
     '# How the user wants this video edited',
-    `The user picked these when they added their footage. Keep every later edit in line with it unless they ask for something else.`,
+    `The user picked these when they described their video. Keep every later edit in line with it unless they ask for something else.`,
     '',
     `## ${type.name}`,
     type.guide,
+    '',
+    `## ${style.name} style`,
+    style.guide,
     ''
   ]
   if (run.length) {
@@ -205,21 +299,23 @@ export function editGuide(
   } else {
     out.push(
       '## The first edit',
-      'Nothing was switched on: look at the footage and make the smallest edit that suits this kind of video, then ask what they want next.',
+      'Nothing was switched on: look at what there is and make the smallest edit that suits this kind of video, then ask what they want next.',
       ''
     )
   }
   if (skipped.length)
     out.push(
-      `Skipped because Luca can’t hear the words yet (no AssemblyAI key): ${skipped.map((s) => s.name.toLowerCase()).join(', ')}. Say so in one sentence and that they can connect AssemblyAI in the Transcript tab to get them.`,
+      opts.hearNothing
+        ? `Left out, as this video has no voice or footage sound to hear: ${skipped.map((s) => s.name.toLowerCase()).join(', ')}.`
+        : `Skipped because Luca can’t hear the words yet (no AssemblyAI key): ${skipped.map((s) => s.name.toLowerCase()).join(', ')}. Say so in one sentence and that they can connect AssemblyAI in the Transcript tab to get them.`,
       ''
     )
   const notes = edit.notes?.trim()
-  if (notes) out.push('## The user’s notes', notes, '')
+  if (notes) out.push('## The user’s brief', notes, '')
   out.push(
     '## Rules',
     opts.voiceOnly
-      ? '- There is no footage: every frame needs a visual that follows what is said (B-roll, animated key words, simple diagrams). No intro or outro they didn’t ask for.'
+      ? '- There is no footage to play: every frame needs a visual that follows what is said or asked (B-roll, animated key words, simple diagrams, clean UI drawn in code). No intro or outro they didn’t ask for.'
       : '- The user’s footage is the video: it fills the frame. No stock or animated backgrounds behind it, no intro or outro they didn’t ask for.',
     '- Keep what they said and the order they said it in; cut only what the steps above ask for.',
     '- When you’re done, reply in 2–4 short lines: what you did, with times, and one thing they could ask for next.'

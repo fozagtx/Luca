@@ -7,6 +7,7 @@ export type Project = {
   name: string
   dir: string
   aspect: Aspect
+  /** The recording the project started from; '' for a brief-only project (no media). */
   source: string
   createdAt: string
   lastOpenedAt: string
@@ -38,6 +39,8 @@ export type Clip = {
   remocn?: boolean
   /** data-volume of audio/video clips (1 = unchanged, 0 = muted). */
   volume?: number
+  /** The tag has the `muted` attribute (a clip placed silent, like scaffolded footage). */
+  muted?: boolean
   /** data-media-start: where in its media file the clip starts playing (a trimmed start), in seconds. */
   mediaStart?: number
 }
@@ -309,6 +312,8 @@ export type TimelineEdit =
   | { op: 'delete'; ref: string; with?: string[] }
   /** Mute (0) or restore the clips' `data-volume`; the level before muting is kept. */
   | { op: 'mute'; refs: string[]; muted: boolean }
+  /** Set the clips' `data-volume` (0 = silent, 1 = as recorded, up to 2 = louder). */
+  | { op: 'volume'; refs: string[]; volume: number }
 
 /**
  * Move/resize an element on the canvas. Written as the CSS `translate`, `scale` and
@@ -368,41 +373,59 @@ export type VoiceEvent =
 
 /** Stages of making a new project, pushed while it is created. */
 export type CreateProgress = {
-  stage: 'preparing' | 'copying' | 'scaffolding' | 'starting' | 'done' | 'error'
+  stage: 'preparing' | 'copying' | 'scaffolding' | 'studying' | 'starting' | 'done' | 'error'
   message?: string
   /** 0..1 within the stage when measurable. */
   progress?: number
 }
 
-/** What a new project starts from: the person's footage, or a voiceover with nothing to show yet. */
-export type StartKind = 'video' | 'audio'
+/** What a new project starts from: footage, a voiceover, or only the brief ('brief': no media). */
+export type StartKind = 'video' | 'audio' | 'brief'
 
 export type StartArgs = {
   name?: string
   aspect: Aspect
   /**
    * Absolute paths, in the order they were added: videos (played back to back), images and at
-   * most one audio file. At least one video or the audio; images wait in media/ for Luca (a logo,
-   * screenshots).
+   * most one audio file. May be empty when `edit.notes` is non-empty (a brief-only start);
+   * images and audio wait in media/ for Luca (a logo, screenshots, music).
    */
   files: string[]
   /** What kind of video it is and what Luca does to it; saved as .luca/EDIT.md. */
   edit?: StartEdit
 }
 
-/** The kinds of video Luca edits (src/shared/edits.ts). */
-export type VideoTypeId = 'talking' | 'explainer' | 'founder' | 'product'
+/** The kinds of explainer Luca makes (src/shared/edits.ts). */
+export type VideoTypeId = 'launch' | 'concept' | 'tutorial' | 'talking'
+
+/** How Luca builds it: morphing motion design or a classic edit (src/shared/edits.ts). */
+export type StyleId = 'motion' | 'classic'
 
 /** What Luca can do on the first edit (src/shared/edits.ts). */
-export type EditStepId = 'cut' | 'hook' | 'zooms' | 'broll' | 'name' | 'ending' | 'captions'
+export type EditStepId =
+  | 'cut'
+  | 'hook'
+  | 'zooms'
+  | 'broll'
+  | 'name'
+  | 'ending'
+  | 'captions'
+  | 'plan'
+  | 'motion'
+  | 'sound'
+  | 'critique'
 
 /** Picked on the start card before Luca begins. */
 export type StartEdit = {
   type: VideoTypeId
+  /** How the video is built. */
+  style: StyleId
   /** The steps switched on. */
   steps: EditStepId[]
-  /** Anything Luca should know: who is speaking, the platform, the look. */
+  /** The brief: what the video is about, the script or the product (a link helps). */
   notes?: string
+  /** Absolute path of a reference video Luca studies and builds the same way. */
+  reference?: string
 }
 
 export type StartResult = {
