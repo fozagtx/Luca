@@ -1,14 +1,12 @@
 import {
-  BarChart3,
   Captions,
-  Images,
-  Quote,
-  Rocket,
+  Highlighter,
   Scissors,
+  Smartphone,
   Sparkles,
-  Type,
   Undo2,
   Wand2,
+  ZoomIn,
   type LucideIcon
 } from 'lucide-react'
 import type { ReactElement } from 'react'
@@ -43,7 +41,7 @@ export function LucaAvatar({
 
 const facts: { icon: LucideIcon; label: string }[] = [
   { icon: Scissors, label: 'Edits your video' },
-  { icon: Sparkles, label: 'Adds titles & effects' },
+  { icon: Sparkles, label: 'Cuts, captions & zooms' },
   { icon: Undo2, label: 'Every change can be undone' }
 ]
 
@@ -76,22 +74,21 @@ export function LucaProfile({ compact, live }: { compact: boolean; live: boolean
 }
 
 const suggestions: { icon: LucideIcon; text: string }[] = [
-  { icon: Type, text: 'Add a title that says Hello' },
+  { icon: Scissors, text: 'Cut the ums and long pauses' },
   { icon: Captions, text: 'Add captions to the whole video' },
-  { icon: Scissors, text: 'Cut the first 2 seconds' },
+  { icon: ZoomIn, text: 'Zoom in on the key lines' },
   { icon: Wand2, text: 'Add a lower third with my name' }
 ]
 
 const starts: { icon: LucideIcon; text: string }[] = [
-  { icon: Rocket, text: 'A 15-second launch teaser with bold kinetic titles' },
-  { icon: Quote, text: 'An animated quote card for Instagram' },
-  { icon: BarChart3, text: 'A short explainer with an animated chart' },
-  { icon: Images, text: 'A photo slideshow with smooth camera moves' }
+  { icon: Smartphone, text: 'Make it a snappy TikTok' },
+  { icon: Highlighter, text: 'Highlight the key words in yellow' },
+  { icon: Sparkles, text: 'Keep it calm and professional' }
 ]
 
 /**
  * Starter prompts (prompt-kit PromptSuggestion). They fill the box so people can adjust first.
- * With no project open they are ideas for a new video instead of edits.
+ * With no project open they are notes for the edit of the video on the start card.
  */
 export function Suggestions({ start }: { start: boolean }): ReactElement {
   const fillDraft = useChat((s) => s.fillDraft)
@@ -99,7 +96,7 @@ export function Suggestions({ start }: { start: boolean }): ReactElement {
   return (
     <div className="flex flex-col gap-1.5">
       <div className="px-1 pb-0.5 text-[11px] font-medium text-text-3">
-        {start ? 'Start a new video' : 'Try asking'}
+        {start ? 'Tell Luca about your video' : 'Try asking'}
       </div>
       {list.map((s, i) => (
         <button

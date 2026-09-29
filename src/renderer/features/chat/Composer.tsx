@@ -28,7 +28,7 @@ import { useChat, type PendingMedia } from '../../stores/chat'
 import { luca } from '../../lib/luca'
 import { stopLuca, useQueue } from '../../stores/queue'
 import { usePlayer } from '../../stores/player'
-import { useStart } from '../../stores/start'
+import { kindOf, useStart } from '../../stores/start'
 import { useVoice } from '../../stores/voice'
 import { AssemblyAiKeyCard } from '../onboarding/AssemblyAiKeyCard'
 import { ChipPill } from './Message'
@@ -41,8 +41,8 @@ const MAX_LINES = 8
  * The message box (prompt-kit PromptInput): grows with the text, Enter sends, Shift+Enter adds a
  * line. Focus is shown by a firmer edge and a soft lift rather than a coloured ring.
  *
- * With no project open it still works: the message is the idea for a new video (and media
- * dropped on it is what the video starts from).
+ * With no project open it still works: media dropped on it goes on the start card, and the
+ * message is a note for Luca's first edit of it (Luca starts right away).
  */
 export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const draft = useChat((s) => s.draft)
@@ -69,10 +69,11 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const startFiles = useStart((s) => s.files)
   const startPreviews = useStart((s) => s.previews)
   const starting = useStart((s) => s.busy)
+  const footage = !!kindOf(startFiles)
   const disabled = starting
   // a file still on its way in would be missing from the message
-  const canSend = (hasText || (noProject && startFiles.length > 0)) && attaching.length === 0
-  const sendLabel = noProject ? 'Start the video' : working ? 'Add to the queue' : 'Send'
+  const canSend = (hasText || (noProject && footage)) && attaching.length === 0
+  const sendLabel = noProject ? 'Edit my video' : working ? 'Add to the queue' : 'Send'
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -103,7 +104,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
     el.setSelectionRange(el.value.length, el.value.length)
   }
   const fileDrop = (dt: DataTransfer): boolean => Array.from(dt.types).includes('Files')
-  /** With no project, files are what the new video starts from; otherwise they go in the project. */
+  /** With no project, files go on the start card; otherwise they go in the project. */
   const addFiles = (files: File[]): void => {
     if (noProject) {
       const paths = files.map((f) => luca.project.pathForFile(f))
@@ -179,7 +180,9 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
       {noProject && !voiceMode ? (
         <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] text-text-3">
           <Sparkles size={11} className="shrink-0 text-accent" />
-          No project open: describe a video, then pick its look on the start screen.
+          {footage
+            ? 'Say what you want, and Luca starts editing your video.'
+            : 'No project open: drop your video on the start card first.'}
         </div>
       ) : null}
       <div
@@ -200,7 +203,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
         <EdgeGlow on={working && !noProject && !over} />
         {over ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[16px] text-[12px] font-medium text-accent">
-            {noProject ? 'Drop to start your video from it' : 'Drop to show it to Luca'}
+            {noProject ? 'Drop to add it on the start card' : 'Drop to show it to Luca'}
           </div>
         ) : null}
         {noProject && startFiles.length > 0 ? (
@@ -249,9 +252,9 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
               rows={1}
               placeholder={
                 noProject
-                  ? startFiles.length
-                    ? 'What should Luca make from this? (optional)'
-                    : 'Describe a video to make from scratch…'
+                  ? footage
+                    ? 'Anything Luca should know? (optional)'
+                    : 'Drop your video on the start card first…'
                   : 'Ask Luca to edit your video…'
               }
               className={cn(
@@ -296,14 +299,14 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
               </Tip>
               <span className="ml-auto min-w-0 truncate pr-1 text-[10.5px] text-text-3">
                 {starting
-                  ? 'Starting your video…'
+                  ? 'Getting your video ready…'
                   : attaching.length
                     ? 'Adding to your project…'
                     : working && hasText
                       ? '↩ to add to the queue'
                       : canSend
                         ? noProject
-                          ? '↩ to start'
+                          ? '↩ to start editing'
                           : '↩ to send'
                         : ''}
               </span>

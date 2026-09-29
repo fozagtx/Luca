@@ -1,7 +1,5 @@
 import type {
   AgentEvent,
-  Aspect,
-  Background,
   BackgroundResults,
   BackgroundSearch,
   CaptionConfig,
@@ -58,19 +56,12 @@ export type LucaApi = {
     savePanes: (key: string, sizes: number[]) => Promise<void>
   }
   project: {
-    create: (args: {
-      file: string
-      name?: string
-      aspect: Aspect
-      look?: string | null
-    }) => Promise<Project>
     open: (dir: string) => Promise<Project>
     close: () => Promise<void>
     current: () => Promise<Project | null>
     recent: () => Promise<RecentProject[]>
-    /** New project from a video, an audio file, images, or nothing (start from scratch). */
+    /** New project from the person's footage or a voiceover (images next to them wait in media/). */
     start: (args: StartArgs) => Promise<StartResult>
-    pickVideo: () => Promise<string | null>
     /** Videos, audio or images (several at once) to start a project from. */
     pickMedia: () => Promise<string[]>
     /** Small data-URL preview of a local image or video file. */
@@ -128,14 +119,12 @@ export type LucaApi = {
     remocnStudioStatus: () => Promise<{ ready: boolean; step?: string; error?: string }>
     remocnSetup: () => Promise<{ ok: boolean; error?: string }>
   }
-  /** Free stock photos and videos from Pexels, for backgrounds. */
+  /** Free stock photos and videos from Pexels, for B-roll. */
   backgrounds: {
     hasKey: () => Promise<boolean>
     /** Checks the key with Pexels and saves it (empty removes it); rejects when Pexels refuses it. */
     setKey: (key: string) => Promise<boolean>
     search: (args: BackgroundSearch) => Promise<BackgroundResults>
-    /** Today's home-screen background (null without a key); `shuffle` picks another one. */
-    home: (args?: { shuffle?: boolean }) => Promise<Background | null>
   }
   /** Video generation and editing with Gemini Omni, on the person's own API key. */
   gemini: {

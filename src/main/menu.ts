@@ -31,7 +31,7 @@ export function buildAppMenu(): void {
     {
       label: 'File',
       submenu: [
-        { label: 'New Project…', accelerator: 'Cmd+N', click: () => send('new-project') },
+        { label: 'Edit a Video…', accelerator: 'Cmd+N', click: () => send('new-project') },
         { label: 'Open Project…', accelerator: 'Cmd+O', click: () => send('open-project') },
         { label: 'Open Recent', submenu: [{ label: 'Clear Menu', enabled: false }] },
         { type: 'separator' },
@@ -99,14 +99,9 @@ export function buildAppMenu(): void {
           ]
         },
         { type: 'separator' },
-        { label: 'Inspiration', accelerator: 'Cmd+1', click: () => send('tab', 'inspiration') },
-        { label: 'Transcript', accelerator: 'Cmd+2', click: () => send('tab', 'transcript') },
+        { label: 'Transcript', accelerator: 'Cmd+1', click: () => send('tab', 'transcript') },
+        { label: 'B-roll', accelerator: 'Cmd+2', click: () => send('tab', 'broll') },
         { label: 'Looks', accelerator: 'Cmd+3', click: () => send('tab', 'looks') },
-        {
-          label: 'Backgrounds',
-          accelerator: 'Cmd+4',
-          click: () => send('tab', 'backgrounds')
-        },
         { type: 'separator' },
         { label: 'Toggle Grab', click: () => send('toggle-grab') },
         { label: 'History', accelerator: 'Cmd+Y', click: () => send('history') },

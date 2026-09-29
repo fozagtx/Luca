@@ -35,13 +35,11 @@ const api: LucaApi = {
     savePanes: (key, sizes) => invoke(C.settingsSavePanes, key, sizes)
   },
   project: {
-    create: (args) => invoke(C.projectCreate, args),
     open: (dir) => invoke(C.projectOpen, dir),
     close: () => invoke(C.projectClose),
     current: () => invoke(C.projectCurrent),
     recent: () => invoke(C.projectRecent),
     start: (args) => invoke(C.projectStart, args),
-    pickVideo: () => invoke(C.projectPickVideo),
     pickMedia: () => invoke(C.projectPickMedia),
     mediaPreview: (path) => invoke(C.projectMediaPreview, path),
     probeVideo: (path) => invoke(C.projectProbeVideo, path),
@@ -88,8 +86,7 @@ const api: LucaApi = {
   backgrounds: {
     hasKey: () => invoke(C.backgroundsHasKey),
     setKey: (key) => invoke(C.backgroundsSetKey, key),
-    search: (args) => invoke(C.backgroundsSearch, args),
-    home: (args) => invoke(C.backgroundsHome, args)
+    search: (args) => invoke(C.backgroundsSearch, args)
   },
   gemini: {
     hasKey: () => invoke(C.geminiHasKey),

@@ -1,39 +1,20 @@
-import { styleLabel, TEMPLATES, type Template } from '@shared/styles'
-import type { Aspect, Chip, CreateProgress, StartKind, StartStyle, StyleField } from '@shared/types'
+import { editRequest, editStep, videoType } from '@shared/edits'
+import type {
+  Aspect,
+  CreateProgress,
+  EditStepId,
+  FootageInfo,
+  StartEdit,
+  StartKind,
+  VideoTypeId
+} from '@shared/types'
 import { create } from 'zustand'
-import { aspectFrom, durationFrom } from '../lib/idea'
+import { goHome } from '../features/command/go-home'
 import { luca } from '../lib/luca'
 import { useChat } from './chat'
 import { useMaking } from './making'
 import { errorMessage, useProject } from './project'
 import { useUi } from './ui'
-
-/** The start steps, in order; the review comes after the last one. */
-export const START_STEPS = ['theme', 'font', 'background', 'motion', 'keyframes'] as const
-export type StartStep = (typeof START_STEPS)[number]
-export const REVIEW_STEP = START_STEPS.length
-
-/** What `begin` did: opened the steps, left it to a plain create (a video, nothing asked), or refused. */
-export type Begin = 'steps' | 'create' | 'invalid'
-
-/** The picks as chips on the first request, so the person sees what Luca was given. */
-function styleChips(style: StartStyle): Chip[] {
-  const order: StyleField[] = ['template', 'theme', 'font', 'background', 'motion', 'keyframes']
-  const names: Record<StyleField, string> = {
-    template: 'Template',
-    theme: 'Theme',
-    font: 'Font',
-    background: 'Background',
-    motion: 'Motion',
-    keyframes: 'Keyframes'
-  }
-  return order.flatMap((field) => {
-    const value = style[field]
-    // a Pexels pick has its own chip, with its picture
-    if (!value || value === 'picked') return []
-    return [{ kind: 'style', field, label: `${names[field]}: ${styleLabel(field, value)}` }]
-  })
-}
 
 export type Attachment = { path: string; name: string; kind: 'video' | 'audio' | 'image' }
 
@@ -49,169 +30,124 @@ export function attachmentOf(path: string): Attachment | null {
   return null
 }
 
-export function kindOf(files: Attachment[]): StartKind {
+/** What the files start: footage, a voiceover, or nothing yet (no files, or images alone). */
+export function kindOf(files: Attachment[]): StartKind | null {
   if (files.some((f) => f.kind === 'video')) return 'video'
   if (files.some((f) => f.kind === 'audio')) return 'audio'
-  if (files.length) return 'images'
-  return 'scratch'
+  return null
 }
 
-/** "A 20-second launch teaser for my coffee brand" → "Launch teaser coffee brand". */
-function nameFrom(prompt: string): string | undefined {
-  const words = prompt
-    .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
-    .split(/\s+/)
-    .filter(
-      (w) =>
-        w &&
-        !/^(a|an|the|make|me|for|of|my|with|and|to|video|please|create|\d+[-\s]?seconds?)$/i.test(w)
-    )
-  const name = words.slice(0, 4).join(' ')
-  return name ? name[0].toUpperCase() + name.slice(1) : undefined
+/** Nothing to edit yet. */
+export const NO_FOOTAGE = 'Add your video first: drop it on the start card.'
+/** Images come along with a video or a voiceover, but can't start one. */
+export const IMAGES_ONLY =
+  'Add a video or a voiceover too; images come along as extras, like a logo or screenshots.'
+
+/** A video type with the steps it suggests, keeping the notes. */
+function editOf(type: VideoTypeId, notes?: string): StartEdit {
+  return { type, steps: [...videoType(type).steps], ...(notes ? { notes } : {}) }
 }
 
 type StartStore = {
   /** In the order they were added: videos play back to back in this order. */
   files: Attachment[]
   previews: Record<string, string | null>
+  /** Each video's shape and length, as it is read (kept, so a file added again is known). */
+  footage: Record<string, FootageInfo>
   aspect: Aspect
   /** The video the aspect was read from (the first one); whether the person then picked one. */
   aspectFrom: string | null
   aspectPicked: boolean
-  /** Target length in seconds; null lets Luca decide. */
-  duration: number | null
+  /** What kind of video it is, what Luca does to it and the person's notes. */
+  edit: StartEdit
+  /** The person picked the type; until then it follows the files (a voiceover alone: explainer). */
+  typePicked: boolean
   busy: boolean
   progress: CreateProgress | null
   /** Stages seen during the current create, for the step list. */
   seen: CreateProgress['stage'][]
   error: string | null
-  /** The idea the start steps are for, while they are open. */
-  idea: string
-  /** The start step on screen (REVIEW_STEP for the review), or null while the prompt shows. */
-  step: number | null
-  /** What was picked on the steps or by a template; anything missing is Luca's call. */
-  style: StartStyle
-  /**
-   * Take the idea to the steps (theme, font, background, motion, keyframes) instead of starting
-   * straight away. A length or shape named in the words ("15 seconds", "a TikTok") is used.
-   */
-  begin: (prompt: string) => Begin
-  setStep: (step: number | null) => void
-  pick: <K extends keyof StartStyle>(field: K, value: StartStyle[K] | undefined) => void
-  /** Start from a template (its shape, length and look), or drop the one in use (null). */
-  applyTemplate: (id: string | null) => void
   addFiles: (paths: string[]) => void
   removeFile: (path: string) => void
   pickFiles: () => Promise<void>
-  setAspect: (a: Aspect) => void
-  setDuration: (d: number | null) => void
-  reset: () => void
   /**
-   * Create the project from the attachments (or from nothing), open it and hand Luca the idea
-   * with any components the person picked (they wait as chips in the chat composer).
+   * Files opened from outside the start card (⌘N, a video dropped on the Dock icon): Home, with
+   * them on the card. The open project closes first (asking if Luca is mid-reply).
    */
-  /** `spoken`: asked out loud, so Luca's first reply is short enough to read aloud. */
-  create: (prompt: string, opts?: { spoken?: boolean }) => Promise<boolean>
+  startFrom: (paths: string[]) => Promise<void>
+  setAspect: (a: Aspect) => void
+  /** Switching type turns on its own steps. */
+  setType: (type: VideoTypeId) => void
+  toggleStep: (id: EditStepId) => void
+  setNotes: (notes: string) => void
+  /** Words said or typed in the chat: after the notes already there, on a new paragraph. */
+  addNotes: (text: string) => void
+  /**
+   * Create the project from the footage or voiceover (images come along), open it and send
+   * Luca the first request: the edit picked on the card and the notes. Luca starts right away.
+   * `spoken`: asked out loud, so Luca's first reply is short enough to read aloud.
+   */
+  create: (opts?: { spoken?: boolean }) => Promise<boolean>
 }
 
 let bound = false
+/** Videos being read, so each is read once. */
+const reading = new Set<string>()
 
 /** The first video decides the project's shape (phone footage: portrait) until the person picks. */
 function followFirstVideo(): void {
-  const { files, aspectFrom } = useStart.getState()
+  const s = useStart.getState()
+  const info = s.aspectFrom ? s.footage[s.aspectFrom] : undefined
+  if (info && !s.aspectPicked && s.aspect !== info.aspect)
+    useStart.setState({ aspect: info.aspect })
+}
+
+/** After the files change: read new videos, follow the first one's shape and the type's default. */
+function filesChanged(): void {
+  const { files, aspectFrom, typePicked, edit } = useStart.getState()
   const first = files.find((f) => f.kind === 'video')?.path ?? null
-  if (first === aspectFrom) return
   // a shape the person picked stays until they start over with no video at all
-  useStart.setState({ aspectFrom: first, ...(first ? {} : { aspectPicked: false }) })
-  if (!first) return
-  void luca.project
-    .probeVideo(first)
-    .then((info) => {
-      const s = useStart.getState()
-      if (info && s.aspectFrom === first && !s.aspectPicked)
-        useStart.setState({ aspect: info.aspect })
-    })
-    .catch(() => undefined)
+  if (first !== aspectFrom)
+    useStart.setState({ aspectFrom: first, ...(first ? {} : { aspectPicked: false }) })
+  followFirstVideo()
+  const type = kindOf(files) === 'audio' ? 'explainer' : 'talking'
+  if (!typePicked && edit.type !== type) useStart.setState({ edit: editOf(type, edit.notes) })
+  for (const f of files) {
+    if (f.kind !== 'video' || f.path in useStart.getState().footage || reading.has(f.path)) continue
+    reading.add(f.path)
+    void luca.project
+      .probeVideo(f.path)
+      .then((info) => {
+        if (info) useStart.setState((s) => ({ footage: { ...s.footage, [f.path]: info } }))
+        followFirstVideo()
+      })
+      .catch(() => undefined)
+      .finally(() => reading.delete(f.path))
+  }
 }
 
 export const useStart = create<StartStore>((set, get) => ({
   files: [],
   previews: {},
+  footage: {},
   aspect: 'landscape',
   aspectFrom: null,
   aspectPicked: false,
-  duration: null,
+  edit: editOf('talking'),
+  typePicked: false,
   busy: false,
   progress: null,
   seen: [],
   error: null,
-  idea: '',
-  step: null,
-  style: {},
-
-  begin: (prompt) => {
-    const { files, style, aspectPicked } = get()
-    const kind = kindOf(files)
-    const text = prompt.trim()
-    const background = useChat.getState().chips.some((c) => c.kind === 'background')
-    // a video with nothing asked just opens: there is nothing to style yet
-    if (kind === 'video' && !text && !background && !style.template) return 'create'
-    if (kind === 'scratch' && !text && (style.template || !background)) {
-      set({
-        error: style.template
-          ? 'Say what your video is about, and Luca builds it with the template.'
-          : 'Describe the video you want, or add a video, audio, images or a background.'
-      })
-      return 'invalid'
-    }
-    const secs = kind === 'images' || kind === 'scratch' ? durationFrom(text) : null
-    const shape = aspectPicked || files.some((f) => f.kind === 'video') ? null : aspectFrom(text)
-    set({
-      idea: text,
-      step: 0,
-      error: null,
-      ...(secs ? { duration: secs } : {}),
-      ...(shape ? { aspect: shape } : {})
-    })
-    return 'steps'
-  },
-  setStep: (step) => set({ step, error: null }),
-  pick: (field, value) =>
-    set((s) => {
-      const style = { ...s.style }
-      if (value === undefined) delete style[field]
-      else style[field] = value
-      return { style }
-    }),
-  applyTemplate: (id) => {
-    const { style, files, duration } = get()
-    const prev = TEMPLATES.find((t) => t.id === style.template)
-    // what the last template chose goes with it; the person's own picks stay
-    const base: StartStyle = { ...style }
-    delete base.template
-    if (prev)
-      for (const k of Object.keys(prev.style) as (keyof Template['style'])[])
-        if (base[k] === prev.style[k]) delete base[k]
-    const t = TEMPLATES.find((x) => x.id === id)
-    if (!t) {
-      set({ style: base, ...(prev && duration === prev.duration ? { duration: null } : {}) })
-      return
-    }
-    set({
-      style: { ...base, ...t.style, template: t.id },
-      duration: t.duration,
-      // footage keeps its own shape
-      ...(files.some((f) => f.kind === 'video') ? {} : { aspect: t.aspect }),
-      error: null
-    })
-  },
 
   addFiles: (paths) => {
+    // the project is on its way: these would be left out of it
+    if (get().busy) return
     const next = [...get().files]
     for (const p of paths) {
       const a = attachmentOf(p)
       if (!a || next.some((f) => f.path === p)) continue
-      // videos and images add up in the order they come; one audio track at a time
+      // videos and images add up in the order they come; one voiceover at a time
       if (a.kind === 'audio') {
         const at = next.findIndex((f) => f.kind === 'audio')
         if (at >= 0) next.splice(at, 1)
@@ -219,7 +155,7 @@ export const useStart = create<StartStore>((set, get) => ({
       next.push(a)
     }
     set({ files: next, error: null })
-    followFirstVideo()
+    filesChanged()
     for (const f of next) {
       if (f.path in get().previews) continue
       set((s) => ({ previews: { ...s.previews, [f.path]: null } }))
@@ -230,29 +166,42 @@ export const useStart = create<StartStore>((set, get) => ({
     }
   },
   removeFile: (path) => {
-    set((s) => ({ files: s.files.filter((f) => f.path !== path) }))
-    followFirstVideo()
+    set((s) => ({ files: s.files.filter((f) => f.path !== path), error: null }))
+    filesChanged()
   },
   pickFiles: async () => {
     const paths = await luca.project.pickMedia()
     if (paths.length) get().addFiles(paths)
   },
+  startFrom: async (paths) => {
+    if (useProject.getState().project) {
+      await goHome()
+      // they chose to let Luca finish
+      if (useProject.getState().project) return
+    }
+    get().addFiles(paths)
+  },
   setAspect: (aspect) => set({ aspect, aspectPicked: true }),
-  setDuration: (duration) => set({ duration }),
-  reset: () =>
-    set({
-      files: [],
-      aspectFrom: null,
-      aspectPicked: false,
-      error: null,
-      progress: null,
-      seen: [],
-      idea: '',
-      step: null,
-      style: {}
+  setType: (type) => set((s) => ({ edit: editOf(type, s.edit.notes), typePicked: true })),
+  toggleStep: (id) =>
+    set((s) => {
+      const on = s.edit.steps.includes(id)
+      return {
+        edit: {
+          ...s.edit,
+          steps: on ? s.edit.steps.filter((x) => x !== id) : [...s.edit.steps, id]
+        }
+      }
     }),
+  setNotes: (notes) => set((s) => ({ edit: { ...s.edit, notes } })),
+  addNotes: (text) => {
+    const words = text.trim()
+    if (!words) return
+    const notes = [get().edit.notes?.trim(), words].filter(Boolean).join('\n\n')
+    set((s) => ({ edit: { ...s.edit, notes } }))
+  },
 
-  create: async (prompt, opts) => {
+  create: async (opts) => {
     if (get().busy) return false
     if (!bound) {
       bound = true
@@ -263,67 +212,61 @@ export const useStart = create<StartStore>((set, get) => ({
         }))
       )
     }
-    const { files, aspect, duration } = get()
+    const { files, aspect, edit, footage } = get()
     const kind = kindOf(files)
-    const text = prompt.trim()
-    // a background picked on the start card goes to Luca with the first request
-    const background = useChat.getState().chips.some((c) => c.kind === 'background')
-    // the Pexels pick is whatever background chip is there (picked on the steps or the browser)
-    const style: StartStyle = { ...get().style }
-    if (background) style.background = 'picked'
-    else if (style.background === 'picked') delete style.background
-    const template = TEMPLATES.find((t) => t.id === style.template)
-    if (kind === 'scratch' && !text && (template || !background)) {
-      set({
-        error: template
-          ? 'Say what your video is about, and Luca builds it with the template.'
-          : 'Describe the video you want, or add a video, audio, images or a background.'
-      })
+    if (!kind) {
+      set({ error: files.length ? IMAGES_ONLY : NO_FOOTAGE })
       return false
     }
+    const voiceOnly = kind === 'audio'
+    const videos = files.filter((f) => f.kind === 'video')
+    const lead = videos[0] ?? files.find((f) => f.kind === 'audio')!
+    const notes = edit.notes?.trim()
+    // what the card showed: a voiceover has no picture to zoom into or name
+    const picked: StartEdit = {
+      type: edit.type,
+      steps: edit.steps.filter((id) => !(voiceOnly && editStep(id).needsPicture)),
+      ...(notes ? { notes } : {})
+    }
+    // all the footage's length once every video is read; a voiceover's comes from the timeline
+    const length =
+      kind === 'video' && videos.every((v) => footage[v.path])
+        ? videos.reduce((sum, v) => sum + footage[v.path].duration, 0)
+        : null
     set({ busy: true, error: null, progress: { stage: 'preparing' }, seen: ['preparing'] })
     useProject.setState({ loading: true })
     try {
       const res = await luca.project.start({
-        name: nameFrom(text),
+        name: lead.name.replace(/\.[^.]+$/, ''),
         aspect,
         files: files.map((f) => f.path),
-        duration: duration ?? undefined,
-        ...(Object.keys(style).length ? { style } : {})
+        edit: picked
       })
       useProject.setState({ project: res.project, version: 0, previewVersion: 0 })
-      set({ files: [], previews: {}, aspectFrom: null, idea: '', step: null, style: {} })
+      set({
+        files: [],
+        previews: {},
+        aspectFrom: null,
+        aspectPicked: false,
+        edit: editOf('talking'),
+        typePicked: false
+      })
+      if (!useUi.getState().chatOpen) useUi.getState().setChat(true)
       const chat = useChat.getState()
-      // a video with nothing asked is a plain new project; everything else starts Luca working
-      if (text || kind === 'images' || kind === 'audio' || background || template) {
-        if (!useUi.getState().chatOpen) useUi.getState().setChat(true)
-        const visible =
-          text ||
-          (template
-            ? `Make this a ${template.name}`
-            : kind === 'images'
-              ? files.length === 1
-                ? 'Turn my photo into a video'
-                : `Make a video from my ${files.length} photos`
-              : kind === 'audio'
-                ? 'Make a video that goes with my audio'
-                : kind === 'video'
-                  ? files.filter((f) => f.kind === 'video').length > 1
-                    ? 'Put my videos on this background'
-                    : 'Put my video on this background'
-                  : 'Make a video on this background')
-        // the picks go first among the chips, so they show on the request (and come back with
-        // the rest if it can't be sent)
-        useChat.setState({ chips: [...styleChips(style), ...chat.chips] })
-        // the preview shows Luca at work instead of the blank starter until this turn ends
-        useMaking.getState().begin(res.project.id, kind, duration)
-        const sent = await chat.send(visible, {
-          time: 0,
-          note: res.brief,
-          ...(opts?.spoken ? { voice: true } : {})
-        })
-        if (!sent) useMaking.getState().cancel()
-      }
+      // the type goes first among the chips, so it shows on the request (and comes back with the
+      // rest if it can't be sent)
+      useChat.setState({
+        chips: [{ kind: 'edit', label: videoType(picked.type).name }, ...chat.chips]
+      })
+      // the preview shows Luca at work instead of the unedited video until this turn ends
+      useMaking.getState().begin(res.project.id, kind, length)
+      const request = editRequest(picked, { voiceOnly })
+      const sent = await chat.send(notes ? `${request}\n\n${notes}` : request, {
+        time: 0,
+        note: res.brief,
+        ...(opts?.spoken ? { voice: true } : {})
+      })
+      if (!sent) useMaking.getState().cancel()
       return true
     } catch (err) {
       set({ error: errorMessage(err) })

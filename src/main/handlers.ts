@@ -2,7 +2,6 @@ import { app, BrowserWindow, dialog, nativeImage, nativeTheme, shell } from 'ele
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type {
-  Aspect,
   BackgroundSearch,
   CaptionConfig,
   Chip,
@@ -25,7 +24,6 @@ import {
   captionState,
   captionWords,
   FONT_EXT,
-  installBundledFont,
   installUsedBundledFonts,
   projectFonts,
   refreshCaptions,
@@ -34,6 +32,7 @@ import {
 import {
   applyEdl,
   cleanStatus,
+  placeVoiceover,
   readEdl,
   readTranscript,
   runCleanEdit,
@@ -50,7 +49,7 @@ import { invalidateLibrary } from './library'
 import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
 import { hasGeminiKey, saveGeminiKey } from './gemini'
-import { hasPexelsKey, homeBackground, savePexelsKey, searchBackgrounds } from './pexels'
+import { hasPexelsKey, savePexelsKey, searchBackgrounds } from './pexels'
 import {
   checkForUpdates,
   installUpdate,
@@ -171,14 +170,9 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     const report = (p: CreateProgress): void => broadcast(Channels.projectCreateProgress, p)
     try {
       const res = await startProject(args, report)
-      // a font picked on the start steps that comes with Luca is in the project before Luca starts
-      if (args.style?.font) {
-        try {
-          installBundledFont(res.project.dir, args.style.font)
-        } catch (err) {
-          console.warn('[luca] adding the start font failed', err)
-        }
-      }
+      // init leaves a voiceover off the timeline: it plays from the first frame, even when Luca
+      // can't transcribe it
+      if (res.kind === 'audio') await placeVoiceover(res.project)
       // the Look goes in before the project opens, so it opens (repo, watcher, Claude) only once;
       // a Look that only partly applied still opens the project, then reports what failed
       let lookError: unknown = null
@@ -197,20 +191,14 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     }
   }
   handle(Channels.projectStart, start)
-  handle(
-    Channels.projectCreate,
-    async (args: { file: string; name?: string; aspect: Aspect; look?: string | null }) =>
-      (await start({ name: args.name, aspect: args.aspect, look: args.look, files: [args.file] }))
-        .project
-  )
   handle(Channels.projectPickMedia, async () => {
     const ext = (set: Set<string>): string[] => [...set].map((e) => e.slice(1))
     const res = await openDialog(getWin(), {
-      title: 'Choose a video, audio or images',
+      title: 'Choose your video or voiceover',
       properties: ['openFile', 'multiSelections'],
       filters: [
         {
-          name: 'Video, audio or images',
+          name: 'Video, voiceover or images',
           extensions: [...ext(VIDEO_EXT), ...ext(AUDIO_EXT), ...ext(IMAGE_EXT)]
         }
       ]
@@ -261,14 +249,6 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   })
   handle(Channels.projectCurrent, currentProject)
   handle(Channels.projectRecent, recentProjects)
-  handle(Channels.projectPickVideo, async () => {
-    const res = await openDialog(getWin(), {
-      title: 'Choose a video',
-      properties: ['openFile'],
-      filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'm4v', 'webm'] }]
-    })
-    return res.canceled ? null : (res.filePaths[0] ?? null)
-  })
   handle(Channels.projectPickDir, async () => {
     const res = await openDialog(getWin(), {
       title: 'Open a Luca project',
@@ -347,13 +327,10 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.updatesSetToken, (token: string) => saveUpdateToken(token))
   handle(Channels.updatesMove, moveToApplications)
 
-  // backgrounds (Pexels)
+  // B-roll (Pexels)
   handle(Channels.backgroundsHasKey, hasPexelsKey)
   handle(Channels.backgroundsSetKey, (key: string) => savePexelsKey(key))
   handle(Channels.backgroundsSearch, (args: BackgroundSearch) => searchBackgrounds(args))
-  handle(Channels.backgroundsHome, (args?: { shuffle?: boolean }) =>
-    homeBackground(!!args?.shuffle)
-  )
 
   // clean
   handle(Channels.cleanRun, () => runCleanEdit(requireProject()))

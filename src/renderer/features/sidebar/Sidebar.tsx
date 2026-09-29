@@ -1,31 +1,27 @@
-import { Captions, Lightbulb, Palette, PanelLeftClose, Wallpaper } from 'lucide-react'
+import { Captions, ImagePlay, Palette, PanelLeftClose } from 'lucide-react'
 import type { ReactElement, ReactNode } from 'react'
 import { ErrorBoundary } from '../../components/ui/error-boundary'
 import { Segmented, type SegmentedItem } from '../../components/ui/segmented'
 import { Tip } from '../../components/ui/tooltip'
 import { useUi, type SidebarTab } from '../../stores/ui'
-import { BackgroundsTab } from './backgrounds/BackgroundsTab'
-import { CatalogTab } from './catalog/CatalogTab'
-import { InspirationTab } from './inspiration/InspirationTab'
+import { BrollTab } from './broll/BrollTab'
 import { LooksTab } from './looks/LooksTab'
 import { TranscriptTab } from './transcript/TranscriptTab'
 
 const tabs: (SegmentedItem<SidebarTab> & { title: string })[] = [
   {
-    id: 'inspiration',
-    label: 'Inspiration',
-    title: 'Inspiration',
-    shortcut: '⌘1',
-    icon: <Lightbulb size={15} strokeWidth={1.6} />
-  },
-  // Luca picks components itself from what you describe, so there is no catalog to browse; the
-  // Catalog tab (./catalog) stays in the code for when browsing comes back
-  {
     id: 'transcript',
     label: 'Transcript',
     title: 'Transcript',
-    shortcut: '⌘2',
+    shortcut: '⌘1',
     icon: <Captions size={15} strokeWidth={1.6} />
+  },
+  {
+    id: 'broll',
+    label: 'B-roll',
+    title: 'B-roll',
+    shortcut: '⌘2',
+    icon: <ImagePlay size={15} strokeWidth={1.6} />
   },
   {
     id: 'looks',
@@ -33,13 +29,6 @@ const tabs: (SegmentedItem<SidebarTab> & { title: string })[] = [
     title: 'Looks',
     shortcut: '⌘3',
     icon: <Palette size={15} strokeWidth={1.6} />
-  },
-  {
-    id: 'backgrounds',
-    label: 'Backgrounds',
-    title: 'Backgrounds',
-    shortcut: '⌘4',
-    icon: <Wallpaper size={15} strokeWidth={1.6} />
   }
 ]
 
@@ -63,6 +52,7 @@ export function Sidebar(): ReactElement {
   const tab = useUi((s) => s.tab)
   const setTab = useUi((s) => s.setTab)
   const setSidebar = useUi((s) => s.setSidebar)
+  const title = tabs.find((t) => t.id === tab)?.title ?? tab
   return (
     <aside className="sidebar-vibrancy flex h-full min-w-0 flex-col">
       <div className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-3">
@@ -79,12 +69,10 @@ export function Sidebar(): ReactElement {
         </Tip>
       </div>
       <div className="min-h-0 flex-1 border-t border-border">
-        <ErrorBoundary key={tab} label={`the ${tab} tab`}>
-          {tab === 'inspiration' && <InspirationTab />}
-          {tab === 'catalog' && <CatalogTab />}
+        <ErrorBoundary key={tab} label={`the ${title} tab`}>
           {tab === 'transcript' && <TranscriptTab />}
+          {tab === 'broll' && <BrollTab />}
           {tab === 'looks' && <LooksTab />}
-          {tab === 'backgrounds' && <BackgroundsTab />}
         </ErrorBoundary>
       </div>
     </aside>

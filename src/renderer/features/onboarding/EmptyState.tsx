@@ -1,31 +1,40 @@
 import { Menu } from '@base-ui/react/menu'
-import { TEMPLATES } from '@shared/styles'
-import type { Chip } from '@shared/types'
+import { EDIT_STEPS, VIDEO_TYPES, videoType } from '@shared/edits'
+import type { Aspect, VideoTypeId } from '@shared/types'
 import {
   AudioLines,
+  Check,
   Clapperboard,
   Film,
   FolderOpen,
   ImagePlus,
+  Lightbulb,
   MoreHorizontal,
-  Paperclip,
+  Package,
+  Plus,
+  Rocket,
+  Smartphone,
   Trash2,
-  Wallpaper,
-  X
+  Upload,
+  X,
+  type LucideIcon
 } from 'lucide-react'
 import {
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
   type DragEvent,
   type KeyboardEvent,
-  type ReactElement
+  type ReactElement,
+  type ReactNode
 } from 'react'
 import { toast } from 'sonner'
 import logo from '../../assets/logo.png'
+import { Button } from '../../components/ui/button'
 import { EdgeGlow } from '../../components/ui/edge-glow'
 import { GenerateButton } from '../../components/ui/generate-button'
-import { Segmented } from '../../components/ui/segmented'
+import { Segmented, type SegmentedItem } from '../../components/ui/segmented'
 import { Thumb } from '../../components/ui/thumb'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
@@ -33,103 +42,59 @@ import { formatDuration, relativeDate } from '../../lib/format'
 import { luca } from '../../lib/luca'
 import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
-import { kindOf, useStart, type Attachment } from '../../stores/start'
-import { useUi } from '../../stores/ui'
-import { HomeBackdrop } from '../backgrounds/HomeBackdrop'
-import { ChipPill } from '../chat/Message'
+import { IMAGES_ONLY, kindOf, useStart, type Attachment } from '../../stores/start'
+import { AssemblyAiKeyCard } from './AssemblyAiKeyCard'
 import { CreateProgressList } from './CreateProgress'
-import { StartSteps } from './StartSteps'
-import { ASPECTS, lengthOptions } from './steps-lib'
-import { StyleFieldIcon } from './StyleFieldIcon'
-import { Templates } from './Templates'
 
-const IDEAS = [
-  'A 15-second launch teaser with bold kinetic titles',
-  'A photo slideshow with smooth camera moves',
-  'An animated quote card for Instagram',
-  'A product explainer with a chart and a logo ending'
+const ASPECTS: SegmentedItem<Aspect>[] = [
+  { id: 'landscape', label: '16:9' },
+  { id: 'portrait', label: '9:16' },
+  { id: 'square', label: '1:1' }
 ]
 
+const TYPE_ICONS: Record<VideoTypeId, LucideIcon> = {
+  talking: Smartphone,
+  explainer: Lightbulb,
+  founder: Rocket,
+  product: Package
+}
+
 export function EmptyState(): ReactElement {
-  // while the steps are open they are all there is: one choice at a time
-  const inSteps = useStart((s) => s.step !== null)
   return (
-    <div className="relative h-full">
-      <HomeBackdrop />
-      <div className="scroll relative h-full">
-        <div
-          className={cn('flex min-h-full flex-col items-center px-8', inSteps ? 'py-5' : 'py-10')}
-        >
-          <div className="my-auto flex w-full max-w-[760px] flex-col gap-10">
-            <StartCard />
-            {inSteps ? null : <Templates />}
-            {inSteps ? null : <Recent />}
-          </div>
+    <div className="scroll h-full">
+      <div className="flex min-h-full flex-col items-center px-8 py-10">
+        <div className="my-auto flex w-full max-w-[760px] flex-col gap-10">
+          <StartCard />
+          <Recent />
         </div>
       </div>
     </div>
   )
 }
 
+/** Home: drop the footage (or a voiceover), say what kind of video it is, and Luca edits it. */
 function StartCard(): ReactElement {
-  const { files, previews, aspect, duration, busy, progress, seen, error, step, idea, style } =
-    useStart()
-  const { addFiles, removeFile, pickFiles, setAspect, setDuration } = useStart()
-  const { create, begin, setStep, applyTemplate } = useStart()
-  const draft = useChat((s) => s.draft)
-  const setDraft = useChat((s) => s.setDraft)
-  const chips = useChat((s) => s.chips)
-  const removeChip = useChat((s) => s.removeChip)
-  const setBackgrounds = useUi((s) => s.setBackgrounds)
-  const template = TEMPLATES.find((t) => t.id === style.template)
-  const inSteps = step !== null
+  const { files, busy, progress, seen, error } = useStart()
+  const { addFiles, pickFiles, addNotes, create } = useStart()
   const openProject = useProject((s) => s.open)
   const loading = useProject((s) => s.loading)
   const [over, setOver] = useState(false)
   const [since, setSince] = useState<number | undefined>()
-  const ref = useRef<HTMLTextAreaElement>(null)
   const kind = kindOf(files)
   const videos = files.filter((f) => f.kind === 'video')
-  // the video (or audio) the project starts from, named on the progress card
+  // the video (or voiceover) the project starts from, named on the progress card
   const lead = videos[0] ?? files.find((f) => f.kind === 'audio')
-  const bgAt = chips.findIndex((c) => c.kind === 'background')
-  const background = bgAt < 0 ? null : (chips[bgAt] as Extract<Chip, { kind: 'background' }>)
-  const canGo = !busy && (draft.trim().length > 0 || files.length > 0 || !!background)
 
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = '0px'
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, 66), 180)}px`
-  }, [draft])
-
-  /** The idea goes to the steps first (theme, font…); a video with nothing asked just opens. */
   const go = async (): Promise<void> => {
-    if (!canGo) return
-    const text = draft
-    const begun = begin(text)
-    if (begun === 'invalid') return
-    setDraft('')
-    if (begun === 'steps') return
-    setSince(Date.now())
-    const ok = await create(text)
-    if (!ok) setDraft(text)
-  }
-  const createFromSteps = (): void => {
-    setSince(Date.now())
-    void create(idea)
-  }
-  const editIdea = (): void => {
-    // words typed meanwhile (in the chat) win over the idea
-    if (!draft.trim()) setDraft(idea)
-    setStep(null)
-    requestAnimationFrame(() => ref.current?.focus())
-  }
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      void go()
+    if (busy || !kind) return
+    // words typed in the chat meanwhile are notes too
+    const draft = useChat.getState().draft
+    if (draft.trim()) {
+      addNotes(draft)
+      useChat.getState().setDraft('')
     }
+    setSince(Date.now())
+    await create()
   }
   const onDrop = (e: DragEvent): void => {
     e.preventDefault()
@@ -142,51 +107,24 @@ function StartCard(): ReactElement {
     if (dir) await openProject(dir).catch(() => undefined)
   }
 
-  const placeholder =
-    template && kind === 'scratch'
-      ? template.placeholder
-      : kind === 'images'
-        ? files.length === 1
-          ? 'What should this photo become? (optional) e.g. “a moody cinematic intro”'
-          : 'What should Luca make from these photos? (optional)'
-        : kind === 'video'
-          ? videos.length > 1
-            ? 'What should Luca make from these clips? (optional) e.g. “cut them into a 30-second reel”'
-            : 'What should Luca do with this video? (optional) e.g. “add captions and a title”'
-          : kind === 'audio'
-            ? 'What visuals should go with this audio? (optional)'
-            : 'Describe the video you want… e.g. “a 15-second launch teaser for my coffee brand”'
-  const catalogChips = chips.map((c, i) => ({ c, i })).filter(({ c }) => c.kind === 'catalog')
-
   return (
-    // isolate: the glow while the video starts sits behind the card
-    <section className={cn('isolate flex flex-col items-center', inSteps ? 'gap-4' : 'gap-6')}>
-      {inSteps && !busy ? (
-        // compact while the steps are open, so the choices and Next fit on one screen
-        <div className="flex flex-col items-center gap-1 text-center">
-          <h1 className="text-[18px] font-semibold tracking-[-0.02em] text-text">Make it yours</h1>
-          <p className="text-[12.5px] leading-relaxed text-text-2">
-            A few quick choices so Luca gets the look right. Slide through each one, or skip it and
-            Luca decides.
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center gap-3 text-center">
-          <img
-            src={logo}
-            alt=""
-            draggable={false}
-            className="size-16 rounded-[16px] shadow-[0_10px_24px_rgba(0,0,0,0.18)] transition-transform duration-300 hover:scale-105 hover:-rotate-2"
-          />
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-text">
-            What are we making today?
-          </h1>
-          <p className="max-w-[460px] text-[13px] leading-relaxed text-text-2">
-            Start from a video, one photo, a handful of images, a template or just an idea. Luca
-            asks a few quick questions, then builds the scenes, titles, effects and motion for you.
-          </p>
-        </div>
-      )}
+    // isolate: the glow while the project starts sits behind the card
+    <section className="isolate flex flex-col items-center gap-6">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <img
+          src={logo}
+          alt=""
+          draggable={false}
+          className="size-16 rounded-[16px] shadow-[0_10px_24px_rgba(0,0,0,0.18)] transition-transform duration-300 hover:scale-105 hover:-rotate-2"
+        />
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-text">
+          Drop your video. Luca edits it.
+        </h1>
+        <p className="max-w-[480px] text-[13px] leading-relaxed text-text-2">
+          Talking to camera, a faceless explainer, a founder update or a product demo. Short or
+          long, portrait or landscape.
+        </p>
+      </div>
 
       <div
         onDragOver={(e) => {
@@ -198,156 +136,68 @@ function StartCard(): ReactElement {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
         }}
         onDrop={onDrop}
-        onClick={(e) => {
-          if (!(e.target as HTMLElement).closest('button, a, input, [role=tab]'))
-            ref.current?.focus()
-        }}
         className={cn(
-          'relative w-full cursor-text rounded-[18px] border bg-input transition-[border-color,box-shadow,transform,background-color] duration-200 ease-out',
+          'relative w-full rounded-[18px] border bg-input transition-[border-color,box-shadow,transform,background-color] duration-200 ease-out',
           over
             ? 'scale-[1.01] border-dashed border-accent bg-accent/[0.04] shadow-[0_0_0_4px_color-mix(in_srgb,var(--accent)_14%,transparent)]'
-            : 'border-border shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_28px_-14px_rgba(0,0,0,0.18)] focus-within:border-border-strong focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.05),0_14px_36px_-14px_rgba(0,0,0,0.24)]'
+            : 'border-border shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_28px_-14px_rgba(0,0,0,0.18)]'
         )}
       >
         <EdgeGlow on={busy} />
         {over ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 rounded-[18px] text-accent">
-            <ImagePlus size={22} strokeWidth={1.6} />
-            <span className="text-[13px] font-medium">Drop a video, audio or images</span>
+            <Upload size={22} strokeWidth={1.6} />
+            <span className="text-[13px] font-medium">Drop your video, a voiceover or images</span>
           </div>
         ) : null}
 
         {busy ? (
           <div className="rise-in flex flex-col gap-4 p-5">
             <div className="text-[13px] font-semibold text-text">
-              {kind === 'scratch'
-                ? 'Starting a new video from scratch'
-                : kind === 'images'
-                  ? `Starting from your ${files.length === 1 ? 'photo' : `${files.length} photos`}`
-                  : kind === 'video' && videos.length > 1
-                    ? `Starting from your ${videos.length} videos`
-                    : `Starting from ${lead?.name ?? 'your file'}`}
+              {videos.length > 1
+                ? `Starting from your ${videos.length} videos`
+                : `Starting from ${lead?.name ?? 'your video'}`}
             </div>
-            <CreateProgressList kind={kind} progress={progress} seen={seen} since={since} />
+            <CreateProgressList
+              kind={kind ?? 'video'}
+              progress={progress}
+              seen={seen}
+              since={since}
+            />
           </div>
-        ) : inSteps ? (
+        ) : kind ? (
           <div className={cn(over && 'opacity-0')}>
-            <StartSteps onCreate={createFromSteps} onEditIdea={editIdea} />
+            <EditForm onGo={() => void go()} />
           </div>
         ) : (
-          <div className={cn('flex flex-col', over && 'opacity-0')}>
-            {template ? (
-              <div className="flex px-4 pt-3.5">
-                <span className="pop-in inline-flex h-7 items-center gap-1.5 rounded-full border border-secondary-border bg-secondary pr-1 pl-2.5 text-[12px] font-medium text-secondary-fg">
-                  <StyleFieldIcon field="template" size={12} />
-                  Template: {template.name}
-                  <span className="font-normal opacity-75">
-                    · {template.duration}s {template.aspect === 'portrait' ? '9:16' : '16:9'}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label="Stop using the template"
-                    onClick={() => applyTemplate(null)}
-                    className="ml-0.5 flex size-5 items-center justify-center rounded-full hover:bg-bg/60"
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
+          // nothing to edit yet: the drop zone (images wait here for a video or a voiceover)
+          <div
+            className={cn(
+              'flex flex-col items-center gap-4 px-6 py-10 text-center',
+              over && 'opacity-0'
+            )}
+          >
+            {files.length ? (
+              <Tiles className="justify-center" />
+            ) : (
+              <span className="flex size-12 items-center justify-center rounded-full bg-bg-muted text-text-2">
+                <Upload size={20} strokeWidth={1.7} />
+              </span>
+            )}
+            <div className="flex flex-col gap-1">
+              <div className="text-[15px] font-semibold text-text">Drop a video or a voiceover</div>
+              <div className="text-[12px] text-text-3">
+                Several clips play back to back. A logo or screenshots can come along too.
               </div>
-            ) : null}
-            {files.length > 0 || background ? (
-              <div className="flex flex-wrap gap-2 px-4 pt-4">
-                {background ? (
-                  <BackgroundTile
-                    chip={background}
-                    onChange={() => setBackgrounds(true)}
-                    onRemove={() => removeChip(bgAt)}
-                  />
-                ) : null}
-                {files.map((f) => (
-                  <AttachmentTile
-                    key={f.path}
-                    file={f}
-                    preview={previews[f.path]}
-                    onRemove={() => removeFile(f.path)}
-                  />
-                ))}
-                {kind === 'images' || kind === 'video' ? (
-                  <Tip label={kind === 'video' ? 'Add more videos or images' : 'Add more images'}>
-                    <button
-                      type="button"
-                      onClick={() => void pickFiles()}
-                      className="flex size-16 items-center justify-center rounded-[10px] border border-dashed border-border-strong text-text-3 transition-colors hover:border-accent hover:text-accent"
-                    >
-                      <ImagePlus size={18} strokeWidth={1.6} />
-                    </button>
-                  </Tip>
-                ) : null}
-              </div>
-            ) : null}
-            <textarea
-              ref={ref}
-              id="start-prompt"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={onKey}
-              placeholder={placeholder}
-              rows={3}
-              className="block w-full resize-none bg-transparent px-4 pt-3.5 text-[14px] leading-[22px] text-text placeholder:text-text-3"
-            />
-            {catalogChips.length ? (
-              <div className="flex flex-wrap gap-1 px-4 pt-1">
-                {catalogChips.map(({ c, i }) => (
-                  <ChipPill key={i} chip={c} onRemove={() => removeChip(i)} />
-                ))}
-              </div>
-            ) : null}
-            <div className="flex flex-wrap items-center gap-2 px-3 pt-3 pb-3">
-              <Tip label="Add a video, audio or images">
-                <button
-                  type="button"
-                  onClick={() => void pickFiles()}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-bg px-3 text-[12px] font-medium text-text-2 transition-[border-color,color,transform] duration-150 hover:border-border-strong hover:text-text active:scale-[0.97]"
-                >
-                  <Paperclip size={13} strokeWidth={1.9} />
-                  Add media
-                </button>
-              </Tip>
-              {/* for footage it starts out matching the first video's shape */}
-              <Segmented
-                items={ASPECTS}
-                value={aspect}
-                onChange={setAspect}
-                ariaLabel="Aspect ratio"
-                className="h-8"
-              />
-              {kind === 'images' || kind === 'scratch' ? (
-                <select
-                  aria-label="Length"
-                  value={duration ?? ''}
-                  onChange={(e) => setDuration(e.target.value ? Number(e.target.value) : null)}
-                  className="h-8 rounded-full border border-border bg-bg px-3 text-[12px] font-medium text-text-2 outline-none hover:border-border-strong"
-                >
-                  {lengthOptions(duration).map((l) => (
-                    <option key={l.label} value={l.value ?? ''}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-              ) : null}
-              <GenerateButton
-                className="ml-auto"
-                label={
-                  kind === 'video' && !draft.trim() && !background && !template
-                    ? 'Open in Luca'
-                    : 'Continue'
-                }
-                generatingLabel="Creating"
-                generating={busy}
-                disabled={!canGo}
-                onClick={() => void go()}
-              />
             </div>
+            <Button size="lg" onClick={() => void pickFiles()}>
+              Choose files
+            </Button>
+            {files.length ? (
+              <div className="fade-in rounded-[10px] border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[12px] text-danger">
+                {IMAGES_ONLY}
+              </div>
+            ) : null}
           </div>
         )}
       </div>
@@ -358,70 +208,226 @@ function StartCard(): ReactElement {
         </div>
       ) : null}
 
-      {!busy && !inSteps ? (
-        <div className="-mt-1 flex w-full flex-wrap items-center justify-center gap-1.5">
-          {IDEAS.map((idea, i) => (
-            <button
-              key={idea}
-              type="button"
-              style={{ animationDelay: `${60 + i * 50}ms` }}
-              onClick={() => {
-                setDraft(idea)
-                requestAnimationFrame(() => ref.current?.focus())
-              }}
-              className="chip rise-in"
-            >
-              {idea}
-            </button>
-          ))}
-          <span className="mx-1 h-4 w-px bg-border" />
-          <button type="button" className="chip" onClick={() => void openDir()} disabled={loading}>
-            <FolderOpen size={12} /> Open a project…
-          </button>
-        </div>
+      {!busy ? (
+        <button
+          type="button"
+          className="chip -mt-1"
+          onClick={() => void openDir()}
+          disabled={loading}
+        >
+          <FolderOpen size={12} /> Open a project…
+        </button>
       ) : null}
     </section>
   )
 }
 
-/** The background picked for the new video: click to change it. */
-function BackgroundTile({
-  chip,
-  onChange,
-  onRemove
-}: {
-  chip: Extract<Chip, { kind: 'background' }>
-  onChange: () => void
-  onRemove: () => void
-}): ReactElement {
+/** With footage in: what kind of video it is, what Luca does, notes, the shape, and go. */
+function EditForm({ onGo }: { onGo: () => void }): ReactElement {
+  const { files, footage, aspect, aspectFrom, edit, busy } = useStart()
+  const { setAspect, setType, toggleStep, setNotes } = useStart()
+  const [hasKey, setHasKey] = useState<boolean | null>(null)
+  const [keyLater, setKeyLater] = useState(false)
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const voiceOnly = kindOf(files) === 'audio'
+  // a voiceover has no picture to zoom into or put a name on
+  const steps = EDIT_STEPS.filter((s) => !(voiceOnly && s.needsPicture))
+  const needsWords = steps.some((s) => s.needsWords && edit.steps.includes(s.id))
+  const shape = aspectFrom ? footage[aspectFrom]?.aspect : undefined
+  const notes = edit.notes ?? ''
+
+  useEffect(() => {
+    void luca.env
+      .hasAssemblyAiKey()
+      .then(setHasKey)
+      .catch(() => undefined)
+  }, [])
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = '0px'
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 44), 160)}px`
+  }, [notes])
+
+  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault()
+      onGo()
+    }
+  }
+
   return (
-    <div className="pop-in group relative">
-      <button type="button" onClick={onChange} title={`${chip.title} · click to change`}>
-        <Thumb
-          src={chip.thumb}
-          lazy={false}
-          className="h-16 w-28 rounded-[10px] ring-1 ring-border"
-          fallback={
-            <div className="flex h-full w-full items-center justify-center text-text-3">
-              <Wallpaper size={18} strokeWidth={1.6} />
-            </div>
-          }
-        >
-          <span className="absolute inset-x-1 bottom-1 truncate rounded-[4px] bg-black/60 px-1 py-px text-[9.5px] text-white">
-            {chip.media === 'video'
-              ? `Background · ${formatDuration(chip.duration ?? 0)}`
-              : 'Background photo'}
+    <div className="rise-in flex flex-col">
+      <div className="flex flex-col gap-5 p-4">
+        <Tiles />
+
+        <Field label="What kind of video is it?">
+          <div
+            role="radiogroup"
+            aria-label="What kind of video is it?"
+            className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2"
+          >
+            {VIDEO_TYPES.map((t) => {
+              const Icon = TYPE_ICONS[t.id]
+              const on = t.id === edit.type
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => setType(t.id)}
+                  className={cn(
+                    'flex flex-col gap-2 rounded-[12px] border p-2.5 text-left transition-[background-color,border-color,box-shadow] duration-150',
+                    on
+                      ? 'border-accent bg-secondary shadow-[0_0_0_1px_var(--accent)]'
+                      : 'border-border bg-bg hover:border-border-strong'
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        'flex size-7 shrink-0 items-center justify-center rounded-full transition-colors',
+                        on ? 'bg-accent text-accent-fg' : 'bg-bg-muted text-text-2'
+                      )}
+                    >
+                      <Icon size={14} strokeWidth={1.8} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[12.5px] font-medium text-text">
+                        {t.name}
+                      </span>
+                      <span className="block truncate text-[10.5px] text-text-3">{t.who}</span>
+                    </span>
+                  </span>
+                  <span className="line-clamp-2 text-[11px] leading-[1.4] text-text-2">
+                    {t.blurb}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </Field>
+
+        <Field label="What Luca will do">
+          <div className="flex flex-wrap gap-1.5">
+            {steps.map((s) => {
+              const on = edit.steps.includes(s.id)
+              return (
+                <Tip key={s.id} label={s.blurb} side="top">
+                  <button
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggleStep(s.id)}
+                    className={cn(
+                      'chip h-7 px-3 text-[12px]',
+                      on &&
+                        'border-secondary-border bg-secondary text-secondary-fg hover:border-secondary-border hover:text-secondary-fg'
+                    )}
+                  >
+                    {on ? (
+                      <Check size={12} strokeWidth={2.4} />
+                    ) : (
+                      <Plus size={12} strokeWidth={2} />
+                    )}
+                    {s.name}
+                  </button>
+                </Tip>
+              )
+            })}
+          </div>
+          {needsWords && hasKey === false && !keyLater ? (
+            <AssemblyAiKeyCard
+              className="fade-in mt-1"
+              autoFocus={false}
+              onDismiss={() => setKeyLater(true)}
+              onSaved={setHasKey}
+            >
+              Cutting, captions and B-roll need Luca to hear the words: add an AssemblyAI key and it
+              transcribes your {voiceOnly ? 'voiceover' : 'video'}. Without one, Luca skips them.
+              Your key stays in the macOS Keychain.
+            </AssemblyAiKeyCard>
+          ) : null}
+        </Field>
+
+        <Field label="Anything Luca should know?">
+          <textarea
+            ref={ref}
+            id="start-notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onKeyDown={onKey}
+            placeholder={videoType(edit.type).example}
+            rows={2}
+            className="block w-full resize-none rounded-[10px] border border-border bg-bg px-3 py-2.5 text-[13px] leading-[20px] text-text transition-colors placeholder:text-text-3 focus:border-border-strong"
+          />
+        </Field>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
+        <span className="text-[12px] font-medium text-text-2">Format</span>
+        {/* it starts out matching the first video's shape: pick 9:16 to make a short of it */}
+        <Segmented
+          items={ASPECTS}
+          value={aspect}
+          onChange={setAspect}
+          ariaLabel="Format"
+          className="h-8"
+        />
+        {shape && shape !== aspect ? (
+          <span className="fade-in text-[11px] text-text-3">
+            Cropped from {ASPECTS.find((a) => a.id === shape)?.label}
           </span>
-        </Thumb>
-      </button>
-      <button
-        type="button"
-        aria-label="Remove the background"
-        onClick={onRemove}
-        className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-bg text-text-2 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:text-text"
-      >
-        <X size={11} />
-      </button>
+        ) : null}
+        <GenerateButton
+          className="ml-auto"
+          label="Edit my video"
+          generatingLabel="Starting"
+          generating={busy}
+          disabled={busy}
+          onClick={onGo}
+        />
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }): ReactElement {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-[12.5px] font-semibold text-text">{label}</div>
+      {children}
+    </div>
+  )
+}
+
+/** The files on the card, in order, and a tile to add more. */
+function Tiles({ className }: { className?: string }): ReactElement {
+  const files = useStart((s) => s.files)
+  const previews = useStart((s) => s.previews)
+  const removeFile = useStart((s) => s.removeFile)
+  const pickFiles = useStart((s) => s.pickFiles)
+  return (
+    <div className={cn('flex flex-wrap gap-2', className)}>
+      {files.map((f) => (
+        <AttachmentTile
+          key={f.path}
+          file={f}
+          preview={previews[f.path]}
+          onRemove={() => removeFile(f.path)}
+        />
+      ))}
+      <Tip label="Add more videos, a voiceover or images (a logo, screenshots)">
+        <button
+          type="button"
+          aria-label="Add more files"
+          onClick={() => void pickFiles()}
+          className="flex size-16 items-center justify-center rounded-[10px] border border-dashed border-border-strong text-text-3 transition-colors hover:border-accent hover:text-accent"
+        >
+          <ImagePlus size={18} strokeWidth={1.6} />
+        </button>
+      </Tip>
     </div>
   )
 }

@@ -7,13 +7,14 @@ import {
   Clapperboard,
   Copy,
   Image as ImageIcon,
+  ImagePlay,
   MousePointer2,
   Package,
   RotateCcw,
   Scissors,
   ShieldCheck,
   Type,
-  Wallpaper,
+  WandSparkles,
   X
 } from 'lucide-react'
 import { useEffect, useState, type ReactElement } from 'react'
@@ -26,7 +27,6 @@ import { formatDuration } from '../../lib/format'
 import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
 import { stopLuca } from '../../stores/queue'
-import { StyleFieldIcon } from '../onboarding/StyleFieldIcon'
 import type { ToolPart } from './activity'
 import { Steps } from './Steps'
 
@@ -44,10 +44,10 @@ function chipIcon(chip: Chip): ReactElement {
       return <Scissors size={11} />
     case 'transcript':
       return <Type size={11} />
-    case 'background':
-      return <Wallpaper size={11} />
-    case 'style':
-      return <StyleFieldIcon field={chip.field} size={11} />
+    case 'broll':
+      return <ImagePlay size={11} />
+    case 'edit':
+      return <WandSparkles size={11} />
     case 'media':
       return chip.media === 'video' ? (
         <Clapperboard size={11} />
@@ -76,19 +76,19 @@ function chipLabel(chip: Chip): string {
       return chip.clipId.replace(/[-_]/g, ' ')
     case 'transcript':
       return `“${chip.text.slice(0, 24)}${chip.text.length > 24 ? '…' : ''}”`
-    case 'background':
-      return `Background: ${chip.title}`
-    case 'style':
+    case 'broll':
+      return `B-roll: ${chip.title}`
+    case 'edit':
       return chip.label
     case 'media':
       return chip.duration ? `${chip.name} · ${formatDuration(chip.duration)}` : chip.name
   }
 }
 
-/** The still shown above a chip on hover: a grabbed frame, a background, an added file. */
+/** The still shown above a chip on hover: a grabbed frame, a B-roll pick, an added file. */
 function chipPreview(chip: Chip): string | undefined {
   if (chip.kind === 'frame') return `data:image/png;base64,${chip.png}`
-  if (chip.kind === 'background') return chip.thumb
+  if (chip.kind === 'broll') return chip.thumb
   if (chip.kind === 'media') return chip.thumb
   return undefined
 }

@@ -1,4 +1,3 @@
-import { app } from 'electron'
 import {
   appendFileSync,
   createWriteStream,
@@ -6,8 +5,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
-  rmSync,
-  writeFileSync
+  rmSync
 } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -60,7 +58,7 @@ type Page = { page: number; next_page?: string | null }
 type PhotoPage = Page & { photos: PexelsPhoto[] }
 type VideoPage = Page & { videos: PexelsVideo[] }
 
-/** Videos longer than this make heavy downloads and poor loops, so they are left out. */
+/** Videos longer than this make heavy downloads for a few seconds of B-roll, so they are left out. */
 const MAX_VIDEO_SECONDS = 60
 
 /** The key: one saved in Luca, else PEXELS_API_KEY from the environment or the build (.env). */
@@ -79,7 +77,7 @@ export function hasPexelsKey(): boolean {
 
 function plainError(status: number): Error {
   if (status === 401 || status === 403)
-    return new Error('Pexels didn’t accept the API key. Check it in the Backgrounds panel.')
+    return new Error('Pexels didn’t accept the API key. Check it in the B-roll panel.')
   if (status === 429)
     return new Error(
       'Pexels limits searches to a few hundred an hour. Try again in a little while.'
@@ -92,7 +90,7 @@ async function get<T>(
   params: Record<string, string | number | undefined>,
   key = pexelsKey()
 ): Promise<T> {
-  if (!key) throw new Error('Connect Pexels in the Backgrounds panel to find backgrounds.')
+  if (!key) throw new Error('Connect Pexels in the B-roll panel to find B-roll.')
   const url = new URL(path, API)
   for (const [k, v] of Object.entries(params))
     if (v !== undefined) url.searchParams.set(k, String(v))
@@ -192,7 +190,7 @@ function fromPhoto(p: PexelsPhoto, orientation: Aspect): Background {
   }
 }
 
-function fromVideo(v: PexelsVideo, orientation: Aspect, previewShort = 540): Background {
+function fromVideo(v: PexelsVideo, orientation: Aspect): Background {
   const [tw, th] = THUMB[orientation]
   return {
     id: `video:${v.id}`,
@@ -203,7 +201,7 @@ function fromVideo(v: PexelsVideo, orientation: Aspect, previewShort = 540): Bac
     title: titleOf(v.url, null, 'Video'),
     thumb: sized(v.image, tw, th),
     poster: v.image,
-    preview: pickFile(v.video_files, previewShort)?.link,
+    preview: pickFile(v.video_files, 540)?.link,
     color: null,
     author: v.user.name,
     authorUrl: v.user.url,
@@ -269,87 +267,9 @@ async function lookup(id: string): Promise<{ photo?: PexelsPhoto; video?: Pexels
   const hit = seen.get(id)
   if (hit) return hit
   const m = /^(photo|video):(\d+)$/.exec(id.trim())
-  if (!m) throw new Error(`“${id}” isn’t a background id (they look like video:123 or photo:456).`)
+  if (!m) throw new Error(`“${id}” isn’t a Pexels id (they look like video:123 or photo:456).`)
   if (m[1] === 'photo') return { photo: await get<PexelsPhoto>(`/v1/photos/${m[2]}`, {}) }
   return { video: await get<PexelsVideo>(`/videos/videos/${m[2]}`, {}) }
-}
-
-// ------------------------------------------------------------------------------ home screen
-
-/** What plays behind the home screen: calm, abstract motion that never fights the words. */
-const HOME_QUERIES = [
-  'abstract light',
-  'bokeh lights',
-  'clouds timelapse',
-  'ocean waves aerial',
-  'light rays',
-  'floating particles',
-  'ink in water',
-  'mountain fog',
-  'night city lights',
-  'soft fabric'
-]
-
-type HomeCache = { day: string; item: Background }
-let homeCache: HomeCache | null = null
-
-const homeFile = (): string => join(app.getPath('userData'), 'pexels-home.json')
-/** The local date, YYYY-MM-DD: the backdrop changes at the person's midnight. */
-const today = (): string => new Date().toLocaleDateString('en-CA')
-
-function readHome(): HomeCache | null {
-  try {
-    return JSON.parse(readFileSync(homeFile(), 'utf8')) as HomeCache
-  } catch {
-    return null
-  }
-}
-
-/**
- * Today's home-screen background: a landscape video (a photo if none fits), the same all day so
- * the home screen doesn't change under you. `shuffle` picks another one now. Null without a key.
- */
-export async function homeBackground(shuffle = false): Promise<Background | null> {
-  if (!hasPexelsKey()) return null
-  const day = today()
-  homeCache ??= readHome()
-  if (!shuffle && homeCache?.day === day) return homeCache.item
-  const dayIndex = Math.floor(Date.parse(day) / 86_400_000)
-  const query = shuffle
-    ? HOME_QUERIES[Math.floor(Math.random() * HOME_QUERIES.length)]
-    : HOME_QUERIES[dayIndex % HOME_QUERIES.length]
-  const current = homeCache?.item.id
-  const res = await get<VideoPage>('/videos/search', {
-    query,
-    orientation: 'landscape',
-    per_page: 15,
-    max_duration: MAX_VIDEO_SECONDS
-  })
-  const videos = res.videos.filter((v) => usable(v) && v.duration >= 5)
-  remember([], videos)
-  let options = videos.map((v) => fromVideo(v, 'landscape', 720)).filter((b) => b.id !== current)
-  if (!options.length) {
-    const photos = await get<PhotoPage>('/v1/search', {
-      query,
-      orientation: 'landscape',
-      per_page: 15
-    })
-    remember(photos.photos, [])
-    options = photos.photos
-      .map((p) => ({ ...fromPhoto(p, 'landscape'), poster: sized(p.src.original, 1920, 1080) }))
-      .filter((b) => b.id !== current)
-  }
-  if (!options.length) return homeCache?.item ?? null
-  // the top results fit the words best; any of the first few will do
-  const item = options[Math.floor(Math.random() * Math.min(options.length, 6))]
-  homeCache = { day, item }
-  try {
-    mkdirSync(app.getPath('userData'), { recursive: true })
-    writeFileSync(homeFile(), JSON.stringify(homeCache))
-  } catch {
-    // only a cache
-  }
-  return item
 }
 
 // ------------------------------------------------------------------------------ adding
@@ -357,8 +277,8 @@ export async function homeBackground(shuffle = false): Promise<Background | null
 async function download(url: string, dest: string): Promise<void> {
   if (existsSync(dest)) return
   const res = await fetch(url, { signal: AbortSignal.timeout(180_000) }).catch(() => null)
-  if (!res) throw new Error('Couldn’t reach Pexels to download the background.')
-  if (!res.ok || !res.body) throw new Error(`Couldn’t download the background (${res.status}).`)
+  if (!res) throw new Error('Couldn’t reach Pexels to download the B-roll.')
+  if (!res.ok || !res.body) throw new Error(`Couldn’t download the B-roll (${res.status}).`)
   const part = `${dest}.part`
   try {
     await pipeline(
@@ -372,7 +292,7 @@ async function download(url: string, dest: string): Promise<void> {
   }
 }
 
-/** One line per background in media/backgrounds/CREDITS.txt (Pexels asks for credit where possible). */
+/** One line per picture or clip in media/broll/CREDITS.txt (Pexels asks for credit where possible). */
 function credit(folder: string, line: string): void {
   const f = join(folder, 'CREDITS.txt')
   const has = existsSync(f) ? readFileSync(f, 'utf8') : ''
@@ -380,17 +300,13 @@ function credit(folder: string, line: string): void {
 }
 
 /**
- * Download a background into the project's media/backgrounds, sized for its composition: a photo
- * cropped to the frame, a video as the smallest file that fills it. Files already there are reused.
+ * Download B-roll into the project's media/broll, sized for its composition: a photo cropped to
+ * the frame, a video as the smallest file that fills it. Files already there are reused.
  */
-export async function addBackground(
-  dir: string,
-  id: string,
-  aspect: Aspect
-): Promise<AddedBackground> {
+export async function addBroll(dir: string, id: string, aspect: Aspect): Promise<AddedBackground> {
   const { photo, video } = await lookup(id)
   const [w, h] = SIZE[aspect]
-  const folder = join(dir, 'media', 'backgrounds')
+  const folder = join(dir, 'media', 'broll')
   mkdirSync(folder, { recursive: true })
   if (photo) {
     const name = `pexels-photo-${photo.id}-${w}x${h}.jpg`
@@ -400,14 +316,14 @@ export async function addBackground(
     return {
       id: `photo:${photo.id}`,
       media: 'photo',
-      file: `media/backgrounds/${name}`,
+      file: `media/broll/${name}`,
       width: w,
       height: h,
       title: titleOf(photo.url, photo.alt, 'Photo'),
       credit: by
     }
   }
-  if (!video) throw new Error('That background couldn’t be found on Pexels.')
+  if (!video) throw new Error('That picture or clip couldn’t be found on Pexels.')
   const file = pickFile(video.video_files, Math.min(w, h))
   if (!file) throw new Error('That video has no file Luca can use.')
   const name = `pexels-video-${video.id}-${short(file)}p.mp4`
@@ -417,7 +333,7 @@ export async function addBackground(
   return {
     id: `video:${video.id}`,
     media: 'video',
-    file: `media/backgrounds/${name}`,
+    file: `media/broll/${name}`,
     width: file.width ?? w,
     height: file.height ?? h,
     duration: video.duration,
