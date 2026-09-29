@@ -30,17 +30,18 @@ import { lucaDir } from './projects'
 import { getSettings, updateSettings } from './settings'
 
 const SYSTEM_RULES = [
-  'You are Luca, the editing agent inside Luca, a local video editor built on HyperFrames HTML compositions.',
+  'You are Luca, the editing agent inside Luca, a video editor for creators built on HyperFrames HTML compositions. People bring their own footage (talking-head clips, faceless explainers with a voiceover or a screen recording, founder videos, product demos), short or long, portrait or landscape, and you edit it for them.',
   '1. The HTML files are the source of truth; never edit anything in media/ or renders/.',
-  '2. Before building any visual from scratch (text, titles, lower thirds, overlays, transitions, effects, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
+  '2. Before building any visual from scratch (text, titles, lower thirds, callouts, overlays, transitions, effects, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
   `3. Add HyperFrames items with \`npx ${HYPERFRAMES} add <name> --json\`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.`,
   `4. After every edit, run \`npx ${HYPERFRAMES} lint --json\` and fix errors before replying. Always run the CLI as \`npx ${HYPERFRAMES}\` (this exact version, the one Luca uses), never plain \`npx hyperframes\`.`,
-  '5. For backgrounds (behind a title, a scene or the whole video) use a real photo or short video instead of a plain gradient: find one with background_search, look at the previews, pick what suits the video’s subject and mood, and add it with background_add. Use an animated background from catalog_search only when the user asks for one. You may tell the user a background comes from Pexels.',
-  '6. Captions of what is said in the video always go through captions_apply: adding them and every change to their style, font, size, position, colors, outline, box or animation (to match a reference image, read its look and pass it as overrides). Never write or edit the captions file by hand; Luca rebuilds it from the transcript and keeps it in sync with every cut. For a font that is not built in (one that comes with Luca, or a Google Fonts link or name the user gives), call font_add first.',
-  '6b. A color look on the footage itself (cinematic, moody, warm, cool, black and white, or a named LUT) goes through lut_apply — never write data-color-grading attributes by hand.',
-  '7. Footage nobody filmed (a shot, a scene, b-roll, a clip of anything) and changes to how a clip looks (restyle, relight, add or remove something in it, change the weather, continue it) are made with video_generate (Gemini). It spends the user’s Gemini credits and takes a few minutes: use it only when they ask for a generated or edited clip, never for what a title, effect or stock background already does. Say in one short line that it takes a few minutes before you call it, then put the result in the video yourself. You may tell the user a clip was made with Gemini.',
+  '5. The footage is the video and fills the frame: never put a stock or animated background behind it. Use broll_search and broll_add only to show something named in what is said (mostly in explainers, faceless and product videos) or when the user asks: a cutaway or a card over the footage for 1.5–4 s while the audio keeps playing. You may tell the user B-roll comes from Pexels.',
+  '6. The words come from transcribe, with their times; never guess what is said. Cutting ums, pauses and retakes goes through clean_edit; never cut the source by hand. Time titles, zooms and B-roll to the times these tools return.',
+  '7. Captions of what is said in the video always go through captions_apply: adding them and every change to their style, font, size, position, colors, outline, box or animation (to match a reference image, read its look and pass it as overrides). Never write or edit the captions file by hand; Luca rebuilds it from the transcript and keeps it in sync with every cut. For a font that is not built in (one that comes with Luca, or a Google Fonts link or name the user gives), call font_add first.',
+  '7b. A color look on the footage itself (cinematic, moody, warm, cool, black and white, or a named LUT) goes through lut_apply — never write data-color-grading attributes by hand.',
+  '8. Footage nobody filmed (a shot, a scene, a clip of anything) and changes to how a clip looks (restyle, relight, add or remove something in it, change the weather, continue it) are made with video_generate (Gemini). It spends the user’s Gemini credits and takes a few minutes: use it only when they ask for a generated or edited clip, never for what a title, effect or B-roll already does. Say in one short line that it takes a few minutes before you call it, then put the result in the video yourself. You may tell the user a clip was made with Gemini.',
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
-  'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a title, caption, scene, animation, effect, transition, background) and use the plain-English title of anything you added, not its id.',
+  'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a cut, zoom, title, caption, B-roll, animation, effect, transition) and use the plain-English title of anything you added, not its id.',
   'Keep replies short: say what you changed and why, no preamble.'
 ].join('\n')
 
@@ -434,14 +435,14 @@ export class ProjectAgent {
         )
       } else if (chip.kind === 'transcript') {
         lines.push(`Transcript ${chip.start.toFixed(2)}s–${chip.end.toFixed(2)}s: "${chip.text}"`)
-      } else if (chip.kind === 'background') {
+      } else if (chip.kind === 'broll') {
         const len = chip.duration ? `, ${Math.round(chip.duration)}s` : ''
         lines.push(
-          `Background the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with background_add {"id":"${chip.id}"} and use it as the background unless they ask for something else. If they ask to change how it looks (a style, colors, season, weather…), restyle the added file with video_generate (as video for a clip, in images for a photo) and use the restyled clip as the background instead.`
+          `B-roll the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with broll_add {"id":"${chip.id}"} and show it at the playhead time (or where it best fits what is being said around then) as a cutaway over the footage, unless they ask for something else.`
         )
-      } else if (chip.kind === 'style') {
-        // a start-step choice: its full guide is in the start brief (and .luca/STYLE.md)
-        lines.push(`Picked on the start steps: ${chip.label}.`)
+      } else if (chip.kind === 'edit') {
+        // a start-card choice: the full plan is in the first request's brief (and .luca/EDIT.md)
+        lines.push(`Picked on the start card: ${chip.label}.`)
       } else if (chip.kind === 'media') {
         // a file the user added in the chat: Luca sees the image (or a frame of the video)
         const { line, image } = describeMedia(this.project.dir, chip)
@@ -465,9 +466,9 @@ export class ProjectAgent {
     }
     if (existsSync(join(lucaDir(this.project.dir), 'LOOK.md')))
       lines.push('An active Look is set: read .luca/LOOK.md and follow it for every visual choice.')
-    else if (existsSync(join(lucaDir(this.project.dir), 'STYLE.md')))
+    else if (existsSync(join(lucaDir(this.project.dir), 'EDIT.md')))
       lines.push(
-        'The user picked a look when they started this video (.luca/STYLE.md): keep new titles, text, backgrounds and motion in that look unless they ask for something else.'
+        'The user described this video when they started (.luca/EDIT.md): keep new edits in line with it unless they ask otherwise.'
       )
     const text = lines.length
       ? `${turn.text}\n\n<context>\n${lines.join('\n')}\n</context>`
@@ -675,7 +676,7 @@ export class ProjectAgent {
             if (out && part.name !== 'Edit' && part.name !== 'Write') {
               part.detail = out.length > 4000 ? out.slice(0, 4000) + '\n…' : out
             }
-            if (part.name === 'mcp__luca__background_search' && !b.is_error && part.activity) {
+            if (part.name === 'mcp__luca__broll_search' && !b.is_error && part.activity) {
               try {
                 // the first line is the summary; previews follow it
                 const r = JSON.parse(out.split('\n')[0]) as { total?: number; query?: string }
@@ -685,8 +686,8 @@ export class ProjectAgent {
                     ...part.activity,
                     done:
                       r.total > 0
-                        ? `Found ${r.total} background${r.total === 1 ? '' : 's'} for “${q}”`
-                        : `No backgrounds matched “${q}”`
+                        ? `Found ${r.total} B-roll ${r.total === 1 ? 'shot' : 'shots'} for “${q}”`
+                        : `No B-roll matched “${q}”`
                   }
                 }
               } catch {

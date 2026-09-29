@@ -46,7 +46,6 @@ export const Channels = {
   backgroundsHasKey: 'backgrounds:has-key',
   backgroundsSetKey: 'backgrounds:set-key',
   backgroundsSearch: 'backgrounds:search',
-  backgroundsHome: 'backgrounds:home',
   geminiHasKey: 'gemini:has-key',
   geminiSetKey: 'gemini:set-key',
   updatesStatus: 'updates:status',
