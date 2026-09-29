@@ -1,14 +1,23 @@
 import { utilityProcess, type UtilityProcess } from 'electron'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { cpus, totalmem } from 'node:os'
 import { join } from 'node:path'
 import type { ExportOptions, ExportProgress, Project } from '../shared/types'
-import { childEnv } from './env'
+import { childEnv, run, which } from './env'
+import {
+  checkAudio,
+  plainExportError,
+  readProbe,
+  type AudioProbe,
+  type ExportPreflight
+} from './export-preflight'
 import { Channels, broadcast } from './ipc'
 import type { WorkerIn, WorkerOut } from './render-worker'
 import { getSettings } from './settings'
 
 let child: UtilityProcess | null = null
+/** Set while the sounds are being checked, so a second click can't start a second export. */
+let checking = false
 let last: ExportProgress = { progress: 0, stage: '', status: 'done' }
 
 function push(p: ExportProgress): void {
@@ -37,9 +46,63 @@ function renderWorkers(): number {
   return Math.max(1, Math.min(8, Math.max(getSettings().renderWorkers || 2, fit)))
 }
 
+function projectHtml(dir: string): string | null {
+  const file = join(dir, 'index.html')
+  return existsSync(file) ? readFileSync(file, 'utf8') : null
+}
+
+/** Whether ffprobe finds sound in a file, and for how long; null when it isn't media at all. */
+async function probeSound(file: string): Promise<AudioProbe | null> {
+  const ffprobe = await which('ffprobe')
+  if (!ffprobe) throw new Error('ffprobe not found')
+  const r = await run(
+    ffprobe,
+    [
+      '-v',
+      'error',
+      '-show_entries',
+      'stream=codec_type,duration:format=duration',
+      '-of',
+      'json',
+      file
+    ],
+    { env: await childEnv(), timeoutMs: 20_000 }
+  )
+  // killed on the timeout: it never answered, which isn't the file's fault
+  if (r.code === null) throw new Error('ffprobe timed out')
+  return r.code === 0 ? readProbe(r.stdout) : null
+}
+
+/**
+ * Before a render: the one thing that makes HyperFrames fail a whole export is a sound it can't
+ * read, so a local `<audio>` that is missing or isn't audio stops here with a plain sentence.
+ * Everything else it would clip or skip on its own is left to it (a warning, in the log only).
+ */
+export async function exportPreflight(p: Project): Promise<ExportPreflight> {
+  try {
+    const html = projectHtml(p.dir)
+    if (html === null) return { ok: true, warnings: [] }
+    const res = await checkAudio(html, p.dir, probeSound)
+    for (const w of res.warnings) console.warn('[export]', w)
+    return res
+  } catch (err) {
+    // a check that broke says nothing about the video, so it never keeps anyone from exporting
+    console.warn('[export] sound check skipped:', err instanceof Error ? err.message : err)
+    return { ok: true, warnings: [] }
+  }
+}
+
 /** Renders index.html with @hyperframes/producer in a utilityProcess (parallel workers, GPU). */
 export async function startExport(p: Project, opts: ExportOptions): Promise<void> {
-  if (child) throw new Error('An export is already running')
+  if (child || checking) throw new Error('An export is already running')
+  checking = true
+  try {
+    const check = await exportPreflight(p)
+    // no render, no progress bar: the export sheet shows the sentence where its errors go
+    if (!check.ok) throw new Error(check.error)
+  } finally {
+    checking = false
+  }
   mkdirSync(join(p.dir, 'renders'), { recursive: true })
   const safe = (opts.name.trim() || p.name).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80)
   const outputPath = join(p.dir, 'renders', `${safe}-${stamp()}.mp4`)
@@ -65,11 +128,14 @@ export async function startExport(p: Project, opts: ExportOptions): Promise<void
       push({ progress: 1, stage: 'Done', status: 'done', outputPath: m.outputPath })
       finish()
     } else if (m.type === 'error') {
+      // the renderer's own words for a bad sound mean nothing to a creator; keep them in the log
+      const error = plainExportError(m.error, projectHtml(p.dir))
+      if (error !== m.error) console.warn('[render]', m.error.slice(0, 400))
       push({
         progress: last.progress,
         stage: 'Failed',
         status: 'error',
-        error: m.error,
+        error,
         outputPath
       })
       finish()

@@ -113,7 +113,7 @@ function TrackHead({
         strokeWidth={1.75}
         className={cn('shrink-0', `luca-track-icon-${meta.kind}`)}
       />
-      <span className="min-w-0 flex-1 truncate">{KIND_LABEL[meta.kind]}</span>
+      <span className="min-w-0 flex-1 truncate">{meta.label || KIND_LABEL[meta.kind]}</span>
       <div
         className="luca-track-tools opacity-0 transition-opacity duration-150 group-hover/head:opacity-100 data-[on=true]:opacity-100"
         data-on={muted || locked}

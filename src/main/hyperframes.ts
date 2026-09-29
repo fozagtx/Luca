@@ -11,48 +11,11 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { CatalogItem, Clip, ClipKind, Timeline, Track } from '../shared/types'
+import type { CatalogItem, Timeline } from '../shared/types'
 import bundled from './catalog/hyperframes.json'
 import { parseJsonOutput, runHyperframes } from './env'
-import { findTags } from './html'
 import { appDataDir } from './settings'
-
-type HfRow = {
-  id: string | null
-  label: string | null
-  kind: string
-  trackKind: string
-  start: number
-  duration: number
-  end: number
-  absStart: number
-  absEnd: number
-  file: string
-  trackIndex: number
-  src: string | null
-  ref: string
-  elementId: string | null
-  children?: HfRow[]
-}
-
-type HfTimeline = {
-  timeline: {
-    duration: number
-    fps?: number
-    width?: number
-    height?: number
-    tracks: { kind: string; rows: HfRow[] }[]
-  }
-}
-
-function kindOf(row: HfRow): ClipKind {
-  if (row.trackKind === 'video' || row.kind === 'video') return 'video'
-  if (row.trackKind === 'audio' || row.kind === 'audio') return 'audio'
-  if (row.trackKind === 'caption' || row.kind === 'caption' || /caption/i.test(row.id ?? ''))
-    return 'caption'
-  if (row.kind === 'composition' || row.kind === 'block') return 'block'
-  return 'block'
-}
+import { buildTimeline, type HfTimeline } from './timeline-read'
 
 export async function readTimeline(dir: string): Promise<Timeline> {
   const res = await runHyperframes(['timeline', '--json'], { cwd: dir, timeoutMs: 60_000 })
@@ -62,84 +25,7 @@ export async function readTimeline(dir: string): Promise<Timeline> {
   const html = existsSync(join(dir, 'index.html'))
     ? readFileSync(join(dir, 'index.html'), 'utf8')
     : ''
-  const width = data.timeline.width ?? Number(/data-width="(\d+)"/.exec(html)?.[1] ?? 1920)
-  const height = data.timeline.height ?? Number(/data-height="(\d+)"/.exec(html)?.[1] ?? 1080)
-
-  // clip volumes and trimmed starts aren't in the CLI's JSON; read them from the tags
-  const volumes = new Map<string, number>()
-  const mediaStarts = new Map<string, number>()
-  for (const t of findTags(html))
-    if (t.attrs.id && (t.name === 'video' || t.name === 'audio')) {
-      volumes.set(t.attrs.id, Number(t.attrs['data-volume'] ?? 1))
-      const ms = Number(t.attrs['data-media-start'])
-      if (ms > 0) mediaStarts.set(t.attrs.id, ms)
-    }
-  const byIndex = new Map<number, Track>()
-  const seen = new Set<string>()
-  const visit = (row: HfRow): void => {
-    if (
-      row.file !== 'index.html' &&
-      row.file !== undefined &&
-      row.file !== null &&
-      row.file !== ''
-    ) {
-      // nested rows belong to sub-compositions; only top-level index.html rows are timeline clips
-    }
-    const idx = row.trackIndex ?? 0
-    const kind = kindOf(row)
-    const track =
-      byIndex.get(idx) ??
-      (() => {
-        const t: Track = { index: idx, kind, label: kind, clips: [] }
-        byIndex.set(idx, t)
-        return t
-      })()
-    const id = row.id ?? row.elementId ?? row.ref
-    const key = `${row.file}:${row.ref}`
-    if (seen.has(key)) return
-    seen.add(key)
-    const clip: Clip = {
-      id,
-      track: idx,
-      kind,
-      start: row.absStart,
-      end: row.absEnd,
-      file: row.file,
-      label: row.label ?? id,
-      src: row.src,
-      ref: row.ref,
-      remocn: typeof row.src === 'string' && row.src.startsWith('media/remocn/'),
-      ...(row.elementId && volumes.has(row.elementId)
-        ? { volume: volumes.get(row.elementId) }
-        : volumes.has(id)
-          ? { volume: volumes.get(id) }
-          : {}),
-      ...(mediaStarts.has(row.elementId ?? id)
-        ? { mediaStart: mediaStarts.get(row.elementId ?? id) }
-        : {})
-    }
-    track.clips.push(clip)
-    if (track.kind !== kind && kind === 'video') track.kind = 'video'
-  }
-  for (const t of data.timeline.tracks) {
-    for (const row of t.rows) {
-      if (row.file && row.file !== 'index.html') continue
-      visit(row)
-    }
-  }
-  const tracks = [...byIndex.values()].sort((a, b) => a.index - b.index)
-  for (const t of tracks) {
-    t.clips.sort((a, b) => a.start - b.start)
-    t.label =
-      t.kind === 'video'
-        ? 'Video'
-        : t.kind === 'audio'
-          ? 'Audio'
-          : t.kind === 'caption'
-            ? 'Captions'
-            : 'Graphics'
-  }
-  return { duration: data.timeline.duration, fps: data.timeline.fps ?? 30, width, height, tracks }
+  return buildTimeline(data, html)
 }
 
 export async function lint(dir: string): Promise<{ ok: boolean; output: string }> {
