@@ -36,6 +36,8 @@ const SCRIPT_STAGE: Partial<Record<CreateProgress['stage'], string>> = {
   copying: 'scaffolding',
   scaffolding: 'scaffolding',
   media: 'scaffolding',
+  // a reference is studied after the project is built, script or not
+  studying: 'studying',
   starting: 'starting'
 }
 

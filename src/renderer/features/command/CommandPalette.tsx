@@ -63,7 +63,7 @@ export function CommandPalette(): ReactElement {
       id: 'script',
       label: 'Start from a script…',
       icon: <FileText size={14} strokeWidth={1.5} />,
-      keywords: ['voiceover', 'record', 'no footage', 'faceless'],
+      keywords: ['voiceover', 'record', 'narration', 'no footage', 'explainer'],
       run: async () => {
         // it belongs on the start card: Home first, unless they choose to let Luca finish
         await goHome()

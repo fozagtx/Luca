@@ -178,6 +178,9 @@ export default function App(): ReactElement {
               minSize={232}
               maxSize={420}
               className={cn('panel', !sidebarOpen && 'panel-collapsed')}
+              // folded away (always on Home): its tabs and buttons are out of sight, so out of the tab
+              // order too, and so is the folded panel itself, which scrolls its hidden content
+              inert={!sidebarOpen}
             >
               <Sidebar />
             </Panel>

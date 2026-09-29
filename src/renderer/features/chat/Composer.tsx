@@ -198,7 +198,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
               <button
                 type="button"
                 onClick={() => useStart.getState().setScriptMode(true)}
-                className="font-medium text-accent hover:underline"
+                className="font-medium text-secondary-fg hover:underline"
               >
                 start from a script
               </button>
@@ -331,12 +331,12 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                   : attaching.length
                     ? 'Adding to your project…'
                     : working && hasText
-                      ? '↩ to add to the queue'
+                      ? '↩ to queue'
                       : canSend
                         ? noProject
                           ? scripted && !media
-                            ? '↩ to record and edit'
-                            : '↩ to start editing'
+                            ? '↩ to record'
+                            : '↩ to start'
                           : '↩ to send'
                         : ''}
               </span>
@@ -450,7 +450,7 @@ const APPROVAL_MODES: { mode: ApprovalMode; title: string; body: string }[] = [
   {
     mode: 'full',
     title: 'Full access',
-    body: 'Every step runs without asking. Edits still stay inside the project folder and media/ and renders/ stay untouched.'
+    body: 'Every step runs without asking. Cards that spend credits still ask. Edits still stay inside the project folder and media/ and renders/ stay untouched.'
   }
 ]
 
@@ -461,14 +461,22 @@ function ApprovalsPill({ disabled }: { disabled: boolean }): ReactElement {
   const Icon = full ? ShieldAlert : ShieldCheck
   return (
     <Menu.Root>
-      <Tip label="How Luca's steps are approved" side="top">
+      <Tip
+        label={
+          full
+            ? 'Steps run without asking. Cards that spend credits still ask.'
+            : "How Luca's steps are approved"
+        }
+        side="top"
+      >
         <Menu.Trigger
           disabled={disabled}
-          aria-label="How Luca's steps are approved"
+          aria-label={`How Luca's steps are approved: ${full ? 'Full access' : 'Ask first'}`}
           onMouseDown={(e: MouseEvent) => e.stopPropagation()}
           onClick={(e: MouseEvent) => e.stopPropagation()}
           className={cn(
-            'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40',
+            // never wraps or shrinks: the hint beside it is what gives way in a narrow chat
+            'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-40',
             full ? 'text-warning' : 'text-text-2 hover:bg-hover hover:text-text'
           )}
         >
@@ -478,7 +486,7 @@ function ApprovalsPill({ disabled }: { disabled: boolean }): ReactElement {
       </Tip>
       <Menu.Portal>
         <Menu.Positioner side="top" align="start" sideOffset={6} className="z-50">
-          <Menu.Popup className="tip-popup min-w-[280px] rounded-[10px] border border-border bg-bg p-1 shadow-popover outline-none">
+          <Menu.Popup className="tip-popup w-[300px] rounded-[10px] border border-border bg-bg p-1 shadow-popover outline-none">
             <div className="px-2.5 pt-1.5 pb-1 text-[11px] text-text-3">
               How should Luca’s steps be approved?
             </div>

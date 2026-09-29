@@ -137,6 +137,15 @@ function editOf(type: VideoTypeId, style: StyleId, notes?: string): StartEdit {
   }
 }
 
+/**
+ * A step switched on, in the place its guide gives it: music is made after the cuts and titles and
+ * before the captions (and the final review), so it fits the finished length; the rest go last.
+ */
+function withStep(steps: EditStepId[], id: EditStepId): EditStepId[] {
+  const at = id === 'music' ? steps.findIndex((x) => x === 'captions' || x === 'critique') : -1
+  return at < 0 ? [...steps, id] : [...steps.slice(0, at), id, ...steps.slice(at)]
+}
+
 type StartStore = {
   /** In the order they were added: videos play back to back in this order. */
   files: Attachment[]
@@ -267,8 +276,8 @@ export const useStart = create<StartStore>((set, get) => ({
       next.push(a)
     }
     // footage dropped on the script panel means they'd rather start from that (the script stays,
-    // and the footage form says so)
-    set({ files: next, error: null, ...(kindOf(next) ? { scriptMode: false } : {}) })
+    // and the footage form says so); pictures alone come along with the script
+    set({ files: next, error: null, ...(kindOf(next) !== 'brief' ? { scriptMode: false } : {}) })
     // the chat's "add your video first" is answered once there is something to edit
     const asked = useChat.getState().error
     if (kindOf(next) && (asked === NO_FOOTAGE || asked === IMAGES_ONLY))
@@ -301,7 +310,7 @@ export const useStart = create<StartStore>((set, get) => ({
   },
   setAspect: (aspect) => set({ aspect, aspectPicked: true }),
   setScriptMode: (scriptMode) => {
-    // a script is a faceless concept until they pick another kind; without one, back to the files'
+    // a script is a concept explainer until they pick another kind; without one, back to the files'
     if (!get().typePicked) {
       const type = scriptMode ? 'concept' : defaultType(kindOf(get().files))
       if (get().edit.type !== type) set({ edit: editOf(type, get().edit.style, get().edit.notes) })
@@ -329,7 +338,7 @@ export const useStart = create<StartStore>((set, get) => ({
       return {
         edit: {
           ...s.edit,
-          steps: on ? s.edit.steps.filter((x) => x !== id) : [...s.edit.steps, id]
+          steps: on ? s.edit.steps.filter((x) => x !== id) : withStep(s.edit.steps, id)
         }
       }
     }),

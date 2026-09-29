@@ -107,6 +107,10 @@ export function useShortcuts(): void {
         } else if (e.key === '0') {
           e.preventDefault()
           tl.setZoom(80)
+        } else if (e.key === '4') {
+          // the Sound tab's own key: the menu carries ⌘1–⌘3 for the others
+          e.preventDefault()
+          if (useProject.getState().project) ui.setTab('sound')
         }
         return
       }

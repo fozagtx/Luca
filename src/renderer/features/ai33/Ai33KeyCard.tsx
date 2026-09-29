@@ -31,7 +31,7 @@ function mayTakeFocus(): boolean {
 }
 
 const linkClass =
-  'inline-flex items-center gap-0.5 text-[11px] font-medium text-accent hover:underline'
+  'inline-flex items-center gap-0.5 text-[11px] font-medium text-secondary-fg hover:underline'
 
 /**
  * Connects ai33 with the person's own key (checked with ai33, kept with safeStorage) and shows
@@ -133,10 +133,11 @@ export function Ai33KeyCard({
       {connected ? (
         <>
           <div
-            className="mt-1.5 flex items-center gap-1.5 text-[12px] font-medium text-success"
+            className="mt-1.5 flex items-center gap-1.5 text-[12px] font-medium text-text"
             aria-live="polite"
           >
-            <Check size={13} />
+            {/* the green is for the tick: as words it is 2.2:1 on white */}
+            <Check size={13} className="text-success" />
             <span>Connected{credits !== null ? ` · ${formatCredits(credits)} credits` : ''}</span>
           </div>
           {!persisted ? <p className="mt-1 text-text-3">{AI33_NO_KEYCHAIN}</p> : null}

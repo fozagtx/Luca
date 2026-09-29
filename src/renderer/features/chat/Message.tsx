@@ -411,6 +411,7 @@ function PermissionCard({
 }): ReactElement {
   const decide = useChat((s) => s.decide)
   const credits = useAi33((s) => s.credits)
+  const fullAccess = useProject((s) => s.settings?.approvals === 'full')
   const [details, setDetails] = useState(false)
   const input = (part.input ?? {}) as Record<string, unknown>
   const ask = part.ask
@@ -536,13 +537,15 @@ function PermissionCard({
         <Button size="sm" variant="ghost" onClick={() => void decide(part.id, 'deny')}>
           Don&apos;t allow
         </Button>
-        <button
-          type="button"
-          onClick={() => void useProject.getState().setApprovals('full')}
-          className="self-center text-[11px] text-text-3 underline-offset-2 hover:text-text hover:underline"
-        >
-          Turn on full access
-        </button>
+        {fullAccess ? null : (
+          <button
+            type="button"
+            onClick={() => void useProject.getState().setApprovals('full')}
+            className="self-center text-[11px] text-text-3 underline-offset-2 hover:text-text hover:underline"
+          >
+            Turn on full access
+          </button>
+        )}
       </div>
       <p className="mt-2 pl-[38px] text-[10.5px] leading-[1.4] text-text-3">
         {scope

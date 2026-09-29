@@ -2,6 +2,7 @@ import { Menu } from '@base-ui/react/menu'
 import { editStep, STYLES, VIDEO_TYPES, videoType } from '@shared/edits'
 import type { Aspect, StyleId, VideoTypeId } from '@shared/types'
 import {
+  ArrowLeft,
   AudioLines,
   Check,
   CircleAlert,
@@ -11,8 +12,10 @@ import {
   ImagePlus,
   Lightbulb,
   MoreHorizontal,
+  PencilLine,
   Plus,
   Rocket,
+  ScrollText,
   Smartphone,
   Trash2,
   Upload,
@@ -219,13 +222,17 @@ function StartCard(): ReactElement {
           </div>
         ) : formOpen ? (
           <div className={cn(over && 'opacity-0')}>
-            <EditForm onGo={() => void go()} />
+            <EditForm
+              // "Start from a brief" has no files to remove to get back to the drop zone
+              onBack={kind === 'brief' ? () => setBriefOpen(false) : undefined}
+              onGo={() => void go()}
+            />
           </div>
         ) : (
-          // nothing to make yet: the drop zone, or start from the brief alone
+          // nothing to make yet: the drop zone, or words alone (a brief or a script)
           <div
             className={cn(
-              'flex flex-col items-center gap-4 px-6 py-10 text-center',
+              'flex flex-col items-center gap-4 px-6 py-8 text-center',
               over && 'opacity-0'
             )}
           >
@@ -238,28 +245,40 @@ function StartCard(): ReactElement {
             )}
             <div className="flex flex-col gap-1">
               <div className="text-[15px] font-semibold text-text">
-                Drop a video, a voiceover or screenshots — or just describe it
+                Drop a video, a voiceover or screenshots
               </div>
               <div className="text-[12px] text-text-3">
                 Footage plays back to back; a logo, screenshots and music can come along.
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button size="lg" onClick={() => void pickFiles()}>
-                Choose files
-              </Button>
-              <Button size="lg" variant="ghost" onClick={() => setBriefOpen(true)}>
-                Start from a brief
-              </Button>
-            </div>
-            <Button variant="secondary" size="md" onClick={() => setScriptMode(true)}>
-              No footage? Start from a script
+            <Button size="lg" onClick={() => void pickFiles()}>
+              Choose files
             </Button>
             {files.length ? (
               <div className="fade-in rounded-[10px] border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[12px] text-danger">
                 {IMAGES_ONLY}
               </div>
             ) : null}
+            {/* two ways to start with words, side by side: what each one is, and who writes them */}
+            <div className="flex w-full flex-col gap-2 border-t border-border pt-4">
+              <div className="text-[12px] font-medium text-text-2">
+                No footage? Start from words instead.
+              </div>
+              <div className="grid grid-cols-1 gap-2 text-left sm:grid-cols-2">
+                <Door
+                  icon={PencilLine}
+                  title="Start from a brief"
+                  hint="Say what it’s about. Luca writes the words and makes the visuals."
+                  onClick={() => setBriefOpen(true)}
+                />
+                <Door
+                  icon={ScrollText}
+                  title="Start from a script"
+                  hint="Paste the words you wrote. Luca records them in a voice you pick, using ai33 credits."
+                  onClick={() => setScriptMode(true)}
+                />
+              </div>
+            </div>
             {error && error !== IMAGES_ONLY ? <StartError className="w-full text-left" /> : null}
           </div>
         )}
@@ -276,6 +295,33 @@ function StartCard(): ReactElement {
         </button>
       ) : null}
     </section>
+  )
+}
+
+/** One way to start without footage: a title, and a line on what it means for the words. */
+function Door({
+  icon: Icon,
+  title,
+  hint,
+  onClick
+}: {
+  icon: LucideIcon
+  title: string
+  hint: string
+  onClick: () => void
+}): ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col gap-1 rounded-[12px] border border-border bg-bg p-3 text-left transition-[background-color,border-color] duration-150 hover:border-border-strong hover:bg-hover"
+    >
+      <span className="flex items-center gap-2 text-[12.5px] font-medium text-text">
+        <Icon size={14} strokeWidth={1.8} className="shrink-0 text-text-2" />
+        {title}
+      </span>
+      <span className="text-[11px] leading-[1.4] text-text-2">{hint}</span>
+    </button>
   )
 }
 
@@ -325,7 +371,16 @@ function StartError({ className }: { className?: string }): ReactElement | null 
  * The card's form: the style, the kind of video, a reference, the steps, the brief, and go. With a
  * script to record it leads with the script fields.
  */
-function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean }): ReactElement {
+function EditForm({
+  onGo,
+  onBack,
+  script = false
+}: {
+  onGo: () => void
+  /** Back to the drop zone, when the form was opened without any files. */
+  onBack?: () => void
+  script?: boolean
+}): ReactElement {
   const { files, footage, aspect, aspectFrom, edit, busy, reference } = useStart()
   const { setAspect, setType, setStyle, toggleStep, setNotes, setReference, clearReference } =
     useStart()
@@ -336,12 +391,16 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
   const savedScript = useStart((s) => !script && !!s.script.text.trim())
   const ref = useRef<HTMLTextAreaElement>(null)
   const kind = kindOf(files)
-  const brief = kind === 'brief'
+  // a script has words of its own above: what is left to type is notes about the video, not a brief
+  const brief = kind === 'brief' && !script
   // a voiceover, a brief or a script has no picture to zoom into or put a name on, and a script has
   // its words already: there are no ums or pauses to cut
   const voiceOnly = script || kind !== 'video'
-  const steps = videoType(edit.type)
-    .steps[edit.style].map(editStep)
+  // the type's own steps, then Music: no type switches it on, since it spends credits, but it has to
+  // be there to switch on
+  const listed = videoType(edit.type).steps[edit.style]
+  const steps = (listed.includes('music') ? listed : [...listed, 'music' as const])
+    .map(editStep)
     .filter((s) => !(voiceOnly && s.needsPicture) && !(script && s.id === 'cut'))
   // the words of a script are known, so nothing waits for AssemblyAI: its card never comes up
   const needsWords = !script && steps.some((s) => s.needsWords && edit.steps.includes(s.id))
@@ -395,6 +454,11 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
   return (
     <div className="rise-in flex flex-col">
       <div className="flex flex-col gap-5 p-4">
+        {onBack ? (
+          <Button size="sm" variant="ghost" className="-mt-1 -ml-2 self-start" onClick={onBack}>
+            <ArrowLeft size={12} /> Drop a video instead
+          </Button>
+        ) : null}
         {savedScript ? (
           <p className="fade-in text-[12px] text-text-2">
             Your script is saved. Remove the video to go back to it.
@@ -570,16 +634,19 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
             />
             {brief ? (
               <span className="text-[11px] leading-[1.4] text-text-3">
-                Paste the script or describe the product; a link helps
+                Describe the product or the idea, paste notes, or add a link. Luca writes the words.
               </span>
             ) : null}
           </div>
         </Field>
       </div>
 
-      <StartError className="mx-4 mb-4" />
+      {/* the room the button bar takes, so an error scrolled into view isn't left under it */}
+      <StartError className="mx-4 mb-4 scroll-mb-20" />
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
+      {/* stays at the foot of the pane: the form is taller than a small window, and the button
+          (with why it is off, and ⌘↩) is what a person is looking for */}
+      <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 rounded-b-[18px] border-t border-border bg-input px-4 py-3">
         <span className="text-[12px] font-medium text-text-2">Format</span>
         {/* it starts out matching the first video's shape: pick 9:16 to make a short of it */}
         <Segmented
