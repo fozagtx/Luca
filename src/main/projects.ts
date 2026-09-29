@@ -10,6 +10,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { basename, extname, join, relative } from 'node:path'
+import { formatCredits, languageFor, type PreparedScript } from '../shared/ai33'
 import { editGuide, videoType } from '../shared/edits'
 import type {
   Aspect,
@@ -20,6 +21,10 @@ import type {
   StartEdit,
   StartKind
 } from '../shared/types'
+import { hasAi33Key } from './ai33-account'
+import { getCredits } from './ai33-client'
+import { grantPreapproval, MUSIC_SEED } from './ai33-spend'
+import { finishScriptStart, scriptToAudio, startAbort, throwIfStopped } from './ai33-start'
 import { childEnv, probeMedia, run, runHyperframes, which } from './env'
 import {
   aspectOf,
@@ -132,15 +137,36 @@ type PlacedClip = {
  * A new project from the person's footage (`hyperframes init --video` with the first video, the
  * others played back to back after it) or a voiceover (`--audio`); images added next to it wait
  * in media/. Videos a browser can't play (iPhone HEVC, 10-bit, HDR) are made ready first. The
- * edit picked on the start card goes in the brief and in .luca/EDIT.md.
+ * edit picked on the start card goes in the brief and in .luca/EDIT.md. A script is recorded
+ * first and becomes the voiceover: from there the start is the one a voiceover gets, with the
+ * script's words as the transcript.
  */
 export async function startProject(
   args: StartArgs,
   report: Report
 ): Promise<{ project: Project; kind: StartKind; brief: string }> {
-  const kind = startKind(args.files)
+  const signal = startAbort()
+  const prepared = args.script ? await scriptToAudio(args, report, signal) : null
+  try {
+    return await createProject(args, prepared, signal, report)
+  } finally {
+    if (prepared) rmSync(prepared.staging, { recursive: true, force: true })
+  }
+}
+
+async function createProject(
+  args: StartArgs,
+  prepared: PreparedScript | null,
+  signal: AbortSignal,
+  report: Report
+): Promise<{ project: Project; kind: StartKind; brief: string }> {
+  // the recording is the voiceover; images may still come along, nothing else does
+  const files = prepared
+    ? [prepared.audioFile, ...args.files.filter((f) => IMAGE_EXT.has(extname(f).toLowerCase()))]
+    : args.files
+  const kind = startKind(files)
   const ofType = (set: Set<string>): string[] =>
-    args.files.filter((f) => set.has(extname(f).toLowerCase()))
+    files.filter((f) => set.has(extname(f).toLowerCase()))
   const videos = ofType(VIDEO_EXT)
   const images = ofType(IMAGE_EXT)
   const audio = ofType(AUDIO_EXT)[0] ?? null
@@ -149,27 +175,35 @@ export async function startProject(
   // images (and a soundtrack next to footage) wait in media/
   const extras = kind === 'video' ? [...images, ...(audio ? [audio] : [])] : images
   const settings = getSettings()
-  const name = (args.name?.trim() || basename(main, extname(main))).slice(0, 80)
+  const name = (
+    args.name?.trim() || (prepared ? scriptTitle(prepared.text) : basename(main, extname(main)))
+  ).slice(0, 80)
   const { dir, id } = uniqueDir(settings.projectsDir, slugify(name))
   // prepared videos wait next to the project, on the same disk, so moving them in is instant
   const staging = join(settings.projectsDir, `.${id}-preparing`)
 
   try {
-    report({ stage: 'preparing', message: 'Getting ready' })
+    // a script has already been through its own stage: the step list has no "getting ready" to go back to
+    if (!prepared) report({ stage: 'preparing', message: 'Getting ready' })
     const probes = await probeAll(videos)
     const ready = await prepareAll(videos, probes, staging, report)
     const initArgs = ['init', id, '--non-interactive', '--resolution', RESOLUTION[args.aspect]]
     if (kind === 'video') initArgs.push('--video', ready[0], '--skip-transcribe')
     else initArgs.push('--audio', main, '--skip-transcribe')
-    report({
-      stage: 'copying',
-      message:
-        kind === 'audio'
-          ? 'Copying your voiceover'
-          : videos.length > 1
-            ? 'Copying your videos'
-            : 'Copying your video'
-    })
+    if (prepared) {
+      throwIfStopped(signal)
+      report({ stage: 'scaffolding' })
+    } else {
+      report({
+        stage: 'copying',
+        message:
+          kind === 'audio'
+            ? 'Copying your voiceover'
+            : videos.length > 1
+              ? 'Copying your videos'
+              : 'Copying your video'
+      })
+    }
     const res = await runHyperframes(initArgs, {
       cwd: settings.projectsDir,
       timeoutMs: 240_000,
@@ -187,6 +221,8 @@ export async function startProject(
         `Couldn't set up the project (${res.code}): ${(res.stderr || res.stdout).trim().slice(-800)}`
       )
     }
+    // the script's words are the transcript, so it is in place before anything reads the project
+    if (prepared) await finishScriptStart(dir, prepared)
 
     // the file as it is in the project: init renames the footage it converts
     const source = kind === 'video' ? findSource(dir) : basename(main)
@@ -198,15 +234,33 @@ export async function startProject(
       const added = await importExtras(dir, extras, report)
       brief += ` The user also added ${added.length === 1 ? 'this file' : 'these files'}, in the order they added them: ${added.join(', ')}. Use ${added.length === 1 ? 'it' : 'them'} where ${added.length === 1 ? 'it fits' : 'they fit'} (images: a logo, screenshots or pictures of what is said; audio: the voiceover when the footage is silent, music under the voice otherwise).`
     }
+    if (prepared) brief += ` ${scriptBrief(prepared)}`
     // the edit picked on the start card: in the first request, and kept for later turns
-    const edit: StartEdit = args.edit ?? { type: 'talking', steps: videoType('talking').steps }
+    let edit: StartEdit = args.edit ?? {
+      type: prepared ? 'explainer' : 'talking',
+      steps: videoType(prepared ? 'explainer' : 'talking').steps
+    }
+    // music is made without asking only when the credits cover it: else it is left out, said once
+    if (edit.steps.includes('music') && hasAi33Key()) {
+      const left = (await getCredits({ fresh: true }).catch(() => null)) ?? prepared?.left ?? null
+      if (left !== null && left >= MUSIC_SEED) grantPreapproval(dir, ['music'])
+      else {
+        edit = { ...edit, steps: edit.steps.filter((s) => s !== 'music') }
+        brief += left === null ? NO_MUSIC_UNKNOWN : NO_MUSIC_SHORT
+      }
+    }
     const guide = editGuide(edit, {
-      canTranscribe: hasSecret('assemblyai'),
-      voiceOnly: kind === 'audio'
+      // a script's words are known, so B-roll and captions never wait for a transcription key
+      canTranscribe: !!prepared || hasSecret('assemblyai'),
+      voiceOnly: kind === 'audio',
+      scripted: !!prepared,
+      canGenerate: hasAi33Key()
     })
     writeFileSync(join(lucaDir(dir), 'EDIT.md'), guide + '\n')
     brief += `\n\n${guide}`
 
+    // Cancel pressed while the project was being made: nothing of it is kept
+    if (prepared) throwIfStopped(signal)
     const now = new Date().toISOString()
     const project: Project = {
       id,
@@ -422,6 +476,32 @@ async function voiceoverBrief(dir: string, source: string, aspect: Aspect): Prom
       )
     : 0
   return `This project starts from the user's voiceover (${source}${length > 0 ? `, ${r2(length)}s` : ''}, in the timeline as audio) and nothing on screen yet, in a ${w}×${h} ${aspect} video. Every visual is yours to make, following what is said. Edit it as planned below.`
+}
+
+const NO_MUSIC_SHORT =
+  ' The user switched Music on, but there weren’t enough ai33 credits for it, so it is left out of the plan. Say so in one short sentence: “I skipped the music: there weren’t enough credits left.”'
+const NO_MUSIC_UNKNOWN =
+  ' The user switched Music on, but Luca couldn’t check their ai33 credits, so it is left out of the plan. Say so in one short sentence: “I skipped the music: Luca couldn’t check your credits.”'
+
+/** What Luca is told about a voiceover recorded from the user's script. */
+function scriptBrief(p: PreparedScript): string {
+  const language = languageFor(p.language)
+  const lines = [
+    `The voiceover is ${p.voice.name}’s voice reading the user’s script${language && language.id !== 'en' ? `, in ${language.name}: write every title in ${language.name} too` : ''}.`
+  ]
+  lines.push(
+    p.credits > 0
+      ? `Recording it used ${formatCredits(p.credits)} credits${p.left === null ? '' : ` (${formatCredits(p.left)} left)`}: end your first reply with that, as “used 1,240 credits, 7,560 left” with the real numbers, and one idea for what to do next.`
+      : 'Recording it used no credits (it had been recorded before).'
+  )
+  return lines.join(' ')
+}
+
+/** A project name from the script's first words, for when the start card gave none. */
+function scriptTitle(text: string): string {
+  const words = text.split(/\s+/).filter(Boolean).slice(0, 6).join(' ')
+  const title = words.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').slice(0, 40)
+  return title ? title[0].toUpperCase() + title.slice(1) : 'Script video'
 }
 
 /** Images, and a soundtrack next to footage: into media/, in the order they were added. */
