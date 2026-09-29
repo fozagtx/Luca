@@ -3703,8 +3703,10 @@ async function sectionPlan(): Promise<void> {
   const { edits: E, store, shared, captions } = b
   const ids = (l: { id: string }[]): string[] => l.map((s) => s.id)
   const all = ['cut', 'hook', 'zooms', 'broll', 'name', 'ending', 'music', 'captions'] as const
+  // the concept explainer, classic style, with Music added: no type switches Music on, the person does
   const explainer = {
-    type: 'explainer' as const,
+    type: 'concept' as const,
+    style: 'classic' as const,
     steps: ['cut', 'hook', 'broll', 'music', 'captions'] as (typeof all)[number][]
   }
 
@@ -3744,7 +3746,7 @@ async function sectionPlan(): Promise<void> {
     ['cut', 'hook', 'broll', 'ending', 'music', 'captions']
   )
   same(
-    'the plan keeps Luca’s order',
+    'the steps that run keep the order they are given (the type’s order, not one fixed list)',
     ids(
       E.runnableSteps([...all].reverse(), {
         canTranscribe: true,
@@ -3752,7 +3754,7 @@ async function sectionPlan(): Promise<void> {
         canGenerate: true
       }).run
     ),
-    [...all]
+    [...all].reverse()
   )
 
   const guide = E.editGuide(explainer, {
@@ -3799,12 +3801,15 @@ async function sectionPlan(): Promise<void> {
   check(
     'a guide with nothing to run says so',
     /Nothing was switched on/.test(
-      E.editGuide({ type: 'talking', steps: [] }, { canTranscribe: true, voiceOnly: false })
+      E.editGuide(
+        { type: 'talking', style: 'classic', steps: [] },
+        { canTranscribe: true, voiceOnly: false }
+      )
     )
   )
   check(
     'user notes are carried',
-    /## The user’s notes\nI’m Sam/.test(
+    /## The user’s brief\nI’m Sam/.test(
       E.editGuide({ ...explainer, notes: ' I’m Sam ' }, { canTranscribe: true, voiceOnly: false })
     )
   )
@@ -3812,16 +3817,16 @@ async function sectionPlan(): Promise<void> {
   same(
     'the first request of a script project never says "cut"',
     E.editRequest(explainer, { voiceOnly: true, scripted: true }),
-    'Edit my faceless explainer: hook title, b-roll images, music, captions'
+    'Edit my concept explainer: hook title, b-roll images, music, captions'
   )
   same(
     'a recording still does',
     E.editRequest(explainer, { voiceOnly: true }),
-    'Edit my faceless explainer: cut ums & pauses, hook title, b-roll images, music, captions'
+    'Edit my concept explainer: cut ums & pauses, hook title, b-roll images, music, captions'
   )
   same(
     'no steps at all',
-    E.editRequest({ type: 'talking', steps: [] }, { voiceOnly: false }),
+    E.editRequest({ type: 'talking', style: 'classic', steps: [] }, { voiceOnly: false }),
     'Edit my talking video'
   )
   check(
@@ -3832,6 +3837,222 @@ async function sectionPlan(): Promise<void> {
     'no step is the removed "cleanup"',
     !E.EDIT_STEPS.some((s) => (s.id as string) === 'cleanup')
   )
+
+  // ---- the merged edit plan: the steps of the explainer maker next to the ai33 ones
+  type StepId = (typeof all)[number]
+  const styles = ['motion', 'classic'] as const
+  const kinds = E.VIDEO_TYPES
+  check(
+    'no video type switches Music on by itself (it spends credits)',
+    kinds.every((t) => styles.every((st) => !t.steps[st].includes('music' as StepId))),
+    () => show(kinds.map((t) => [t.id, t.steps]))
+  )
+  check(
+    'the steps a type switches on keep the order the type gives them (upstream’s order is untouched)',
+    kinds.every((t) =>
+      styles.every(
+        (st) =>
+          E.orderedSteps({ type: t.id, style: st, steps: [...t.steps[st]] }).join() ===
+          t.steps[st].join()
+      )
+    )
+  )
+  same(
+    'Music sits before the sound, the captions or the review, whichever the video has first',
+    [
+      E.orderedSteps({
+        type: 'launch',
+        style: 'classic',
+        steps: ['cut', 'zooms', 'ending', 'captions', 'music']
+      }),
+      E.orderedSteps({
+        type: 'launch',
+        style: 'motion',
+        steps: ['plan', 'motion', 'sound', 'ending', 'critique', 'music']
+      }),
+      E.orderedSteps({
+        type: 'talking',
+        style: 'motion',
+        steps: ['cut', 'hook', 'motion', 'name', 'captions', 'music']
+      }),
+      E.orderedSteps({ type: 'launch', style: 'classic', steps: ['cut', 'music'] })
+    ],
+    [
+      ['cut', 'zooms', 'ending', 'music', 'captions'],
+      ['plan', 'motion', 'music', 'sound', 'ending', 'critique'],
+      ['cut', 'hook', 'motion', 'name', 'music', 'captions'],
+      ['cut', 'music']
+    ]
+  )
+  same(
+    'a step switched off and on again on the card (which puts it last) goes back to its place, and Music goes before the captions',
+    E.orderedSteps({
+      type: 'concept',
+      style: 'classic',
+      steps: ['hook', 'broll', 'captions', 'cut', 'music']
+    }),
+    ['cut', 'hook', 'broll', 'music', 'captions']
+  )
+  same(
+    'a step no type knows (the removed "cleanup") is dropped, not a crash',
+    E.orderedSteps({
+      type: 'concept',
+      style: 'classic',
+      steps: ['cut', 'cleanup' as StepId, 'captions']
+    }),
+    ['cut', 'captions']
+  )
+  same(
+    'the plan of a saved card with an old type id and no style still reads (concept, Motion)',
+    ids(
+      E.runnableSteps(
+        E.orderedSteps({
+          type: 'explainer' as 'concept',
+          style: undefined as never,
+          steps: ['plan', 'sound']
+        }),
+        { canTranscribe: true, voiceOnly: false }
+      ).run
+    ),
+    ['plan', 'sound']
+  )
+  const plan = (
+    edit: Parameters<typeof E.editGuide>[0],
+    opts: Parameters<typeof E.editGuide>[1]
+  ): ReturnType<typeof E.runnableSteps> => E.runnableSteps(E.orderedSteps(edit), opts)
+  const motionConcept = E.videoType('concept').steps.motion
+  const spoken = { canTranscribe: false, voiceOnly: true, scripted: true, canGenerate: true }
+  same(
+    'a script in Motion (what the start card picks for one) runs every step, none waits for a key',
+    [
+      ids(plan({ type: 'concept', style: 'motion', steps: motionConcept }, spoken).run),
+      ids(plan({ type: 'concept', style: 'motion', steps: motionConcept }, spoken).skipped)
+    ],
+    [[...motionConcept], []]
+  )
+  same(
+    'a talking video from a script drops cut and name, keeps hook, motion and captions',
+    ids(
+      plan({ type: 'talking', style: 'motion', steps: E.videoType('talking').steps.motion }, spoken)
+        .run
+    ),
+    ['hook', 'motion', 'captions']
+  )
+  same(
+    'a voiceover with no key (not a script) in Motion still plans, builds and reviews, and skips B-roll and captions',
+    [
+      ids(
+        plan(
+          { type: 'concept', style: 'motion', steps: motionConcept },
+          { canTranscribe: false, voiceOnly: true }
+        ).run
+      ),
+      ids(
+        plan(
+          { type: 'concept', style: 'motion', steps: motionConcept },
+          { canTranscribe: false, voiceOnly: true }
+        ).skipped
+      )
+    ],
+    [
+      ['plan', 'motion', 'sound', 'critique'],
+      ['broll', 'captions']
+    ]
+  )
+  same(
+    'a tutorial over a voiceover leaves the zooms out',
+    ids(
+      plan(
+        { type: 'tutorial', style: 'motion', steps: E.videoType('tutorial').steps.motion },
+        { canTranscribe: true, voiceOnly: true }
+      ).run
+    ),
+    ['plan', 'motion', 'sound', 'ending', 'critique']
+  )
+  same(
+    'a script in Motion says "Make", and never "cut"',
+    E.editRequest(
+      { type: 'concept', style: 'motion', steps: motionConcept },
+      { voiceOnly: true, scripted: true }
+    ),
+    'Make my concept explainer: beat map & stills first, morphing motion, b-roll images, music & sound on the beat, captions, director’s review'
+  )
+  {
+    // whatever the type and style: a script never lists cut, in the plan, the request or the guide
+    const bad: string[] = []
+    for (const t of kinds)
+      for (const st of styles)
+        for (const canTranscribe of [true, false])
+          for (const voiceOnly of [true, false]) {
+            const edit = { type: t.id, style: st, steps: [...t.steps[st], 'music' as StepId] }
+            const opts = { canTranscribe, voiceOnly, scripted: true, canGenerate: true }
+            const g = E.editGuide(edit, opts)
+            const r = E.editRequest(edit, { voiceOnly, scripted: true })
+            const label = `${t.id}/${st}/${canTranscribe}/${voiceOnly}`
+            if (
+              ids(plan(edit, opts).run).includes('cut') ||
+              ids(plan(edit, opts).skipped).includes('cut')
+            )
+              bad.push(`${label}: cut in the plan`)
+            if (
+              /cut ums/i.test(r) ||
+              /Clean edit first|Cut ums/i.test(g) ||
+              /Skipped because Luca can’t hear/.test(g)
+            )
+              bad.push(`${label}: cut or a missing key in the request or guide`)
+          }
+    check(
+      'a script never lists cut or a missing AssemblyAI key, for every type and style',
+      bad.length === 0,
+      () => bad.join('\n')
+    )
+  }
+  {
+    // sound: one instruction, not two
+    const both = {
+      type: 'concept',
+      style: 'motion',
+      steps: [...motionConcept, 'music' as StepId]
+    } as const
+    const soundOnly = { type: 'concept', style: 'motion', steps: motionConcept } as const
+    const withMusic = E.editGuide(both, { canTranscribe: true, voiceOnly: true, canGenerate: true })
+    const withoutMusic = E.editGuide(soundOnly, {
+      canTranscribe: true,
+      voiceOnly: true,
+      canGenerate: true
+    })
+    const offline = E.editGuide(both, { canTranscribe: true, voiceOnly: true })
+    const base = E.editStep('sound' as StepId).guide
+    const calls = (text: string): number => (text.match(/call music_generate/g) ?? []).length
+    check(
+      'Music and the sound step together: one call to music_generate, the sound step points at it and leaves its level alone',
+      calls(withMusic) === 1 &&
+        /\d+\. Music: Music, after the cuts/.test(withMusic) &&
+        withMusic.indexOf('Music: Music, after') <
+          withMusic.indexOf('Music & sound on the beat:') &&
+        /The Music step made the track with music_generate: it is the music, so do not make another\. It is already at a good level under the voice: use sound_mix only for music the user gave\./.test(
+          withMusic
+        ),
+      () => withMusic
+    )
+    check(
+      'the sound step alone, with ai33 connected, only offers to make sound (no call, and only if they say yes)',
+      calls(withoutMusic) === 0 &&
+        withoutMusic.includes(
+          `${base} ai33 is connected: instead of only asking for files you may offer to make the music (music_generate) and the effects (sfx_generate) with their credits, and make them only if they say yes.`
+        ) &&
+        !/Music step made/.test(withoutMusic),
+      () => withoutMusic
+    )
+    check(
+      'ai33 not connected: the sound step is the plain one, Music is skipped and says so once, and nothing tells Luca to generate',
+      offline.includes(`${base}\n`) &&
+        !/ai33 is connected/.test(offline) &&
+        calls(offline) === 0 &&
+        (offline.match(/Skipped because ai33 isn’t connected: music\./g) ?? []).length === 1,
+      () => offline
+    )
+  }
 
   // the per-project files
   const dir = join(work, 'project-store')

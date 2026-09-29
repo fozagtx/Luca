@@ -246,6 +246,26 @@ export function editStep(id: EditStepId): EditStep {
   return EDIT_STEPS.find((s) => s.id === id)!
 }
 
+/**
+ * The steps in the order the type puts them. A step switched off and on again on the start card
+ * lands at the end of the list, and a step the type doesn't switch on (music) always does; music
+ * is made after the cuts and titles, so it goes before the sound, the captions or the review,
+ * whichever the video has first.
+ */
+export function orderedSteps(edit: Pick<StartEdit, 'type' | 'style' | 'steps'>): EditStepId[] {
+  const listed = videoType(edit.type).steps[styleOf(edit.style).id]
+  const known = edit.steps.filter((id) => EDIT_STEPS.some((s) => s.id === id))
+  const out = listed.filter((id) => known.includes(id))
+  for (const id of known) {
+    if (out.includes(id)) continue
+    const before = (['sound', 'captions', 'critique'] as const)
+      .map((next) => out.indexOf(next))
+      .find((at) => at >= 0)
+    out.splice(before ?? out.length, 0, id)
+  }
+  return out
+}
+
 /** What a plan is written for: what can hear, what can make things, and where the words come from. */
 export type EditPlanOptions = {
   canTranscribe: boolean
@@ -279,13 +299,26 @@ export function runnableSteps(
   return { run, skipped }
 }
 
+/**
+ * What a step tells Luca. The sound step is written for files the user gives; with ai33 connected
+ * it says what to do about a track Luca made or could make, so it never contradicts the Music step
+ * or the rule that generated sound keeps the level it was placed at. It only ever offers: the
+ * tools ask before spending, and nothing here switches them on.
+ */
+function stepGuide(step: EditStep, run: EditStep[], opts: EditPlanOptions): string {
+  if (step.id !== 'sound' || !opts.canGenerate) return step.guide
+  return run.some((s) => s.id === 'music')
+    ? `${step.guide} The Music step made the track with music_generate: it is the music, so do not make another. It is already at a good level under the voice: use sound_mix only for music the user gave. You cannot hear where its beat and drop are, so plan on the 120 BPM grid. Effects still come from the user’s files, or from sfx_generate if they ask for them.`
+    : `${step.guide} ai33 is connected: instead of only asking for files you may offer to make the music (music_generate) and the effects (sfx_generate) with their credits, and make them only if they say yes.`
+}
+
 /** The words on the first request, e.g. "Make my product launch: beat map & stills first, …". */
 export function editRequest(
   edit: StartEdit,
   opts: { voiceOnly: boolean; brief?: boolean; scripted?: boolean }
 ): string {
   const type = videoType(edit.type)
-  const steps = edit.steps
+  const steps = orderedSteps(edit)
     .map(editStep)
     .filter((s) => !(s.needsPicture && opts.voiceOnly) && !(opts.scripted && s.id === 'cut'))
     .map((s) => s.name.toLowerCase())
@@ -304,7 +337,7 @@ export function editGuide(
 ): string {
   const type = videoType(edit.type)
   const style = styleOf(edit.style)
-  const { run, skipped } = runnableSteps(edit.steps, opts)
+  const { run, skipped } = runnableSteps(orderedSteps(edit), opts)
   const out = [
     '# How the user wants this video edited',
     `The user picked these when they described their video. Keep every later edit in line with it unless they ask for something else.`,
@@ -319,7 +352,7 @@ export function editGuide(
   if (run.length) {
     out.push(
       '## The first edit, in this order',
-      ...run.map((s, i) => `${i + 1}. ${s.name}: ${s.guide}`),
+      ...run.map((s, i) => `${i + 1}. ${s.name}: ${stepGuide(s, run, opts)}`),
       ''
     )
   } else {

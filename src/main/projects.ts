@@ -202,6 +202,9 @@ async function createProject(
     ? [prepared.audioFile, ...args.files.filter((f) => IMAGE_EXT.has(extname(f).toLowerCase()))]
     : args.files
   const kind = startKind(files)
+  // words only: with no brief there is nothing to build from (the start card asks first; this holds for any caller)
+  if (kind === 'brief' && !prepared && !args.edit?.notes?.trim())
+    throw new Error('Tell Luca what the video is about first.')
   const ofType = (set: Set<string>): string[] =>
     files.filter((f) => set.has(extname(f).toLowerCase()))
   const videos = ofType(VIDEO_EXT)
@@ -322,6 +325,7 @@ async function createProject(
       brief += `\n\n${REFERENCE_STUDY(r.sheets, r.seconds)}`
     }
     // music is made without asking only when the credits cover it: else it is left out, said once
+    let noCredits = false
     if (edit.steps.includes('music') && hasAi33Key()) {
       const left = (await getCredits({ fresh: true }).catch(() => null)) ?? prepared?.left ?? null
       // the price the start card's note shows (a learned one, else the seed), so the two agree
@@ -330,6 +334,7 @@ async function createProject(
       else {
         edit = { ...edit, steps: edit.steps.filter((s) => s !== 'music') }
         brief += left === null ? NO_MUSIC_UNKNOWN : NO_MUSIC_SHORT
+        noCredits = true
       }
     }
     const guide = editGuide(edit, {
@@ -337,7 +342,8 @@ async function createProject(
       canTranscribe: !!prepared || (kind !== 'brief' && hasSecret('assemblyai')),
       voiceOnly: kind !== 'video',
       scripted: !!prepared,
-      canGenerate: hasAi33Key(),
+      // with no credits for it the sound step must not offer to make music the brief just ruled out
+      canGenerate: hasAi33Key() && !noCredits,
       hearNothing: kind === 'brief'
     })
     writeFileSync(join(lucaDir(dir), 'EDIT.md'), guide + '\n')
