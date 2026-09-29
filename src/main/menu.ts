@@ -17,7 +17,7 @@ export function buildAppMenu(): void {
         { role: 'about' },
         { label: 'Check for Updates…', click: () => send('check-updates') },
         { type: 'separator' },
-        { label: 'Settings…', accelerator: 'Cmd+,', click: () => send('settings') },
+        { label: 'Connections…', accelerator: 'Cmd+,', click: () => send('settings') },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },

@@ -16,8 +16,12 @@ function show(n: Ai33Notice): void {
   const action = isHere(n) ? n.action : undefined
   toast(n.text, {
     id: `ai33-${n.id}`,
-    // something finished for you to add stays until you answer, like the update toast
+    // something finished for you to add stays until you answer, like the update toast; it can
+    // also just be closed (a job for a project you have left has nothing to answer)
     duration: action ? Infinity : 8000,
+    closeButton: true,
+    // sonner's close button is drawn in light greys; this keeps it in Luca's colors in dark mode too
+    classNames: { closeButton: 'bg-bg! border-border! text-text-2! hover:text-text!' },
     ...(action
       ? {
           action: {

@@ -1,5 +1,11 @@
 import { create } from 'zustand'
-import type { Ai33Ask, Ai33HealthMap, Ai33SetKeyResult } from '@shared/ai33'
+import { toast } from 'sonner'
+import {
+  AI33_NO_KEYCHAIN,
+  type Ai33Ask,
+  type Ai33HealthMap,
+  type Ai33SetKeyResult
+} from '@shared/ai33'
 import { luca } from '../lib/luca'
 import { errorMessage } from './project'
 
@@ -70,6 +76,13 @@ export const useAi33 = create<Ai33Store>((set, get) => ({
         credits: res.connected ? res.credits : null,
         persisted: res.persisted
       })
+      // the key card folds or unmounts once connected, so a note that only it showed would be lost:
+      // say it (or just that it worked) where it is seen and announced
+      if (res.connected) {
+        if (res.note || !res.persisted)
+          toast(res.note ?? AI33_NO_KEYCHAIN, { id: 'ai33-connected', duration: 8000 })
+        else toast('ai33 is connected', { id: 'ai33-connected' })
+      }
       return res
     } catch (err) {
       throw new Error(errorMessage(err))

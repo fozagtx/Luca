@@ -73,8 +73,11 @@ function label(p: ToolPart, r: Resolved, waiting?: string): string {
 const stopClass =
   'border-b border-dotted border-text-3/60 text-text-3 transition-colors hover:border-text hover:text-text'
 
+/** Progress is announced to a screen reader at every quarter, not at every percent. */
+const ANNOUNCE_EVERY = 25
+
 /** `· 42% · 0:48` and Stop after a running voiceover, music or sound effect. */
-function JobMeta({ progress }: { progress?: ToolProgress }): ReactElement {
+function JobMeta({ progress, what }: { progress?: ToolProgress; what: string }): ReactElement {
   // before ai33 reports anything, the time counts from when the step appeared
   const [appeared] = useState(() => Date.now())
   const secs = useElapsed(progress?.since ?? appeared)
@@ -82,17 +85,22 @@ function JobMeta({ progress }: { progress?: ToolProgress }): ReactElement {
     progress && progress.pct !== null && isFinite(progress.pct)
       ? Math.min(100, Math.max(0, progress.pct))
       : null
+  // the number on screen moves all the time (and eases between values): only this text is read out,
+  // and it changes only when a quarter is reached
+  const quarter = pct === null ? 0 : Math.floor(pct / ANNOUNCE_EVERY) * ANNOUNCE_EVERY
   return (
     <span className="flex shrink-0 items-center gap-2 text-[11px] text-text-3 tabular-nums">
-      <span role="status">
+      <span role="status" className="sr-only">
+        {quarter > 0 ? `${what}, ${quarter}%` : ''}
+      </span>
+      <span aria-hidden>
         {pct !== null ? (
           <>
-            <span aria-hidden>· </span>
+            <span>· </span>
             <AnimatedNumber value={pct} format={(n) => `${Math.round(n)}%`} />
           </>
         ) : null}
-        {/* the seconds tick every second: kept out of the announcement */}
-        <span aria-hidden> · {formatDuration(secs)}</span>
+        <span> · {formatDuration(secs)}</span>
       </span>
       <button type="button" onClick={() => void stopLuca()} className={stopClass}>
         Stop
@@ -101,13 +109,32 @@ function JobMeta({ progress }: { progress?: ToolProgress }): ReactElement {
   )
 }
 
+/** The longest voice name that goes into a message. */
+const MAX_NAME = 40
+
+/**
+ * A voice's name for a message the person didn't type: ai33 (and whoever made the voice) chose it,
+ * so it is one short line of plain characters, never a paragraph of instructions.
+ */
+function safeName(name: string): string {
+  const plain = name
+    .replace(/[\p{Cc}\p{Cf}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  // by characters, not UTF-16 units, so an emoji is never cut in half
+  return [...plain].slice(0, MAX_NAME).join('').trim()
+}
+
 /** Voices to listen to under a finished search; `Use` asks Luca to record with that one. */
 function VoiceResults({ voices }: { voices: Ai33Voice[] }): ReactElement {
   const use = (v: Ai33Voice): void => {
-    // the words are what the person sees; the note tells Luca which of the listed voices they mean
-    useQueue.getState().enqueue(`Use ${v.name} for the voiceover`, [], 'typed', {
-      note: `The user picked the voice ${v.name} (voice id ${v.id}) from your voice_search list. Use that id as the voice.`
-    })
+    // the words are what the person sees; the note tells Luca which of the listed voices they mean,
+    // by its id alone (a name is free text and would be read as part of the instructions)
+    useQueue
+      .getState()
+      .enqueue(`Use ${safeName(v.name) || 'this voice'} for the voiceover`, [], 'typed', {
+        note: `The user picked voice id ${v.id.replace(/[\p{Cc}\p{Cf}]+/gu, '')} from your voice_search list. Use that id as the voice.`
+      })
   }
   return (
     <div className="fade-in ml-6">
@@ -205,7 +232,9 @@ export function Steps({
             />
           )}
         </button>
-        {job ? <JobMeta key={job.id} progress={job.progress} /> : null}
+        {job ? (
+          <JobMeta key={job.id} progress={job.progress} what={activityOf(job).active} />
+        ) : null}
       </div>
       {showNote ? <div className="ml-6 text-[11px] text-text-3">{note}</div> : null}
       {single ? null : (

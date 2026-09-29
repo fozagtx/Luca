@@ -10,7 +10,7 @@ import type {
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 import { errorMessage, useProject } from './project'
-import { attachmentOf, kindOf, NO_FOOTAGE, useStart } from './start'
+import { attachmentOf, kindOf, NO_FOOTAGE, NO_SCRIPT, STOPPED, useStart } from './start'
 
 /** A file on its way into the project for the chat; videos can take a moment to get ready. */
 export type PendingMedia = { id: number; name: string; media: MediaKind; progress?: number }
@@ -151,7 +151,8 @@ export const useChat = create<ChatStore>((set, get) => ({
       const start = useStart.getState()
       // a script on the start card is what Luca starts from when there is no footage
       if (!kindOf(start.files) && !(start.scriptMode && start.script.text.trim())) {
-        set({ error: NO_FOOTAGE })
+        // on the script panel the thing to add is the script, not a video
+        set({ error: start.scriptMode ? NO_SCRIPT : NO_FOOTAGE })
         return false
       }
       if (!opts?.keepDraft) set({ draft: '', auto: null, error: null })
@@ -159,7 +160,9 @@ export const useChat = create<ChatStore>((set, get) => ({
       start.addNotes(text)
       const spoken = !!(context as { voice?: boolean } | null)?.voice
       const ok = await start.create({ spoken })
-      if (!ok) set({ error: useStart.getState().error })
+      // Cancel is the person's own doing: the start card says so quietly, no red box here as well
+      const failed = useStart.getState().error
+      if (!ok) set({ error: failed === STOPPED ? null : failed })
       return ok
     }
     const own = opts?.chips

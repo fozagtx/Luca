@@ -1,5 +1,5 @@
 import { CircleAlert, RefreshCw } from 'lucide-react'
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import type { Ai33HealthMap } from '@shared/ai33'
 import { Button } from '../../components/ui/button'
 import { Sheet } from '../../components/ui/sheet'
@@ -46,11 +46,29 @@ function Account(): ReactElement {
   const health = useAi33((s) => s.health)
   const refresh = useAi33((s) => s.refresh)
   const [refreshing, setRefreshing] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
 
   // the balance is read again every time the sheet opens
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // opened with no key (⌘, then paste): the key field is what they came for, but the sheet puts
+  // the focus on Close as it opens, so this waits a beat for that
+  useEffect(() => {
+    let stale = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    void (async () => {
+      const state = useAi33.getState()
+      if (state.hasKey ?? (await state.checkKey())) return
+      if (stale) return
+      timer = setTimeout(() => box.current?.querySelector('input')?.focus(), 250)
+    })()
+    return () => {
+      stale = true
+      clearTimeout(timer)
+    }
+  }, [])
 
   const reload = async (): Promise<void> => {
     setRefreshing(true)
@@ -63,7 +81,7 @@ function Account(): ReactElement {
 
   const trouble = hasKey === true ? healthLine(health) : null
   return (
-    <div className="flex flex-col gap-3 pt-1 text-[12px] leading-[1.5] text-text-2">
+    <div ref={box} className="flex flex-col gap-3 pt-1 text-[12px] leading-[1.5] text-text-2">
       <section aria-labelledby="ai33-row">
         <div className="mb-1.5 flex items-center">
           <h3 id="ai33-row" className="text-[12px] font-semibold text-text">
@@ -99,7 +117,7 @@ function Account(): ReactElement {
       </p>
       <p className="border-t border-border pt-3 text-[11px] text-text-3">
         Music, voices and sound effects made with ai33 have terms of use. If you sell your videos,
-        check ai33’s terms. Luca lists each one in media/generated/CREDITS.txt inside the project.
+        check ai33’s terms. Luca keeps a note of each one in your project folder.
       </p>
     </div>
   )

@@ -49,9 +49,21 @@ export const IMAGES_ONLY =
 export const NO_SCRIPT = 'Paste your script first.'
 /** A script is recorded with ai33, so it can't start without a key. */
 export const NO_AI33_KEY = 'Connect ai33 first: paste your key at the top of the card.'
-/** Cancel was pressed while the voiceover was being recorded. */
-export const STOPPED =
-  'Stopped before the voiceover was ready. If ai33 still finishes it, it is saved and won’t be paid for twice.'
+/**
+ * Cancel was pressed while the voiceover was being recorded. Not a failure: the card shows it as a
+ * quiet note, not a red box.
+ */
+export const STOPPED = 'Stopped. Your script is still here.'
+/** Shown in place of a refusal that was written for the model rather than the person. */
+export const COULDNT_RECORD = 'Couldn’t record the voiceover. Your script is still here.'
+/** Sentences main writes for Luca to relay ("Tell the user…"); they are never shown as they are. */
+const MODEL_FACING = /Tell the user|Do not make it another way|Say so in one short sentence/i
+
+/** What a failed start says to the person: main's own words, unless they were meant for Luca. */
+export function startErrorText(err: unknown): string {
+  const message = errorMessage(err)
+  return MODEL_FACING.test(message) ? COULDNT_RECORD : message
+}
 
 /** What the script panel holds. It stays through a failed or cancelled start. */
 export type ScriptDraft = {
@@ -226,7 +238,8 @@ export const useStart = create<StartStore>((set, get) => ({
       }
       next.push(a)
     }
-    // footage dropped on the script panel means they'd rather start from that
+    // footage dropped on the script panel means they'd rather start from that (the script stays,
+    // and the footage form says so)
     set({ files: next, error: null, ...(kindOf(next) ? { scriptMode: false } : {}) })
     filesChanged()
     for (const f of next) {
@@ -409,7 +422,7 @@ export const useStart = create<StartStore>((set, get) => ({
       return true
     } catch (err) {
       // Cancel was pressed: whatever main rejected with, that is why it stopped
-      set({ error: get().cancelling ? STOPPED : errorMessage(err) })
+      set({ error: get().cancelling ? STOPPED : startErrorText(err) })
       return false
     } finally {
       useProject.setState({ loading: false })

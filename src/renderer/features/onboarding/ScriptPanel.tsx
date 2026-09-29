@@ -29,6 +29,7 @@ import { MAX_SAY, useStart } from '../../stores/start'
 import { Ai33KeyCard } from '../ai33/Ai33KeyCard'
 import { AudioPreview } from '../ai33/AudioPreview'
 import { VoicePicker } from '../ai33/VoicePicker'
+import { voiceLine } from '../ai33/voice-meta'
 
 const TIER_TIPS: Record<Ai33VoiceTier, string> = {
   studio: 'Studio voices sound the most natural.',
@@ -53,6 +54,7 @@ const SELECT =
 export function ScriptFields({ onGo }: { onGo: () => void }): ReactElement {
   const setScriptMode = useStart((s) => s.setScriptMode)
   const hasKey = useAi33((s) => s.hasKey)
+  const wasOff = useRef(false)
 
   // whether there is a key (at once), then what it can spend (asks ai33, so it can take a while)
   useEffect(() => {
@@ -60,6 +62,20 @@ export function ScriptFields({ onGo }: { onGo: () => void }): ReactElement {
       if (await useAi33.getState().checkKey()) await useAi33.getState().refresh()
     })()
   }, [])
+
+  // the key card goes away once connected, taking the focus with it: back to the script box (unless
+  // the key was added somewhere else, like the Connections sheet, which has the focus now)
+  useEffect(() => {
+    if (hasKey === false) wasOff.current = true
+    else if (hasKey === true && wasOff.current) {
+      wasOff.current = false
+      const active = document.activeElement
+      const lost = !active || active === document.body
+      // not while a sheet is open over the card: the key was added in it, and the focus stays there
+      if (lost && !document.querySelector('[role="dialog"]'))
+        document.getElementById('start-script')?.focus()
+    }
+  }, [hasKey])
 
   return (
     <div className="flex flex-col gap-5">
@@ -138,7 +154,8 @@ type Card = { id: string; name: string; meta: string; tier: Ai33VoiceTier | null
 const voiceCard = (v: Ai33Voice): Card => ({
   id: v.id,
   name: v.name,
-  meta: [v.about, v.gender].filter(Boolean).join(' · '),
+  // what ai33 says about the voice already ends with its gender
+  meta: voiceLine(v),
   tier: v.tier
 })
 
@@ -190,8 +207,17 @@ function Voice(): ReactElement {
   const pick = (v: VoiceRef): void => setScript({ voice: v })
 
   const row = (
-    <div className={cn('flex flex-col gap-2', !connected && 'pointer-events-none opacity-45')}>
-      {suggested?.failed ? (
+    <div
+      className={cn(
+        'flex flex-col gap-2',
+        // not while it says why: that text is the point, and "More voices…" greys itself out
+        hasKey === null && 'pointer-events-none opacity-45'
+      )}
+    >
+      {hasKey === false ? (
+        // shimmering placeholders here would wait for voices that can't come without a key
+        <div className="text-[12px] text-text-2">Connect ai33 to choose a voice.</div>
+      ) : suggested?.failed ? (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-text-2">
           Couldn’t load voices. Check your internet connection and try again.
           <Button size="sm" variant="ghost" onClick={() => setTries((t) => t + 1)}>
@@ -288,7 +314,7 @@ function Voice(): ReactElement {
         <div className={LABEL} id="start-voice-label">
           Voice
         </div>
-        {connected ? (
+        {connected || hasKey === false ? (
           row
         ) : (
           <Tip label="Connect ai33 first" side="top">
@@ -417,11 +443,15 @@ function SpendLine(): ReactElement | null {
   if (hasKey !== true) return null
   const known = chars > 0 ? about : null
   const have = credits !== null ? formatCredits(credits) : null
+  // recording would stop part way: say so now, as the Music note does
+  const short = known !== null && credits !== null && known > credits
   return (
-    <p className="text-[11.5px] text-text-3">
-      {known !== null
-        ? `About ${formatCredits(known)} credits${have ? ` · you have ${have}` : ''}`
-        : `Uses ai33 credits.${have ? ` You have ${have}.` : ''} Luca records the first part first to check the price.`}
+    <p className={cn('text-[11.5px]', short ? 'text-text-2' : 'text-text-3')}>
+      {short
+        ? `About ${formatCredits(known)} credits, more than the ${have} you have. Add credits or shorten the script.`
+        : known !== null
+          ? `About ${formatCredits(known)} credits${have ? ` · you have ${have}` : ''}`
+          : `Uses ai33 credits.${have ? ` You have ${have}.` : ''} Luca records the first part first to check the price.`}
     </p>
   )
 }
@@ -457,30 +487,38 @@ export function MusicNote(): ReactElement | null {
   )
 }
 
-/** Record and edit: ready once ai33 is connected and there is a script to record. */
+/**
+ * Record and edit: ready once ai33 is connected and there is a script to record. Why it isn't is
+ * said next to it in words (a tooltip on a disabled button is out of reach of a keyboard or a
+ * screen reader); when it is, ⌘↩ is hinted, since Enter is only a new line in the script.
+ */
 export function ScriptGoButton({ busy, onGo }: { busy: boolean; onGo: () => void }): ReactElement {
   const hasKey = useAi33((s) => s.hasKey)
   const empty = useStart((s) => !s.script.text.trim())
-  const tip =
+  const reason =
     hasKey === false ? 'Connect ai33 first' : hasKey && empty ? 'Paste your script first' : null
-  const button = (
-    <span className="ml-auto inline-flex">
+  const disabled = busy || hasKey !== true || empty
+  return (
+    <span className="ml-auto inline-flex items-center gap-2">
+      {reason ? (
+        <span id="start-go-reason" className="text-[11.5px] text-text-3">
+          {reason}
+        </span>
+      ) : !disabled ? (
+        <kbd aria-hidden className="font-mono text-[11px] text-text-3">
+          ⌘↩
+        </kbd>
+      ) : null}
       <GenerateButton
         label="Record and edit"
         generatingLabel="Recording"
         generating={busy}
-        disabled={busy || hasKey !== true || empty}
+        disabled={disabled}
+        aria-describedby={reason ? 'start-go-reason' : undefined}
+        aria-keyshortcuts="Meta+Enter Control+Enter"
         onClick={onGo}
       />
     </span>
-  )
-  // a disabled button shows no tooltip of its own, so it sits on the wrapper
-  return tip ? (
-    <Tip label={tip} side="top">
-      {button}
-    </Tip>
-  ) : (
-    button
   )
 }
 

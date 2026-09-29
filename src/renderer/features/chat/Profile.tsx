@@ -11,10 +11,12 @@ import {
   ZoomIn,
   type LucideIcon
 } from 'lucide-react'
-import type { ReactElement } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
 import avatar from '../../assets/luca-avatar.png'
 import { cn } from '../../lib/cn'
+import { luca } from '../../lib/luca'
 import { useChat } from '../../stores/chat'
+import { useProject } from '../../stores/project'
 
 export function LucaAvatar({
   size = 40,
@@ -75,8 +77,11 @@ export function LucaProfile({ compact, live }: { compact: boolean; live: boolean
   )
 }
 
+/** The starter that makes no sense when the project's words came from a script. */
+const CUT_UMS = 'Cut the ums and long pauses'
+
 const suggestions: { icon: LucideIcon; text: string }[] = [
-  { icon: Scissors, text: 'Cut the ums and long pauses' },
+  { icon: Scissors, text: CUT_UMS },
   { icon: Captions, text: 'Add captions to the whole video' },
   { icon: ZoomIn, text: 'Zoom in on the key lines' },
   { icon: Wand2, text: 'Add a lower third with my name' },
@@ -96,7 +101,29 @@ const starts: { icon: LucideIcon; text: string }[] = [
  */
 export function Suggestions({ start }: { start: boolean }): ReactElement {
   const fillDraft = useChat((s) => s.fillDraft)
-  const list = start ? starts : suggestions
+  const projectId = useProject((s) => s.project?.id)
+  // whether the open project's words came from a script (exact: no ums to cut), as main says for it
+  const [known, setKnown] = useState<{ id: string; fromScript: boolean } | null>(null)
+  useEffect(() => {
+    if (start || !projectId) return
+    let stale = false
+    void luca.ai33
+      .isScriptProject()
+      .catch(() => false)
+      .then((fromScript) => {
+        if (!stale) setKnown({ id: projectId, fromScript })
+      })
+    return () => {
+      stale = true
+    }
+  }, [start, projectId])
+  // most projects come from footage, so the ums starter stays until main says otherwise
+  const fromScript = !!known && known.id === projectId && known.fromScript
+  const list = start
+    ? starts
+    : fromScript
+      ? suggestions.filter((s) => s.text !== CUT_UMS)
+      : suggestions
   return (
     <div className="flex flex-col gap-1.5">
       <div className="px-1 pb-0.5 text-[11px] font-medium text-text-3">

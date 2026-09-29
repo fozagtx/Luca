@@ -70,11 +70,19 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const startPreviews = useStart((s) => s.previews)
   const starting = useStart((s) => s.busy)
   const scriptMode = useStart((s) => s.scriptMode)
+  // a script typed on the start card is what a message here starts from, so it records, not edits
+  const scripted = useStart((s) => s.scriptMode && !!s.script.text.trim())
   const footage = !!kindOf(startFiles)
   const disabled = starting
   // a file still on its way in would be missing from the message
   const canSend = (hasText || (noProject && footage)) && attaching.length === 0
-  const sendLabel = noProject ? 'Edit my video' : working ? 'Add to the queue' : 'Send'
+  const sendLabel = noProject
+    ? scripted && !footage
+      ? 'Record and edit'
+      : 'Edit my video'
+    : working
+      ? 'Add to the queue'
+      : 'Send'
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -269,7 +277,11 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                 noProject
                   ? footage
                     ? 'Anything Luca should know? (optional)'
-                    : 'Drop your video on the start card first…'
+                    : scriptMode
+                      ? scripted
+                        ? 'Add notes for your script…'
+                        : 'Paste your script on the start card first…'
+                      : 'Drop your video on the start card first…'
                   : 'Ask Luca to edit your video…'
               }
               className={cn(
@@ -321,7 +333,9 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                       ? '↩ to add to the queue'
                       : canSend
                         ? noProject
-                          ? '↩ to start editing'
+                          ? scripted && !footage
+                            ? '↩ to record and edit'
+                            : '↩ to start editing'
                           : '↩ to send'
                         : ''}
               </span>

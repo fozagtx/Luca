@@ -507,7 +507,6 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
             <CaseUpper size={14} /> All caps
           </button>
           <label
-            title={exact ? 'The words come from your script, so none are removed.' : undefined}
             className={cn(
               'ml-auto inline-flex items-center gap-2 text-[12px] text-text-2 select-none',
               exact && 'opacity-60'
@@ -517,11 +516,18 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
               type="checkbox"
               checked={cfg.clean && !exact}
               disabled={exact}
+              aria-describedby={exact ? 'captions-clean-why' : undefined}
               onChange={(e) => set({ clean: e.target.checked })}
               className="size-3.5 accent-[var(--accent)]"
             />
             Remove ums, stutters & false starts
           </label>
+          {exact ? (
+            // in words on a line of its own: a tooltip is out of reach of keyboards and screen readers
+            <span id="captions-clean-why" className="basis-full text-right text-[11px] text-text-3">
+              The words come from your script, so none are removed.
+            </span>
+          ) : null}
         </Row>
 
         <Label>Highlight</Label>
