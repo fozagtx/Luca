@@ -8,6 +8,7 @@ export type Project = {
   name: string
   dir: string
   aspect: Aspect
+  /** The recording the project started from; '' for a brief-only project (no media). */
   source: string
   createdAt: string
   lastOpenedAt: string
@@ -39,6 +40,8 @@ export type Clip = {
   remocn?: boolean
   /** data-volume of audio/video clips (1 = unchanged, 0 = muted). */
   volume?: number
+  /** The tag has the `muted` attribute (a clip placed silent, like scaffolded footage). */
+  muted?: boolean
   /** data-media-start: where in its media file the clip starts playing (a trimmed start), in seconds. */
   mediaStart?: number
   /** data-luca-role: a voiceover, music or a sound effect made for this video. */
@@ -74,13 +77,6 @@ export type Chip =
       label?: string
     }
   | { kind: 'frame'; time: number; png: string }
-  | {
-      kind: 'catalog'
-      name: string
-      type: 'block' | 'component'
-      title: string
-      source?: 'hyperframes' | 'remocn'
-    }
   | { kind: 'clip'; clipId: string; track: number; start: number; end: number }
   | { kind: 'transcript'; text: string; start: number; end: number }
   /** What the person picked on the start card (video type, edit steps), shown on the first request. */
@@ -89,7 +85,7 @@ export type Chip =
   | {
       kind: 'broll'
       id: string
-      media: BackgroundMedia
+      media: BrollMedia
       title: string
       thumb: string
       duration?: number
@@ -314,16 +310,19 @@ export type EnvStatus = {
 
 export type Theme = 'light' | 'dark'
 
+export type ApprovalMode = 'ask' | 'full'
+
 export type Settings = {
   projectsDir: string
   theme: Theme
   renderWorkers: number
-  defaultAspect: Aspect
   keyterms: string[]
   recentProjects: RecentProject[]
   window?: { x?: number; y?: number; width: number; height: number }
   panes?: Record<string, number[]>
   alwaysAllow?: Record<string, string[]>
+  /** 'full' auto-approves every step Luca's hard guards allow; 'ask' shows approval cards. */
+  approvals?: ApprovalMode
   /** The version that last ran, to tell when Luca was updated. */
   lastVersion?: string
   /** ai33: the voice last used for each language (only changed through patchAi33Settings). */
@@ -338,6 +337,8 @@ export type TimelineEdit =
   | { op: 'delete'; ref: string; with?: string[] }
   /** Mute (0) or restore the clips' `data-volume`; the level before muting is kept. */
   | { op: 'mute'; refs: string[]; muted: boolean }
+  /** Set the clips' `data-volume` (0 = silent, 1 = as recorded, up to 2 = louder). */
+  | { op: 'volume'; refs: string[]; volume: number }
 
 /**
  * Move/resize an element on the canvas. Written as the CSS `translate`, `scale` and
@@ -398,45 +399,71 @@ export type VoiceEvent =
 /** Stages of making a new project, pushed while it is created. */
 export type CreateProgress = {
   stage:
-    'preparing' | 'voiceover' | 'copying' | 'scaffolding' | 'media' | 'starting' | 'done' | 'error'
+    | 'preparing'
+    | 'voiceover'
+    | 'copying'
+    | 'scaffolding'
+    | 'media'
+    | 'studying'
+    | 'starting'
+    | 'done'
+    | 'error'
   message?: string
   /** 0..1 within the stage when measurable. */
   progress?: number
 }
 
-/** What a new project starts from: the person's footage, or a voiceover with nothing to show yet. */
-export type StartKind = 'video' | 'audio'
+/** What a new project starts from: footage, a voiceover, or only the brief ('brief': no media). */
+export type StartKind = 'video' | 'audio' | 'brief'
 
 export type StartArgs = {
   name?: string
   aspect: Aspect
   /**
    * Absolute paths, in the order they were added: videos (played back to back), images and at
-   * most one audio file. At least one video or the audio; images wait in media/ for Luca (a logo,
-   * screenshots). Empty when `script` is set: the voiceover is recorded from it.
+   * most one audio file. May be empty when `edit.notes` is non-empty (a brief-only start) or
+   * `script` is set (the voiceover is recorded from it); images and audio wait in media/ for
+   * Luca (a logo, screenshots, music).
    */
   files: string[]
   /** A script to record as the voiceover, for a video with no footage. */
   script?: StartScript
-  look?: string | null
   /** What kind of video it is and what Luca does to it; saved as .luca/EDIT.md. */
   edit?: StartEdit
 }
 
-/** The kinds of video Luca edits (src/shared/edits.ts). */
-export type VideoTypeId = 'talking' | 'explainer' | 'founder' | 'product'
+/** The kinds of explainer Luca makes (src/shared/edits.ts). */
+export type VideoTypeId = 'launch' | 'concept' | 'tutorial' | 'talking'
+
+/** How Luca builds it: morphing motion design or a classic edit (src/shared/edits.ts). */
+export type StyleId = 'motion' | 'classic'
 
 /** What Luca can do on the first edit (src/shared/edits.ts). */
 export type EditStepId =
-  'cut' | 'hook' | 'zooms' | 'broll' | 'name' | 'ending' | 'music' | 'captions'
+  | 'cut'
+  | 'hook'
+  | 'zooms'
+  | 'broll'
+  | 'name'
+  | 'ending'
+  | 'captions'
+  | 'music'
+  | 'plan'
+  | 'motion'
+  | 'sound'
+  | 'critique'
 
 /** Picked on the start card before Luca begins. */
 export type StartEdit = {
   type: VideoTypeId
+  /** How the video is built. */
+  style: StyleId
   /** The steps switched on. */
   steps: EditStepId[]
-  /** Anything Luca should know: who is speaking, the platform, the look. */
+  /** The brief: what the video is about, the script or the product (a link helps). */
   notes?: string
+  /** Absolute path of a reference video Luca studies and builds the same way. */
+  reference?: string
 }
 
 export type StartResult = {
@@ -551,13 +578,13 @@ export type ColorState = {
   targets: number
 }
 
-export type BackgroundMedia = 'photo' | 'video'
+export type BrollMedia = 'photo' | 'video'
 
 /** A free stock photo or video from Pexels, to show as B-roll. */
-export type Background = {
+export type BrollItem = {
   /** `photo:<pexels id>` or `video:<pexels id>`. */
   id: string
-  media: BackgroundMedia
+  media: BrollMedia
   width: number
   height: number
   /** Seconds (videos only). */
@@ -566,37 +593,30 @@ export type Background = {
   title: string
   /** Small still for grids. */
   thumb: string
-  /** Larger still: a photo at screen size, a video's poster frame. */
-  poster: string
-  /** A light MP4 for hover previews and the home screen (videos only). */
+  /** A light MP4 for hover previews (videos only). */
   preview?: string
-  /** Its average color, shown while the still loads. */
-  color?: string | null
-  /** Photographer or videographer, and their Pexels page. */
+  /** Photographer or videographer. */
   author: string
-  authorUrl: string
-  /** The item's Pexels page. */
-  url: string
 }
 
-export type BackgroundSearch = {
-  /** Plain words; empty browses popular backgrounds. */
-  query?: string
-  media?: 'all' | BackgroundMedia
+export type BrollSearch = {
+  /** Plain words. */
+  query: string
+  media?: 'all' | BrollMedia
   orientation?: Aspect
   page?: number
 }
 
-export type BackgroundResults = {
-  items: Background[]
+export type BrollResults = {
+  items: BrollItem[]
   page: number
   hasMore: boolean
 }
 
-/** A background downloaded into the project, sized for its composition. */
-export type AddedBackground = {
+/** B-roll downloaded into the project, sized for its composition. */
+export type AddedBroll = {
   id: string
-  media: BackgroundMedia
+  media: BrollMedia
   /** Project-relative path, e.g. media/broll/pexels-video-123.mp4. */
   file: string
   width: number

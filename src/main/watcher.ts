@@ -9,7 +9,15 @@ let pending = new Set<string>()
 let timer: NodeJS.Timeout | null = null
 let listeners: ((e: ProjectChanged) => void)[] = []
 
-const IGNORED_TOP = new Set(['.hyperframes', 'media', 'renders', '.git', 'node_modules'])
+const IGNORED_TOP = new Set([
+  '.hyperframes',
+  '.thumbnails',
+  '.waveform-cache',
+  'media',
+  'renders',
+  '.git',
+  'node_modules'
+])
 
 /**
  * What Luca and the agent keep beside the composition that the preview never loads: Luca's own

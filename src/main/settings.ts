@@ -8,12 +8,12 @@ const defaults = (): Settings => ({
   projectsDir: join(homedir(), 'Movies', 'Luca'),
   theme: 'light',
   renderWorkers: 2,
-  defaultAspect: 'landscape',
   keyterms: [],
   recentProjects: [],
   panes: {},
   alwaysAllow: {},
-  ai33: {}
+  ai33: {},
+  approvals: 'ask'
 })
 
 let cache: Settings | null = null

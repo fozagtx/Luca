@@ -15,7 +15,7 @@ export type QueueStatus = 'review' | 'queued' | 'sending'
 
 export type QueueItem = {
   id: string
-  /** The project it was asked in; null for an idea with no project open. */
+  /** The project it was asked in; null on Home (notes for the footage on the start card). */
   dir: string | null
   text: string
   chips: Chip[]
@@ -26,7 +26,7 @@ export type QueueItem = {
   open?: boolean
   /** Asked out loud: Luca answers in a sentence or two that can be read aloud. */
   spoken?: boolean
-  /** Playhead to report instead of the one at send time (a drop on the timeline). */
+  /** Playhead to report instead of the one at send time (a comment on a frame). */
   time?: number
   /** Hidden context that rides along with the message. */
   note?: string
@@ -236,8 +236,8 @@ function drain(): void {
   }))
   const context = {
     time: next.time ?? usePlayer.getState().currentTime,
-    ...(next.note ? { note: next.note } : {}),
-    ...(next.spoken ? { voice: true } : {})
+    ...(next.spoken ? { voice: true } : {}),
+    ...(next.note ? { note: next.note } : {})
   }
   void useChat
     .getState()

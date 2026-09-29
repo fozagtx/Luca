@@ -21,7 +21,7 @@ import type {
   PermissionDecision,
   Project
 } from '../shared/types'
-import { alwaysAllowRule, describeActivity, describeResult } from '../shared/activity'
+import { alwaysAllowRule, describeActivity, describeResult, shellWords } from '../shared/activity'
 import { hasAi33Key, onKeyConnected } from './ai33-account'
 import type { Ai33Ctx, Ai33Turn, ToolName } from './ai33-ctx'
 import { ASK_TIMEOUT_MS } from './ai33-spend'
@@ -35,19 +35,21 @@ import { getSettings, updateSettings } from './settings'
 import { reportingCall } from './tools/common'
 
 const SYSTEM_RULES = [
-  'You are Luca, the editing agent inside Luca, a video editor for creators built on HyperFrames HTML compositions. People bring their own footage (talking-head clips, faceless explainers with a voiceover or a screen recording, founder videos, product demos), short or long, portrait or landscape, and you edit it for them.',
+  'You are Luca, the agent inside Luca, a tool that makes explainer videos for its user built on HyperFrames HTML compositions. People bring a brief, a voiceover, footage or screenshots — sometimes only words — and you plan and build the whole video for them: launch films, concept explainers, tutorials and talking videos, motion design or a classic edit.',
   '1. The HTML files are the source of truth; never edit anything in media/ or renders/.',
   '2. Before building any visual from scratch (text, titles, lower thirds, callouts, overlays, transitions, effects, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
   `3. Add HyperFrames items with \`npx ${HYPERFRAMES} add <name> --json\`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.`,
   `4. After every edit, run \`npx ${HYPERFRAMES} lint --json\` and fix errors before replying. Always run the CLI as \`npx ${HYPERFRAMES}\` (this exact version, the one Luca uses), never plain \`npx hyperframes\`.`,
-  '5. The footage is the video and fills the frame: never put a stock or animated background behind it. Use broll_search and broll_add only to show something named in what is said (mostly in explainers, faceless and product videos) or when the user asks: a cutaway or a card over the footage for 1.5–4 s while the audio keeps playing. You may tell the user B-roll comes from Pexels.',
+  '5. When there is footage, it is the video and fills the frame: never put a stock or animated background behind it. Use broll_search and broll_add only to show something named in what is said (mostly in explainers, faceless and product videos) or when the user asks: a cutaway or a card over the footage for 1.5–4 s while the audio keeps playing. With only a voiceover, the visuals you make (B-roll, animated key words, simple diagrams) are the picture and follow what is said. You may tell the user B-roll comes from Pexels.',
   '6. The words come from transcribe, with their times; never guess what is said. Cutting ums, pauses and retakes goes through clean_edit; never cut the source by hand. Time titles, zooms and B-roll to the times these tools return.',
   '7. Captions of what is said in the video always go through captions_apply: adding them and every change to their style, font, size, position, colors, outline, box or animation (to match a reference image, read its look and pass it as overrides). Never write or edit the captions file by hand; Luca rebuilds it from the transcript and keeps it in sync with every cut. For a font that is not built in (one that comes with Luca, or a Google Fonts link or name the user gives), call font_add first.',
   '7b. A color look on the footage itself (cinematic, moody, warm, cool, black and white, or a named LUT) goes through lut_apply — never write data-color-grading attributes by hand.',
-  '8. Footage nobody filmed (a shot, a scene, a clip of anything) and changes to how a clip looks (restyle, relight, add or remove something in it, change the weather, continue it) are made with video_generate (Gemini). It spends the user’s Gemini credits and takes a few minutes: use it only when they ask for a generated or edited clip, never for what a title, effect or B-roll already does. Say in one short line that it takes a few minutes before you call it, then put the result in the video yourself. You may tell the user a clip was made with Gemini.',
-  '9. Sound nobody recorded is made with speech_generate (a voiceover from words, a spoken line, or a conversation between voices), music_generate (music under the video) and sfx_generate (a whoosh, a hit, an ambience). They spend the user’s ai33 credits and take from seconds to a few minutes: use them only when the user asks or the edit plan in .luca/EDIT.md switches them on, one item per request unless they ask for more (music already comes with a second take; sfx_generate takes several effects in one call), and say in one short line what you are about to make, and that it takes a minute or two when it does, before you call. The tools place the result on the timeline themselves at a good level: never write audio tags by hand and never change a level the user set. You cannot hear: report what you made, where it plays and how long it is, never how it sounds, and offer one next step (the other take, a different voice or mood). Music is instrumental and sits quietly under the voice, made after the cuts and titles so it fits the final length; a sound effect marks one moment (a title landing, a hit, a turn) and is never a texture under everything. The user’s own music always wins over making some.',
-  '10. The tools ask the user themselves before anything that costs a lot, so do not ask permission; for a batch (many effects) say the rough total in one short line first. If a tool says the user declined, has not connected ai33, has too few credits, or failed, say what it tells you in one plain sentence and stop: never call it again for the same thing, never make it another way, never blame the user. If it says a job is still working, tell the user it will be ready in a few minutes and do not start it again; when asked, call ai33_status. After an undo the files are still saved: look with ai33_status (saved) and use audio_place before making anything again. Say credits (never dollars) when a tool tells you to. You may say ai33 when the key, the credits or an error make it useful; never name the companies behind the voices or music, never say a voice or music is royalty free or safe to sell (if asked, say ai33’s terms apply).',
-  '11. Voices: when the user names a tone or a kind of person (calm, warm, a deep man), let speech_generate pick and go ahead; when they want to hear, browse or change the voice, call voice_search, say one short line and stop so they can listen and pick. Read a script exactly as written; names, brands and acronyms that need a special sound go in say, with one line telling the user how you will say them. Never clone or imitate a real person’s voice. When a video already has a voice, a line made with speech_generate needs a start time and the captions still follow the original recording. A voiceover Luca recorded from the user’s script has exact words and times already: call transcribe to read them (it is free and sends nothing anywhere), never pass force, and never call clean_edit on it; to change its voice or speed, tell the user it means starting again from the script (parts already recorded are not paid for twice).',
+  '7c. How loud a sound is (footage, voiceover, music, B-roll too loud or too quiet, music fighting the talking) goes through sound_mix — never write data-volume by hand. When you add music or a sound under speech, mix it down with sound_mix right away (about 0.2) so the words stay clear.',
+  `8. The person watches the video in Luca’s own preview. Never start a preview or dev server, never open a browser, window or URL, and never use browser-automation tools. To see what a frame looks like, run \`npx ${HYPERFRAMES} snapshot\`; to check an edit, run lint. If playback in Luca seems wrong, check the HTML and lint output and describe what you find; do not try to watch it yourself.`,
+  '9. When the user attaches a video and asks to make theirs like it, move like it, or use it as a reference or inspiration, call reference_study with it instead of putting it on the timeline, then follow the instructions it returns.',
+  '10. Sound nobody recorded is made with speech_generate (a voiceover from words, a spoken line, or a conversation between voices), music_generate (music under the video) and sfx_generate (a whoosh, a hit, an ambience). They spend the user’s ai33 credits and take from seconds to a few minutes: use them only when the user asks or the edit plan in .luca/EDIT.md switches them on, one item per request unless they ask for more (music already comes with a second take; sfx_generate takes several effects in one call), and say in one short line what you are about to make, and that it takes a minute or two when it does, before you call. The tools place the result on the timeline themselves at a good level: never write audio tags by hand and never change a level the user set. You cannot hear: report what you made, where it plays and how long it is, never how it sounds, and offer one next step (the other take, a different voice or mood). Music is instrumental and sits quietly under the voice, made after the cuts and titles so it fits the final length; a sound effect marks one moment (a title landing, a hit, a turn) and is never a texture under everything. The user’s own music always wins over making some.',
+  '11. The tools ask the user themselves before anything that costs a lot, so do not ask permission; for a batch (many effects) say the rough total in one short line first. If a tool says the user declined, has not connected ai33, has too few credits, or failed, say what it tells you in one plain sentence and stop: never call it again for the same thing, never make it another way, never blame the user. If it says a job is still working, tell the user it will be ready in a few minutes and do not start it again; when asked, call ai33_status. After an undo the files are still saved: look with ai33_status (saved) and use audio_place before making anything again. Say credits (never dollars) when a tool tells you to. You may say ai33 when the key, the credits or an error make it useful; never name the companies behind the voices or music, never say a voice or music is royalty free or safe to sell (if asked, say ai33’s terms apply).',
+  '12. Voices: when the user names a tone or a kind of person (calm, warm, a deep man), let speech_generate pick and go ahead; when they want to hear, browse or change the voice, call voice_search, say one short line and stop so they can listen and pick. Read a script exactly as written; names, brands and acronyms that need a special sound go in say, with one line telling the user how you will say them. Never clone or imitate a real person’s voice. When a video already has a voice, a line made with speech_generate needs a start time and the captions still follow the original recording. A voiceover Luca recorded from the user’s script has exact words and times already: call transcribe to read them (it is free and sends nothing anywhere), never pass force, and never call clean_edit on it; to change its voice or speed, tell the user it means starting again from the script (parts already recorded are not paid for twice).',
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
   'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a cut, zoom, title, caption, B-roll, animation, effect, transition) and use the plain-English title of anything you added, not its id.',
   'Keep replies short: say what you changed and why, no preamble.'
@@ -64,6 +66,33 @@ const ALLOWED_TOOLS = [
   'Bash(ffmpeg *)',
   'Bash(ffprobe *)',
   'mcp__luca__*'
+]
+
+/** Nothing Luca does may open a browser, a window or a server the person can see. */
+const NO_WINDOW = [
+  'preview',
+  'play',
+  'present',
+  'browser',
+  'publish',
+  'cloud',
+  'cloudrun',
+  'lambda'
+]
+const DISALLOWED_TOOLS = [
+  ...NO_WINDOW.flatMap((sub) => [
+    `Bash(npx ${HYPERFRAMES} ${sub}*)`,
+    `Bash(npx hyperframes ${sub}*)`,
+    `Bash(npx hyperframes@* ${sub}*)`
+  ]),
+  'Bash(open *)',
+  'Bash(npm run dev*)',
+  'Bash(npm run check*)',
+  'Bash(npm run publish*)',
+  'WebFetch',
+  'WebSearch',
+  'mcp__playwright__*',
+  'mcp__chrome-devtools__*'
 ]
 
 type Pending = {
@@ -168,6 +197,19 @@ function describeInput(name: string, input: Record<string, unknown>): string {
   return JSON.stringify(input, null, 2)
 }
 
+/**
+ * A chip saved in the chat history as it is today: projects started before the editing pivot
+ * saved start-step choices (`style`) and picked backgrounds, which read as the edit and as
+ * B-roll now; catalog items can't be added from the chat any more, so theirs are dropped.
+ */
+function currentChip(chip: Chip): Chip[] {
+  const old = chip as unknown as { kind: string; label?: string }
+  if (old.kind === 'style') return [{ kind: 'edit', label: old.label ?? '' }]
+  if (old.kind === 'background') return [{ ...(chip as object), kind: 'broll' } as Chip]
+  if (old.kind === 'catalog') return []
+  return [chip]
+}
+
 let signedIn = false
 
 /** true = logged in, false = not, null = unknown (old CLI without `auth status`). */
@@ -235,6 +277,7 @@ export class ProjectAgent {
       if (!line.trim()) continue
       try {
         const m = JSON.parse(line) as ChatMessage
+        if (m.chips) m.chips = m.chips.flatMap(currentChip)
         // a turn cut off by a crash or quit was saved mid-step; those steps can't finish now
         for (const p of m.parts ?? []) {
           if (p.type === 'tool' && p.status === 'running') p.status = 'error'
@@ -333,10 +376,12 @@ export class ProjectAgent {
       cwd: this.project.dir,
       pathToClaudeCodeExecutable: claude,
       env: envRecord,
-      settingSources: ['user', 'project'],
+      settingSources: [],
+      strictMcpConfig: true,
       systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_RULES },
       permissionMode: 'acceptEdits',
       allowedTools: ALLOWED_TOOLS,
+      disallowedTools: DISALLOWED_TOOLS,
       mcpServers: { luca: lucaMcpServer(this.project.dir, this.ai33Ctx()) },
       canUseTool: this.canUseTool,
       includePartialMessages: true,
@@ -474,8 +519,6 @@ export class ProjectAgent {
           type: 'image',
           source: { type: 'base64', media_type: 'image/png', data: chip.png }
         })
-      } else if (chip.kind === 'catalog') {
-        lines.push(`Catalog item: ${chip.name} (${chip.type}, ${chip.source ?? 'hyperframes'})`)
       } else if (chip.kind === 'clip') {
         lines.push(
           `Timeline clip ${chip.clipId} on track ${chip.track}, ${chip.start.toFixed(2)}s–${chip.end.toFixed(2)}s`
@@ -485,7 +528,7 @@ export class ProjectAgent {
       } else if (chip.kind === 'broll') {
         const len = chip.duration ? `, ${Math.round(chip.duration)}s` : ''
         lines.push(
-          `B-roll the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with broll_add {"id":"${chip.id}"} and show it at the playhead time (or where it best fits what is being said around then) as a cutaway over the footage, unless they ask for something else.`
+          `B-roll the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with broll_add {"id":"${chip.id}"} and show it at the playhead time (or where it best fits what is being said around then) as broll_add says to place it (a cutaway over the footage, or with only a voiceover a scene of its own), unless they ask for something else.`
         )
       } else if (chip.kind === 'edit') {
         // a start-card choice: the full plan is in the first request's brief (and .luca/EDIT.md)
@@ -504,16 +547,22 @@ export class ProjectAgent {
     if (turn.context && typeof turn.context === 'object') {
       const ctx = turn.context as { time?: number; note?: string; voice?: boolean }
       if (typeof ctx.time === 'number') lines.push(`Playhead is at ${ctx.time.toFixed(2)}s.`)
-      // technical detail the UI keeps out of the visible message (e.g. a catalog snippet)
+      // detail the UI keeps out of the visible message (e.g. the start brief)
       if (typeof ctx.note === 'string' && ctx.note.trim()) lines.push(ctx.note.trim())
       if (ctx.voice)
         lines.push(
           'The user said this out loud in voice mode (speech recognition, so allow for misheard words) and your reply will be read aloud: answer in one or two short spoken sentences, with no markdown, lists or code.'
         )
     }
-    if (existsSync(join(lucaDir(this.project.dir), 'LOOK.md')))
+    const own = lucaDir(this.project.dir)
+    if (existsSync(join(own, 'LOOK.md')))
       lines.push('An active Look is set: read .luca/LOOK.md and follow it for every visual choice.')
-    else if (existsSync(join(lucaDir(this.project.dir), 'EDIT.md')))
+    // projects started before video types kept the look picked at the start here
+    else if (existsSync(join(own, 'STYLE.md')))
+      lines.push(
+        'The user picked a look when they started this video (.luca/STYLE.md): keep new titles, text and motion in that look unless they ask for something else.'
+      )
+    if (existsSync(join(own, 'EDIT.md')))
       lines.push(
         'The user described this video when they started (.luca/EDIT.md): keep new edits in line with it unless they ask otherwise.'
       )
@@ -552,6 +601,22 @@ export class ProjectAgent {
 
   // ---------------------------------------------------------------- permissions
   private canUseTool: CanUseTool = async (toolName, input) => {
+    // DISALLOWED_TOOLS is matched literally by the SDK; this also catches oblique forms
+    if (toolName === 'Bash') {
+      let w = shellWords(String(input.command ?? ''))
+      if (w?.[0] === 'npx') w = w.slice(w[1] === '--yes' || w[1] === '-y' ? 2 : 1)
+      if (
+        w &&
+        ((/^hyperframes(@[\w.-]+)?$/.test(w[0] ?? '') && NO_WINDOW.includes(w[1] ?? '')) ||
+          w[0] === 'open')
+      ) {
+        return {
+          behavior: 'deny',
+          message:
+            'Luca shows the preview itself; nothing may open a browser, a window or a preview server.'
+        }
+      }
+    }
     // Never let edits escape the project folder.
     const target = input.file_path ?? input.path ?? input.notebook_path
     if (
@@ -567,6 +632,7 @@ export class ProjectAgent {
         return { behavior: 'deny', message: 'media/ and renders/ are immutable in Luca.' }
       }
     }
+    if (getSettings().approvals === 'full') return { behavior: 'allow', updatedInput: input }
     // "Always allow" remembers a command by its first word, so it is only offered (and only
     // honoured) for plain read-only commands; anything that could change, delete, download or
     // chain something asks every time
@@ -759,6 +825,22 @@ export class ProjectAgent {
     }
   }
 
+  /** Allow every open permission request (the person switched to full access). */
+  allowPending(): void {
+    if (!this.pending.size) return
+    for (const [id, p] of this.pending) {
+      const part = this.current?.parts?.find(
+        (x): x is Extract<ChatContentPart, { type: 'permission' }> =>
+          x.type === 'permission' && x.id === id
+      )
+      if (part) part.resolved = 'allow'
+      this.emit({ type: 'permission-resolved', id })
+      p.resolve({ behavior: 'allow' })
+    }
+    this.pending.clear()
+    this.pushMessage(this.current)
+  }
+
   /** Answer every open permission request with deny (the turn it belongs to is over). */
   private cancelPending(message: string): void {
     for (const [id, p] of this.pending) {
@@ -889,20 +971,6 @@ export class ProjectAgent {
                 // keep the neutral label
               }
             }
-            if (part.name === 'mcp__luca__video_generate' && !b.is_error && part.activity) {
-              try {
-                // the first line is the summary; frames follow it
-                const r = JSON.parse(out.split('\n')[0]) as { ok?: boolean; seconds?: number }
-                part.activity = {
-                  ...part.activity,
-                  done: r.ok
-                    ? `${part.activity.done} (${Math.round(r.seconds ?? 0)} s)`
-                    : 'Gemini couldn’t make the video'
-                }
-              } catch {
-                // keep the neutral label
-              }
-            }
             if (part.name === 'mcp__luca__catalog_search' && !b.is_error && part.activity) {
               try {
                 const r = JSON.parse(out) as { total?: number; query?: string }
@@ -912,8 +980,8 @@ export class ProjectAgent {
                     ...part.activity,
                     done:
                       r.total > 0
-                        ? `Found ${r.total} component${r.total === 1 ? '' : 's'} for “${q}”`
-                        : `No components matched “${q}”`
+                        ? `Found ${r.total} option${r.total === 1 ? '' : 's'} for “${q}”`
+                        : `Nothing ready-made for “${q}”`
                   }
                 }
               } catch {

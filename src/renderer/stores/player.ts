@@ -18,8 +18,10 @@ type PlayerStore = {
   muted: boolean
   volume: number
   grab: boolean
+  loadError: string | null
   setHandle: (h: PlayerHandle | null) => void
   setReady: (ready: boolean) => void
+  setLoadError: (e: string | null) => void
   setPlaying: (playing: boolean) => void
   setTime: (t: number) => void
   setDuration: (d: number) => void
@@ -44,8 +46,10 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
   muted: false,
   volume: 1,
   grab: false,
+  loadError: null,
   setHandle: (handle) => set({ handle }),
   setReady: (ready) => set({ ready }),
+  setLoadError: (loadError) => set({ loadError }),
   setPlaying: (playing) => set({ playing }),
   setTime: (currentTime) => set({ currentTime }),
   setDuration: (duration) => set({ duration }),

@@ -233,8 +233,7 @@ input:is(
     [type='password'],
     [type='url']
   ):focus-visible,
-textarea:focus-visible,
-.no-ring:focus-visible {
+textarea:focus-visible {
   outline: none;
 }
 
@@ -251,7 +250,7 @@ body.inactive ::selection {
   background: var(--press);
 }
 
-/* overlay scrollbars, 6 px, visible only while scrolling */
+/* overlay scrollbars, 6 px, visible only on hover */
 .scroll {
   overflow: auto;
   scrollbar-width: thin;
@@ -265,16 +264,11 @@ body.inactive ::selection {
   background: transparent;
   border-radius: 3px;
 }
-.scroll:hover::-webkit-scrollbar-thumb,
-.scroll.scrolling::-webkit-scrollbar-thumb {
+.scroll:hover::-webkit-scrollbar-thumb {
   background: var(--border-strong);
 }
 .scroll::-webkit-scrollbar-corner {
   background: transparent;
-}
-
-.hairline {
-  border-color: var(--border);
 }
 
 /* Editor panel chrome: rounded card on the window background */

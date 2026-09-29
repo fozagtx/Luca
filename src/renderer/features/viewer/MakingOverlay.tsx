@@ -83,7 +83,7 @@ function Veil({ making }: { making: Making }): ReactElement {
       </span>
       <div className="relative flex max-w-full min-w-0 flex-col items-center gap-1">
         <div className="text-[15px] font-semibold tracking-[-0.01em]">
-          Luca is editing your video
+          {making.kind === 'brief' ? 'Building from your brief' : 'Luca is making your video'}
         </div>
         <div key={status} className="rise-in max-w-full truncate text-[12.5px] text-white/75">
           {status}

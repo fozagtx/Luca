@@ -20,24 +20,14 @@ import {
   Volume2,
   VolumeX
 } from 'lucide-react'
-import {
-  memo,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type DragEvent,
-  type ReactElement
-} from 'react'
+import { memo, useEffect, useMemo, useRef, type ReactElement } from 'react'
 import type { Clip, Timeline as TimelineData } from '../../../shared/types'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
-import { catalogChip, hasCatalogDrag, readCatalogDrag, type CatalogDrag } from '../../lib/drag'
 import { luca } from '../../lib/luca'
 import { clock, timecode } from '../../lib/timecode'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
-import { useQueue } from '../../stores/queue'
 import { useTimeline, type Peaks, type Thumbs } from '../../stores/timeline'
 import { useUi } from '../../stores/ui'
 import { PlayheadTimecode } from '../viewer/PlayheadTimecode'
@@ -67,7 +57,7 @@ const KIND_LABEL: Record<RowMeta['kind'], string> = {
   strip: '',
   video: 'Video',
   block: 'Graphics',
-  component: 'Components',
+  component: 'Animations',
   caption: 'Captions',
   audio: 'Audio'
 }
@@ -322,8 +312,6 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   const seek = usePlayer((s) => s.seek)
   const ref = useRef<TimelineState>(null)
   const dragging = useRef(false)
-  const [dropAt, setDropAt] = useState<number | null>(null)
-  const [dropError, setDropError] = useState<string | null>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const setViewportWidth = useTimeline((s) => s.setViewportWidth)
 
@@ -361,40 +349,6 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     }
     return [...pts]
   }, [clips, duration])
-
-  const dropTime = (e: DragEvent<HTMLDivElement>): number => {
-    const area = e.currentTarget.querySelector<HTMLElement>('.timeline-editor-edit-area')
-    const box = (area ?? e.currentTarget).getBoundingClientRect()
-    const x = e.clientX - box.left - START_LEFT + (area?.scrollLeft ?? 0)
-    const t = Math.max(0, Math.min(duration, x / zoom))
-    return Math.round(t * fps) / fps
-  }
-
-  const placeCatalogItem = async (d: CatalogDrag, at: number): Promise<void> => {
-    setDropError(null)
-    const res = await luca.catalog.add(d.name)
-    if (!res.ok) {
-      // the reason is technical; the person only needs to know it didn't go in
-      console.warn('[timeline] add failed:', res.error)
-      setDropError(`Couldn’t add ${d.title || d.name}. Ask Luca in the chat instead.`)
-      setTimeout(() => setDropError(null), 6000)
-      return
-    }
-    const tc = timecode(at, fps)
-    // what people see in the chat stays plain; the technical part rides along as hidden context
-    const note =
-      d.source === 'remocn'
-        ? `Place remocn \`${d.name}\` at ${tc}.`
-        : `Insert \`${d.name}\` at ${tc} on a new track. It is installed; the \`add\` snippet was:\n\n\`\`\`html\n${(res.snippet ?? '').trim()}\n\`\`\``
-    if (!useUi.getState().chatOpen) useUi.getState().setChat(true)
-    // through the queue: it starts now if Luca is free, or waits its turn in view
-    useQueue
-      .getState()
-      .enqueue(`Add ${d.title || d.name} at ${clock(at)}`, [catalogChip(d)], 'typed', {
-        time: at,
-        note
-      })
-  }
 
   const snap = (t: number, self: Clip): number => {
     const tol = 6 / zoom
@@ -467,34 +421,7 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
           />
         ))}
       </div>
-      <div
-        ref={viewportRef}
-        className={cn('relative min-w-0 flex-1', dropAt !== null && 'bg-accent/5')}
-        onDragOver={(e) => {
-          if (!hasCatalogDrag(e.dataTransfer)) return
-          e.preventDefault()
-          e.dataTransfer.dropEffect = 'copy'
-          setDropAt(dropTime(e))
-        }}
-        onDragLeave={() => setDropAt(null)}
-        onDrop={(e) => {
-          const d = readCatalogDrag(e.dataTransfer)
-          setDropAt(null)
-          if (!d) return
-          e.preventDefault()
-          void placeCatalogItem(d, dropTime(e))
-        }}
-      >
-        {dropAt !== null ? (
-          <div className="pointer-events-none absolute top-1 right-2 z-10 rounded-[5px] bg-accent px-1.5 py-0.5 text-[10.5px] text-white">
-            Insert at {timecode(dropAt, fps)}
-          </div>
-        ) : null}
-        {dropError ? (
-          <div className="absolute right-2 bottom-2 z-10 rounded-[5px] bg-danger px-1.5 py-0.5 text-[10.5px] text-white">
-            {dropError}
-          </div>
-        ) : null}
+      <div ref={viewportRef} className="relative min-w-0 flex-1">
         <Editor
           ref={ref}
           editorData={editorRows}
@@ -629,7 +556,7 @@ const ClipFace = memo(function ClipFace({
       ) : null}
       <span className="luca-clip-label">
         {clip.remocn ? (
-          <span className="luca-clip-badge" title="Animated component">
+          <span className="luca-clip-badge" title="Animation">
             <Sparkles size={8} strokeWidth={2.5} />
           </span>
         ) : null}

@@ -37,7 +37,8 @@ import { useUi } from './stores/ui'
 const sep =
   'group/sep relative shrink-0 bg-transparent outline-none flex items-center justify-center ' +
   'after:rounded-full after:bg-border-strong after:opacity-0 after:transition-[opacity,background-color] after:duration-150 ' +
-  'hover:after:opacity-100 data-[separator=active]:after:bg-accent data-[separator=active]:after:opacity-100'
+  'hover:after:opacity-100 data-[separator=active]:after:bg-accent data-[separator=active]:after:opacity-100 ' +
+  'data-[separator=disabled]:pointer-events-none'
 const sepV = `${sep} w-1.5 cursor-col-resize after:h-8 after:w-[3px]`
 const sepH = `${sep} h-1.5 cursor-row-resize after:h-[3px] after:w-8`
 
@@ -58,30 +59,35 @@ function outerLayout(sizes: number[] | undefined, sidebarOpen: boolean): Layout 
 /**
  * Keeps a collapsible side panel and its toggle in the UI store in step: the toolbar button,
  * the menu and ⇧⌘S change the store and the panel follows (animated); dragging the panel shut
- * or open updates the store.
+ * or open updates the store. A panel that starts hidden has no width to go back to (the library
+ * would open it at its minimum), so the first time it opens at `firstSize`.
  */
 function useSidePanel(
   open: boolean,
   setOpen: (open: boolean) => void,
   animate: () => void,
-  animating: () => boolean
+  animating: () => boolean,
+  firstSize?: number | string
 ): {
   ref: React.RefObject<PanelImperativeHandle | null>
   onResize: (s: PanelSize, id?: string | number, prev?: PanelSize) => void
 } {
   const ref = usePanelRef()
+  const shown = useRef(false)
   useEffect(() => {
     const p = ref.current
     if (!p) return
     if (open && p.isCollapsed()) {
       animate()
-      p.expand()
+      if (!shown.current && firstSize !== undefined) p.resize(firstSize)
+      else p.expand()
     } else if (!open && !p.isCollapsed()) {
       animate()
       p.collapse()
     }
-  }, [open, ref, animate])
+  }, [open, ref, animate, firstSize])
   const onResize = (s: PanelSize, _id?: string | number, prev?: PanelSize): void => {
+    if (s.inPixels >= 1) shown.current = true
     // only real size changes by the user count: the library also reports the same size when props
     // change, and the in-between sizes of a toggle's glide
     if (animating() || !prev || Math.abs(prev.inPixels - s.inPixels) < 0.5) return
@@ -134,7 +140,15 @@ export default function App(): ReactElement {
     animateTimer.current = setTimeout(() => el.classList.remove('panes-animating'), 280)
   }, [])
   const animating = useCallback(() => Date.now() < animateUntil.current, [])
-  const sidebar = useSidePanel(sidebarOpen, setSidebar, animate, animating)
+  // the remembered width (the stored layout starts it hidden), else its usual one
+  const stored = layoutOf(['sidebar', 'center', 'chat'], settings?.panes?.outer)
+  const sidebar = useSidePanel(
+    sidebarOpen,
+    setSidebar,
+    animate,
+    animating,
+    stored ? `${stored.sidebar}%` : 280
+  )
   const chat = useSidePanel(chatOpen, setChat, animate, animating)
 
   return (
@@ -167,10 +181,12 @@ export default function App(): ReactElement {
             >
               <Sidebar />
             </Panel>
+            {/* Home has no sidebar to drag or double-click open */}
             <Separator
               className={sepV}
+              disabled={!hasProject}
               onDoubleClick={() => setSidebar(!sidebarOpen)}
-              title="Drag to resize · double-click to hide or show"
+              title={hasProject ? 'Drag to resize · double-click to hide or show' : undefined}
             />
             <Panel id="center" minSize={480}>
               {hasProject ? (

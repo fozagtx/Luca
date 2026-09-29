@@ -219,6 +219,7 @@ export async function applyEdit(
   edit: TimelineEdit
 ): Promise<{ ok: boolean; error?: string }> {
   if (edit.op === 'mute') return muteClips(dir, edit.refs, edit.muted)
+  if (edit.op === 'volume') return setClipVolume(dir, edit.refs, edit.volume)
   if (edit.op === 'delete' && edit.with?.length) {
     // a video and its own audio go together, in one checkpoint
     for (const ref of [edit.ref, ...edit.with]) {
@@ -287,6 +288,34 @@ function muteClips(dir: string, refs: string[], muted: boolean): { ok: boolean; 
   return { ok: true }
 }
 
+/**
+ * Set a clip's level: `data-volume` 0–2 (1 = as recorded). A level above 0 clears the saved
+ * pre-mute level, so a slider move also unmutes.
+ */
+function setClipVolume(
+  dir: string,
+  refs: string[],
+  volume: number
+): { ok: boolean; error?: string } {
+  const file = join(dir, 'index.html')
+  let html = readFileSync(file, 'utf8')
+  const v = String(Math.round(Math.min(2, Math.max(0, volume)) * 100) / 100)
+  for (const ref of refs) {
+    const tag = findTagById(html, ref.replace(/^#/, ''))
+    if (!tag) continue
+    html = replaceTag(
+      html,
+      tag,
+      setAttrs(tag, {
+        'data-volume': v,
+        'data-luca-volume': v === '0' ? tag.attrs['data-luca-volume'] : null
+      })
+    )
+  }
+  writeFileSync(file, html)
+  return { ok: true }
+}
+
 const num = (n: number, digits: number): string =>
   String(Math.round(n * 10 ** digits) / 10 ** digits)
 
@@ -324,6 +353,7 @@ export async function applyTransform(
 
 export function editLabel(edit: TimelineEdit): string {
   if (edit.op === 'mute') return edit.muted ? 'Edit: mute track' : 'Edit: unmute track'
+  if (edit.op === 'volume') return 'Edit: volume'
   const name = edit.ref.replace(/^#/, '')
   switch (edit.op) {
     case 'move':

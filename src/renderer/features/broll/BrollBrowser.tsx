@@ -1,4 +1,4 @@
-import type { Aspect, Background, BackgroundMedia } from '@shared/types'
+import type { Aspect, BrollItem, BrollMedia } from '@shared/types'
 import { Check, Film, Plus, Search, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { Button } from '../../components/ui/button'
@@ -11,7 +11,7 @@ import { useUi } from '../../stores/ui'
 import { EmptyPane } from '../sidebar/EmptyPane'
 import { PexelsKeyCard } from './PexelsKeyCard'
 
-const FILTERS: SegmentedItem<BackgroundMedia>[] = [
+const FILTERS: SegmentedItem<BrollMedia>[] = [
   { id: 'photo', label: 'Photos' },
   { id: 'video', label: 'Videos' }
 ]
@@ -31,7 +31,7 @@ export function BrollBrowser({
   pickedId,
   hint
 }: {
-  onPick: (b: Background) => void
+  onPick: (b: BrollItem) => void
   /** The one already picked, marked in the grid. */
   pickedId?: string
   /** What clicking does, shown in the footer. */
@@ -208,10 +208,10 @@ function Card({
   picked,
   onPick
 }: {
-  item: Background
+  item: BrollItem
   shape: string
   picked: boolean
-  onPick: (b: Background) => void
+  onPick: (b: BrollItem) => void
 }): ReactElement {
   const [hover, setHover] = useState(false)
   const windowActive = useUi((s) => s.windowActive)

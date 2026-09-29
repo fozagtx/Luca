@@ -10,7 +10,7 @@ import {
   Image as ImageIcon,
   ImagePlay,
   MousePointer2,
-  Package,
+  Paperclip,
   RotateCcw,
   Scissors,
   ShieldCheck,
@@ -28,6 +28,7 @@ import { formatDuration } from '../../lib/format'
 import { clock } from '../../lib/timecode'
 import { useAi33 } from '../../stores/ai33'
 import { useChat } from '../../stores/chat'
+import { useProject } from '../../stores/project'
 import { stopLuca } from '../../stores/queue'
 import { Ai33KeyCard } from '../ai33/Ai33KeyCard'
 import { AudioPreview } from '../ai33/AudioPreview'
@@ -42,8 +43,6 @@ function chipIcon(chip: Chip): ReactElement {
       return <MousePointer2 size={11} />
     case 'frame':
       return <ImageIcon size={11} />
-    case 'catalog':
-      return <Package size={11} />
     case 'clip':
       return <Scissors size={11} />
     case 'transcript':
@@ -60,6 +59,9 @@ function chipIcon(chip: Chip): ReactElement {
       ) : (
         <ImageIcon size={11} />
       )
+    default:
+      // a kind this Luca doesn't know (saved by an older or newer one)
+      return <Paperclip size={11} />
   }
 }
 
@@ -74,8 +76,6 @@ function chipLabel(chip: Chip): string {
       )
     case 'frame':
       return `Frame at ${clock(chip.time)}`
-    case 'catalog':
-      return chip.title || chip.name
     case 'clip':
       return chip.clipId.replace(/[-_]/g, ' ')
     case 'transcript':
@@ -86,6 +86,10 @@ function chipLabel(chip: Chip): string {
       return chip.label
     case 'media':
       return chip.duration ? `${chip.name} · ${formatDuration(chip.duration)}` : chip.name
+    default: {
+      const other = chip as { kind: string; label?: string; title?: string }
+      return other.label ?? other.title ?? other.kind
+    }
   }
 }
 
@@ -490,6 +494,13 @@ function PermissionCard({
         <Button size="sm" variant="ghost" onClick={() => void decide(part.id, 'deny')}>
           Don&apos;t allow
         </Button>
+        <button
+          type="button"
+          onClick={() => void useProject.getState().setApprovals('full')}
+          className="self-center text-[11px] text-text-3 underline-offset-2 hover:text-text hover:underline"
+        >
+          Turn on full access
+        </button>
       </div>
       <p className="mt-2 pl-[38px] text-[10.5px] leading-[1.4] text-text-3">
         {scope

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { Ai33EstimateReq, Ai33VoiceQuery } from '../shared/ai33'
 import type {
-  BackgroundSearch,
+  BrollSearch,
   CaptionConfig,
   Chip,
   CreateProgress,
@@ -49,14 +49,11 @@ import { cancelExport, startExport } from './export'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { applyColor, colorState, removeColor } from './color'
 import { addMedia, footageInfo } from './footage'
-import { addCatalogItem, catalog, readTimeline } from './hyperframes'
-import { remocnCatalog, setupStudio, studioStatus } from './remocn'
+import { readTimeline } from './hyperframes'
 import { Channels, broadcast, handle, listen } from './ipc'
-import { invalidateLibrary } from './library'
 import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
-import { hasGeminiKey, saveGeminiKey } from './gemini'
-import { hasPexelsKey, savePexelsKey, searchBackgrounds } from './pexels'
+import { hasPexelsKey, savePexelsKey, searchBroll } from './pexels'
 import {
   checkForUpdates,
   installUpdate,
@@ -154,6 +151,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.settingsGet, getSettings)
   handle(Channels.settingsUpdate, (patch: Partial<Settings>) => {
     const next = updateSettings(patch)
+    if (patch.approvals === 'full') activeAgent()?.allowPending()
     if (patch.theme) {
       nativeTheme.themeSource = next.theme
       buildAppMenu()
@@ -193,19 +191,12 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     const report = (p: CreateProgress): void => broadcast(Channels.projectCreateProgress, p)
     try {
       const res = await startProject(args, report)
-      // init leaves a voiceover off the timeline: it plays from the first frame, even when Luca
-      // can't transcribe it
-      if (res.kind === 'audio') await placeVoiceover(res.project)
-      // the Look goes in before the project opens, so it opens (repo, watcher, Claude) only once;
-      // a Look that only partly applied still opens the project, then reports what failed
-      let lookError: unknown = null
-      if (args.look) {
-        report({ stage: 'starting', message: 'Applying your Look' })
-        await applyLook(res.project, args.look).catch((err) => (lookError = err))
-      }
+      // init leaves a voiceover off the timeline (on its own, or as the voice of silent footage):
+      // it plays from the first frame, even when Luca can't transcribe it (footage that has its
+      // own sound is left as it is)
+      await placeVoiceover(res.project)
       report({ stage: 'starting', message: 'Opening the project' })
       const opened = await activate(res.project.dir)
-      if (lookError) throw lookError
       report({ stage: 'done' })
       return { ...res, project: opened }
     } catch (err) {
@@ -322,29 +313,6 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.agentState, () => activeAgent()?.status() ?? { state: 'idle' })
   handle(Channels.agentRestart, () => agentFor(requireProject()).restart())
 
-  // catalog
-  handle(Channels.catalogList, async (args?: { refresh?: boolean }) => {
-    const items = await catalog({
-      refresh: args?.refresh,
-      cwd: currentProject()?.dir ?? app.getPath('userData')
-    })
-    if (args?.refresh) invalidateLibrary()
-    return items
-  })
-  handle(Channels.catalogAdd, (name: string) => addCatalogItem(requireProject().dir, name))
-  handle(Channels.catalogRemocn, async (args?: { refresh?: boolean }) => {
-    const items = await remocnCatalog(args?.refresh)
-    if (args?.refresh) invalidateLibrary()
-    return items
-  })
-  handle(Channels.catalogRemocnPreview, () => null)
-  handle(Channels.catalogRemocnStudioStatus, () => studioStatus())
-  handle(Channels.catalogRemocnSetup, () => setupStudio())
-
-  // video generation (Gemini)
-  handle(Channels.geminiHasKey, hasGeminiKey)
-  handle(Channels.geminiSetKey, (key: string) => saveGeminiKey(key))
-
   // voice, music and sound effects (ai33)
   handle(Channels.ai33HasKey, hasAi33Key)
   handle(Channels.ai33Status, ai33Status)
@@ -366,9 +334,9 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.updatesMove, moveToApplications)
 
   // B-roll (Pexels)
-  handle(Channels.backgroundsHasKey, hasPexelsKey)
-  handle(Channels.backgroundsSetKey, (key: string) => savePexelsKey(key))
-  handle(Channels.backgroundsSearch, (args: BackgroundSearch) => searchBackgrounds(args))
+  handle(Channels.brollHasKey, hasPexelsKey)
+  handle(Channels.brollSetKey, (key: string) => savePexelsKey(key))
+  handle(Channels.brollSearch, (args: BrollSearch) => searchBroll(args))
 
   // clean
   handle(Channels.cleanRun, () => runCleanEdit(requireProject()))

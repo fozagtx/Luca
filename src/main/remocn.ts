@@ -151,9 +151,9 @@ function readRemocnCache(file: string): RemocnItem[] | null {
  * The remocn component index: the daily cache, else remocn.dev, else the last cache, else the
  * bundled copy, so remocn components are always listed even offline.
  */
-export async function remocnCatalog(refresh = false): Promise<RemocnItem[]> {
+export async function remocnCatalog(): Promise<RemocnItem[]> {
   const cacheFile = join(appDataDir(), 'remocn-catalog.json')
-  if (!refresh && existsSync(cacheFile) && Date.now() - statSync(cacheFile).mtimeMs < DAY) {
+  if (existsSync(cacheFile) && Date.now() - statSync(cacheFile).mtimeMs < DAY) {
     const cached = readRemocnCache(cacheFile)
     if (cached) return cached
   }
