@@ -80,10 +80,6 @@ const api: LucaApi = {
     setKey: (key) => invoke(C.brollSetKey, key),
     search: (args) => invoke(C.brollSearch, args)
   },
-  gemini: {
-    hasKey: () => invoke(C.geminiHasKey),
-    setKey: (key) => invoke(C.geminiSetKey, key)
-  },
   updates: {
     status: () => invoke(C.updatesStatus),
     check: () => invoke(C.updatesCheck),

@@ -46,7 +46,6 @@ import { readTimeline } from './hyperframes'
 import { Channels, broadcast, handle, listen } from './ipc'
 import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
-import { hasGeminiKey, saveGeminiKey } from './gemini'
 import { hasPexelsKey, savePexelsKey, searchBroll } from './pexels'
 import {
   checkForUpdates,
@@ -287,10 +286,6 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.agentHistory, () => activeAgent()?.history() ?? [])
   handle(Channels.agentState, () => activeAgent()?.status() ?? { state: 'idle' })
   handle(Channels.agentRestart, () => agentFor(requireProject()).restart())
-
-  // video generation (Gemini)
-  handle(Channels.geminiHasKey, hasGeminiKey)
-  handle(Channels.geminiSetKey, (key: string) => saveGeminiKey(key))
 
   // updates (GitHub releases)
   handle(Channels.updatesStatus, updateStatus)

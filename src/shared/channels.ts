@@ -38,8 +38,6 @@ export const Channels = {
   brollHasKey: 'broll:has-key',
   brollSetKey: 'broll:set-key',
   brollSearch: 'broll:search',
-  geminiHasKey: 'gemini:has-key',
-  geminiSetKey: 'gemini:set-key',
   updatesStatus: 'updates:status',
   updatesCheck: 'updates:check',
   updatesInstall: 'updates:install',
