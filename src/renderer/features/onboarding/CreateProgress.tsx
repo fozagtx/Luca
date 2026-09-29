@@ -11,19 +11,8 @@ const STEPS: Record<StartKind, Step[]> = {
   ],
   audio: [
     { id: 'preparing', label: 'Getting ready' },
-    { id: 'copying', label: 'Copying your audio' },
+    { id: 'copying', label: 'Copying your voiceover (the original stays untouched)' },
     { id: 'scaffolding', label: 'Building the timeline' },
-    { id: 'starting', label: 'Opening the project' }
-  ],
-  images: [
-    { id: 'preparing', label: 'Getting ready' },
-    { id: 'scaffolding', label: 'Setting up the canvas' },
-    { id: 'media', label: 'Adding your images' },
-    { id: 'starting', label: 'Opening the project' }
-  ],
-  scratch: [
-    { id: 'preparing', label: 'Getting ready' },
-    { id: 'scaffolding', label: 'Setting up a blank canvas' },
     { id: 'starting', label: 'Opening the project' }
   ]
 }

@@ -5,16 +5,22 @@ import { Input } from '../../components/ui/input'
 import { cn } from '../../lib/cn'
 import { luca } from '../../lib/luca'
 
-/** Asks for the AssemblyAI API key (clean edit, voice input); stored with safeStorage in main. */
+/**
+ * Asks for the AssemblyAI API key (transcripts for cuts, captions and B-roll; voice input);
+ * stored with safeStorage in main.
+ */
 export function AssemblyAiKeyCard({
   children,
   onSaved,
   onDismiss,
+  autoFocus = !!onDismiss,
   className
 }: {
   children: ReactNode
   onSaved: (ok: boolean) => void
   onDismiss?: () => void
+  /** Put the caret in the key field; on by default when the card can be dismissed. */
+  autoFocus?: boolean
   className?: string
 }): ReactElement {
   const [key, setKey] = useState('')
@@ -54,7 +60,7 @@ export function AssemblyAiKeyCard({
         <Input
           type="password"
           value={key}
-          autoFocus={!!onDismiss}
+          autoFocus={autoFocus}
           onChange={(e) => setKey(e.target.value)}
           placeholder="AssemblyAI API key"
           onKeyDown={(e) => e.key === 'Enter' && void save()}

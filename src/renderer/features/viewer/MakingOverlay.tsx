@@ -12,9 +12,10 @@ import { nowOf } from '../chat/activity'
 const EASE = [0.2, 0.8, 0.2, 1] as const
 
 /**
- * Over the video frame: light circling its edges while Luca works. While Luca makes a new video,
- * a veil hides the blank starter underneath and says what Luca is doing and about how long is
- * left; "Watch it build" swaps it for a small pill so the preview shows through.
+ * Over the video frame: light circling its edges while Luca works. While Luca makes the first
+ * edit of new footage, a veil hides the unedited video underneath and says what Luca is doing
+ * and about how long is left; "Watch Luca edit" swaps it for a small pill so the preview shows
+ * through.
  */
 export function MakingOverlay(): ReactElement {
   const projectId = useProject((s) => s.project?.id)
@@ -26,7 +27,7 @@ export function MakingOverlay(): ReactElement {
         {making && !making.peek ? (
           <motion.div
             key="veil"
-            // there from the first frame, so the starter never shows; it fades out when done
+            // there from the first frame, so the unedited video never flashes; it fades out when done
             initial={false}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.6, ease: EASE }}
@@ -54,7 +55,7 @@ export function MakingOverlay(): ReactElement {
   )
 }
 
-/** What Luca is doing, in plain words, and about how long the build has left. */
+/** What Luca is doing, in plain words, and about how long the edit has left. */
 function useStatus(m: Making, short = false): { status: string; left: string; waiting: boolean } {
   const messages = useChat((s) => s.messages)
   const { doing, waiting } = useMemo(() => nowOf(messages), [messages])
@@ -81,7 +82,9 @@ function Veil({ making }: { making: Making }): ReactElement {
         <Sparkles size={17} strokeWidth={1.7} />
       </span>
       <div className="relative flex max-w-full min-w-0 flex-col items-center gap-1">
-        <div className="text-[15px] font-semibold tracking-[-0.01em]">Making your video</div>
+        <div className="text-[15px] font-semibold tracking-[-0.01em]">
+          Luca is editing your video
+        </div>
         <div key={status} className="rise-in max-w-full truncate text-[12.5px] text-white/75">
           {status}
         </div>
@@ -92,7 +95,7 @@ function Veil({ making }: { making: Making }): ReactElement {
       <div className="relative mt-1 flex flex-wrap items-center justify-center gap-2">
         <button type="button" onClick={() => setPeek(true)} className={VEIL_BUTTON}>
           <Eye size={12} strokeWidth={1.9} />
-          Watch it build
+          Watch Luca edit
         </button>
         {waiting && !chatOpen ? (
           <button type="button" onClick={() => setChat(true)} className={VEIL_BUTTON}>
@@ -108,7 +111,7 @@ function Veil({ making }: { making: Making }): ReactElement {
 const VEIL_BUTTON =
   'inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-[11.5px] font-medium text-white/80 ring-1 ring-white/20 transition-[background-color,color,transform] duration-150 hover:bg-white/10 hover:text-white active:scale-[0.97]'
 
-/** The veil lifted: the preview shows the video as Luca builds it, with the status on top. */
+/** The veil lifted: the preview shows the video as Luca edits it, with the status on top. */
 function Pill({ making }: { making: Making }): ReactElement {
   const { status, left } = useStatus(making, true)
   const setPeek = useMaking((s) => s.setPeek)

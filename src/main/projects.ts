@@ -10,15 +10,16 @@ import {
   writeFileSync
 } from 'node:fs'
 import { basename, extname, join, relative } from 'node:path'
+import { editGuide, videoType } from '../shared/edits'
 import type {
   Aspect,
   CreateProgress,
   Project,
   RecentProject,
   StartArgs,
+  StartEdit,
   StartKind
 } from '../shared/types'
-import { styleGuide } from '../shared/styles'
 import { childEnv, run, runHyperframes, which } from './env'
 import {
   aspectOf,
@@ -40,6 +41,7 @@ import { closingOffset, findTagById, findTags, insertIntoRoot, replaceTag, setAt
 import { Channels, broadcast } from './ipc'
 import { snapshot } from './hyperframes'
 import { poster } from './media'
+import { hasSecret } from './secrets'
 import { getSettings, updateSettings } from './settings'
 
 export { AUDIO_EXT, IMAGE_EXT, VIDEO_EXT, WEB_IMAGE_EXT }
@@ -98,14 +100,14 @@ export const SIZE: Record<Aspect, [number, number]> = {
   square: [1080, 1080]
 }
 
+/** Footage (one video or more) or a voiceover; images alone or nothing can't start a project. */
 export function startKind(files: string[]): StartKind {
   const exts = files.map((f) => extname(f).toLowerCase())
   if (exts.some((e) => VIDEO_EXT.has(e))) return 'video'
   if (exts.some((e) => AUDIO_EXT.has(e))) return 'audio'
-  if (exts.length && exts.every((e) => IMAGE_EXT.has(e))) return 'images'
-  if (exts.length)
-    throw new Error(`Luca can't start from ${exts.find((e) => !IMAGE_EXT.has(e))} files`)
-  return 'scratch'
+  throw new Error(
+    'Add a video or a voiceover to start. Images can come along as extras, like a logo or screenshots.'
+  )
 }
 
 /** Keep a copy of the create call's progress so a late listener sees the current stage. */
@@ -127,10 +129,10 @@ type PlacedClip = {
 }
 
 /**
- * A new project from anything: videos (`hyperframes init --video` with the first, the others
- * played back to back after it), an audio file (`--audio`), images (a blank project plus a
- * starter slideshow of the images) or nothing (the blank composition). Videos a browser can't
- * play (iPhone HEVC, 10-bit, HDR) are made ready first.
+ * A new project from the person's footage (`hyperframes init --video` with the first video, the
+ * others played back to back after it) or a voiceover (`--audio`); images added next to it wait
+ * in media/. Videos a browser can't play (iPhone HEVC, 10-bit, HDR) are made ready first. The
+ * edit picked on the start card goes in the brief and in .luca/EDIT.md.
  */
 export async function startProject(
   args: StartArgs,
@@ -142,19 +144,12 @@ export async function startProject(
   const videos = ofType(VIDEO_EXT)
   const images = ofType(IMAGE_EXT)
   const audio = ofType(AUDIO_EXT)[0] ?? null
-  // the first video (or the audio), never an image that happened to be added before it
-  const main = kind === 'video' ? videos[0] : kind === 'audio' ? audio : null
-  // next to footage or a soundtrack, images (and a soundtrack next to footage) wait in media/
-  const extras =
-    kind === 'video' ? [...images, ...(audio ? [audio] : [])] : kind === 'audio' ? images : []
+  // the first video (or the voiceover), never an image that happened to be added before it
+  const main = kind === 'video' ? videos[0] : audio!
+  // images (and a soundtrack next to footage) wait in media/
+  const extras = kind === 'video' ? [...images, ...(audio ? [audio] : [])] : images
   const settings = getSettings()
-  const fallback =
-    kind === 'images'
-      ? basename(images[0], extname(images[0]))
-      : main
-        ? basename(main, extname(main))
-        : 'Untitled video'
-  const name = (args.name?.trim() || fallback).slice(0, 80)
+  const name = (args.name?.trim() || basename(main, extname(main))).slice(0, 80)
   const { dir, id } = uniqueDir(settings.projectsDir, slugify(name))
   // prepared videos wait next to the project, on the same disk, so moving them in is instant
   const staging = join(settings.projectsDir, `.${id}-preparing`)
@@ -165,18 +160,15 @@ export async function startProject(
     const ready = await prepareAll(videos, probes, staging, report)
     const initArgs = ['init', id, '--non-interactive', '--resolution', RESOLUTION[args.aspect]]
     if (kind === 'video') initArgs.push('--video', ready[0], '--skip-transcribe')
-    else if (kind === 'audio') initArgs.push('--audio', main!, '--skip-transcribe')
-    else initArgs.push('--example', 'blank')
+    else initArgs.push('--audio', main, '--skip-transcribe')
     report({
-      stage: kind === 'video' || kind === 'audio' ? 'copying' : 'scaffolding',
+      stage: 'copying',
       message:
-        kind === 'video'
-          ? videos.length > 1
+        kind === 'audio'
+          ? 'Copying your voiceover'
+          : videos.length > 1
             ? 'Copying your videos'
             : 'Copying your video'
-          : kind === 'audio'
-            ? 'Copying your audio'
-            : 'Setting up a blank canvas'
     })
     const res = await runHyperframes(initArgs, {
       cwd: settings.projectsDir,
@@ -196,46 +188,24 @@ export async function startProject(
       )
     }
 
-    let brief = ''
-    // the file as it is in the project: init renames what it converts
-    let source = main ? basename(main) : ''
-    if (kind === 'images') {
-      const added = await importImages(dir, images, report)
-      const each = Math.max(2, Math.min(6, (args.duration ?? added.length * 3.5) / added.length))
-      const total = writeSlideshow(dir, added, args.aspect, each)
-      await imagePoster(dir, join(dir, added[0]), total)
-      brief =
-        added.length === 1
-          ? `This project starts from ONE image the user added: ${added[0]}. index.html holds a simple starter (the image with a slow push-in, ${total}s). ` +
-            'Turn it into a real HyperFrames video: plan 2–4 beats, animate the image with GSAP keyframes (camera moves, parallax or depth, masked reveals, light sweeps) and add the component(s) that fit best (catalog_search) or the ones the user attached. Replace the starter freely.'
-          : `This project starts from ${added.length} images the user added, in order: ${added.join(', ')}. index.html holds a starter slideshow (#photo-1…#photo-${added.length}, ${each}s each, cross-fades, ${total}s). ` +
-            'Turn it into a polished HyperFrames video: choose the best components for it with catalog_search (or use the ones the user attached), animate every shot with GSAP keyframes (camera moves, parallax, reveals, transitions between photos) and add titles or captions where they help. Replace the starter freely; keep the photos in this order unless the user asks otherwise.'
-    } else if (kind === 'scratch') {
-      const [w, h] = SIZE[args.aspect]
-      brief =
-        `This project starts empty: a blank ${w}×${h} composition with a placeholder title. Build the whole video from the user's description: pick components with catalog_search (or use the ones the user attached), give the scenes a real photo or short video background with background_search (or the one the user picked) instead of a gradient, write the scenes, then add GSAP keyframes, motion and transitions` +
-        (args.duration ? `. Aim for about ${args.duration}s.` : '.')
-    } else if (kind === 'audio') {
-      brief =
-        'This project starts from an audio track (in the timeline as audio). Build visuals that follow it: scenes, text and motion timed to the audio.'
-    } else {
-      source = findSource(dir)
-      const clips = await placeClips(dir, source, videos, ready, probes, report)
-      brief = videoBrief(clips, args.aspect)
-    }
+    // the file as it is in the project: init renames the footage it converts
+    const source = kind === 'video' ? findSource(dir) : basename(main)
+    let brief =
+      kind === 'video'
+        ? videoBrief(await placeClips(dir, source, videos, ready, probes, report), args.aspect)
+        : voiceoverBrief(dir, source, args.aspect)
     if (extras.length) {
       const added = await importExtras(dir, extras, report)
-      brief += ` The user also added ${added.length === 1 ? 'this file' : 'these files'}, in the order they added them: ${added.join(', ')}. Use ${added.length === 1 ? 'it' : 'them'} where ${added.length === 1 ? 'it fits' : 'they fit'} what the user asks for (images as cutaways, a logo or an intro; audio as music).`
+      brief += ` The user also added ${added.length === 1 ? 'this file' : 'these files'}, in the order they added them: ${added.join(', ')}. Use ${added.length === 1 ? 'it' : 'them'} where ${added.length === 1 ? 'it fits' : 'they fit'} (images: a logo, screenshots or pictures of what is said; audio: the voiceover when the footage is silent, music under the voice otherwise).`
     }
-    // the look picked on the start steps: in the first request, and kept for later edits
-    const guide = styleGuide(
-      args.style,
-      kind === 'images' || kind === 'scratch' ? args.duration : undefined
-    )
-    if (guide) {
-      writeFileSync(join(lucaDir(dir), 'STYLE.md'), guide + '\n')
-      brief += `\n\n${guide}`
-    }
+    // the edit picked on the start card: in the first request, and kept for later turns
+    const edit: StartEdit = args.edit ?? { type: 'talking', steps: videoType('talking').steps }
+    const guide = editGuide(edit, {
+      canTranscribe: hasSecret('assemblyai'),
+      voiceOnly: kind === 'audio'
+    })
+    writeFileSync(join(lucaDir(dir), 'EDIT.md'), guide + '\n')
+    brief += `\n\n${guide}`
 
     const now = new Date().toISOString()
     const project: Project = {
@@ -425,7 +395,7 @@ function videoBrief(clips: PlacedClip[], aspect: Aspect): string {
     : ''
   if (clips.length === 1) {
     const c = clips[0]
-    return `This project starts from the user's video (the a-roll clip, ${c.src}): ${c.duration}s, ${shape(c)}, in a ${w}×${h} ${aspect} video.${cropped} Edit it as they describe.`
+    return `This project starts from the user's video (the a-roll clip, ${c.src}): ${c.duration}s, ${shape(c)}, in a ${w}×${h} ${aspect} video.${cropped} Edit it as planned below.`
   }
   const last = clips[clips.length - 1]
   const list = clips
@@ -436,14 +406,24 @@ function videoBrief(clips: PlacedClip[], aspect: Aspect): string {
     .join('\n')
   return (
     `This project starts from ${clips.length} videos the user added, played back to back in the order they added them; each is a clip with its own audio clip (#<id>-audio):\n${list}\n` +
-    `The whole video is ${r2(last.start + last.duration)}s, ${w}×${h} (${aspect}).${cropped} Transcripts, clean edits and captions follow the first clip only. Edit them as they describe.`
+    `The whole video is ${r2(last.start + last.duration)}s, ${w}×${h} (${aspect}).${cropped} Transcripts, clean edits and captions follow the first clip only. Edit them as planned below.`
   )
 }
 
-/** Images and a soundtrack added next to the footage or audio: into media/, in order. */
+/** What Luca is told about a voiceover: nothing is on screen yet, so every visual is Luca's. */
+function voiceoverBrief(dir: string, source: string, aspect: Aspect): string {
+  const [w, h] = SIZE[aspect]
+  const html = readFileSync(join(dir, 'index.html'), 'utf8')
+  const length = Number(
+    findTags(html).find((t) => t.attrs['data-composition-id'])?.attrs['data-duration']
+  )
+  return `This project starts from the user's voiceover (${source}${length > 0 ? `, ${r2(length)}s` : ''}, in the timeline as audio) and nothing on screen yet, in a ${w}×${h} ${aspect} video. Every visual is yours to make, following what is said. Edit it as planned below.`
+}
+
+/** Images, and a soundtrack next to footage: into media/, in the order they were added. */
 async function importExtras(dir: string, files: string[], report: Report): Promise<string[]> {
   const images = files.filter((f) => IMAGE_EXT.has(extname(f).toLowerCase()))
-  const out = images.length ? await importImages(dir, images, report, 'scaffolding') : []
+  const out = images.length ? await importImages(dir, images, report) : []
   for (const f of files.filter((f) => AUDIO_EXT.has(extname(f).toLowerCase()))) {
     report({ stage: 'scaffolding', message: 'Adding your audio' })
     mkdirSync(join(dir, 'media'), { recursive: true })
@@ -455,17 +435,12 @@ async function importExtras(dir: string, files: string[], report: Report): Promi
 }
 
 /** Copy images into media/ as image-01.jpg…, converting HEIC/TIFF so Chromium can show them. */
-async function importImages(
-  dir: string,
-  files: string[],
-  report: Report,
-  stage: CreateProgress['stage'] = 'media'
-): Promise<string[]> {
+async function importImages(dir: string, files: string[], report: Report): Promise<string[]> {
   mkdirSync(join(dir, 'media'), { recursive: true })
   const out: string[] = []
   for (let i = 0; i < files.length; i++) {
     report({
-      stage,
+      stage: 'scaffolding',
       message: `Adding image ${i + 1} of ${files.length}`,
       progress: i / files.length
     })
@@ -480,121 +455,23 @@ async function importImages(
     out.push(rel)
   }
   report({
-    stage,
+    stage: 'scaffolding',
     message: `Added ${files.length} image${files.length === 1 ? '' : 's'}`,
     progress: 1
   })
   return out
 }
 
-/**
- * A working starter so the first frame shows the user's photos right away: every image full
- * frame with a slow push-in, cross-fading into the next on alternating tracks. Luca rebuilds it.
- */
-function writeSlideshow(dir: string, images: string[], aspect: Aspect, each: number): number {
-  const [w, h] = SIZE[aspect]
-  const fade = images.length > 1 ? 0.6 : 0
-  const step = each - fade
-  const total = Math.round((step * images.length + fade) * 100) / 100
-  const clips = images
-    .map((src, i) => {
-      const start = Math.round(i * step * 100) / 100
-      return `      <img id="photo-${i + 1}" class="clip photo" src="${src}" alt="" data-start="${start}" data-duration="${each}" data-track-index="${i % 2}" />`
-    })
-    .join('\n')
-  const html = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=${w}, height=${h}" />
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        margin: 0;
-        width: ${w}px;
-        height: ${h}px;
-        overflow: hidden;
-        background: #0a0a0a;
-      }
-      .photo {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-      }
-    </style>
-  </head>
-  <body>
-    <div
-      id="root"
-      data-composition-id="main"
-      data-start="0"
-      data-duration="${total}"
-      data-width="${w}"
-      data-height="${h}"
-    >
-${clips}
-    </div>
-    <script>
-      const tl = gsap.timeline({ paused: true });
-      // Starter made by Luca: a slow push-in on every photo, cross-fading into the next.
-      const each = ${each};
-      const fade = ${fade};
-      document.querySelectorAll(".photo").forEach((el, i) => {
-        const start = i * (each - fade);
-        if (i > 0) tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: fade, ease: "power1.inOut" }, start);
-        tl.fromTo(el, { scale: 1 }, { scale: 1.08, duration: each, ease: "none" }, start);
-      });
-      window.__timelines["main"] = tl;
-    </script>
-  </body>
-</html>
-`
-  writeFileSync(join(dir, 'index.html'), html)
-  return total
-}
-
-/** Poster and duration for projects without a source video (recent-project cards). */
-export async function imagePoster(dir: string, image: string, duration: number): Promise<void> {
-  const ffmpeg = await which('ffmpeg')
-  const out = join(dir, '.luca', 'cache')
-  mkdirSync(out, { recursive: true })
-  if (ffmpeg) {
-    await run(
-      ffmpeg,
-      [
-        '-y',
-        '-v',
-        'error',
-        '-i',
-        image,
-        '-frames:v',
-        '1',
-        '-vf',
-        'scale=640:-2',
-        '-q:v',
-        '4',
-        join(out, 'poster.jpg')
-      ],
-      { env: await childEnv(), timeoutMs: 60_000 }
-    ).catch(() => undefined)
-  }
-  writeFileSync(join(out, 'poster.json'), JSON.stringify({ sig: 'image', duration }))
-}
+/** Whether the project starts from a video, which gives its card a picture of its own. */
+const hasFootage = (p: Project): boolean => VIDEO_EXT.has(extname(p.source).toLowerCase())
 
 /**
- * Projects without a source video (scratch, images) get their card thumbnail from a snapshot of
- * the composition, refreshed after Luca edits it.
+ * Projects without a source video (a voiceover, or an older project started from images or an
+ * idea) get their card thumbnail from a snapshot of the composition, refreshed after Luca edits
+ * it.
  */
 export async function refreshCompositionPoster(p: Project): Promise<void> {
-  if (p.source) return
+  if (hasFootage(p)) return
   const cache = join(p.dir, '.luca', 'cache')
   mkdirSync(cache, { recursive: true })
   let duration = 0
@@ -639,7 +516,7 @@ const posterPending = new Map<string, { p: Project; timer: NodeJS.Timeout }>()
  * several seconds, too much to repeat after every agent turn for a thumbnail on the start screen.
  */
 export function schedulePosterRefresh(p: Project): void {
-  if (p.source) return
+  if (hasFootage(p)) return
   cancelPosterRefresh(p.dir)
   const timer = setTimeout(() => {
     posterPending.delete(p.dir)
