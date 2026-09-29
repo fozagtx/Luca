@@ -144,6 +144,8 @@ AI33_BASE_URL=http://127.0.0.1:8787 AI33_API_KEY=fake npm run dev   # the app ag
 - the shape of the voice list, of the pronunciation dictionary list, and which values the language filter takes;
 - what speech and music cost: Luca guesses 3,600 credits for a piece of music until it has seen a real price, and learns the speech price from the first job.
 
+**Where script text is kept on your Mac.** A script you record is kept in the project (`.luca/SCRIPT.md` and `transcript.json`), in ai33’s word timing under `userData/ai33/cache/tts` for 90 days (so recording it again costs nothing), and as up to 80 characters of each request in the job ledger `userData/ai33/jobs.json`, and `AI33_API_KEY` is read only in development builds, so a packaged Luca uses only the key saved in Connections.
+
 <details>
 <summary><b>How it works</b> (for developers)</summary>
 

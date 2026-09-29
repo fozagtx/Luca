@@ -10,6 +10,7 @@ import {
 } from '../shared/captions'
 import type { CaptionConfig, CaptionGroup, ProjectFontFace } from '../shared/types'
 import { findTags, type TagMatch } from './html'
+import { unescapeAttr } from './timeline-read'
 
 /**
  * The captions sub-composition Luca writes: static caption lines (so every frame is
@@ -236,12 +237,18 @@ ${lines}
 const CLEAN_MASTER = /(^|\/)media\/clean-[0-9a-f]+\.mp4$/
 
 /**
+ * The file a clip plays: without a query or fragment, and with the entities of the markup undone
+ * (the tag parser hands back what is written, so "Q&amp;A.mp3" must be read as "Q&A.mp3").
+ */
+export const clipSrc = (t: TagMatch): string => unescapeAttr(t.attrs.src ?? '').split(/[?#]/)[0]
+
+/**
  * The tags in index.html that play the transcribed media: the clean master once a clean edit
  * replaced the source, else the source file (by name, then by name without its extension).
  */
 export function sourceTags(html: string, source: string): TagMatch[] {
   const media = [...findTags(html, 'video'), ...findTags(html, 'audio')]
-  const src = (t: TagMatch): string => (t.attrs.src ?? '').split(/[?#]/)[0]
+  const src = clipSrc
   const stem = (f: string): string => basename(f, extname(f))
   let hits = media.filter((t) => CLEAN_MASTER.test(src(t)))
   if (!hits.length && source) {

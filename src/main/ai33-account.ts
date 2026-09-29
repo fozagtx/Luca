@@ -37,9 +37,14 @@ function keychainKey(): string | null {
   return savedKey
 }
 
-/** The key: the session's, else the one saved in Luca, else AI33_API_KEY; null when none. */
+/**
+ * The key: the session's, else the one saved in Luca, else AI33_API_KEY (development only: a
+ * release build never reads it, so a variable in the environment can't stand in for the person's
+ * own key); null when none.
+ */
 export function ai33Key(): string | null {
-  return sessionKey || keychainKey() || process.env.AI33_API_KEY?.trim() || null
+  const fromEnvironment = app.isPackaged ? null : process.env.AI33_API_KEY?.trim()
+  return sessionKey || keychainKey() || fromEnvironment || null
 }
 
 /** Whether a key exists; everything that spends gates on this, never on hasSecret('ai33'). */
@@ -57,7 +62,8 @@ export function onKeyConnected(cb: () => void): () => void {
 
 /**
  * Save a key after checking it with ai33 (an empty key disconnects). Rejects with a plain message
- * when ai33 refuses it; a key that can't be checked (offline) is kept. Wakes whoever waits for
+ * when ai33 refuses it, or when it can't be a key at all (spaces, line breaks, too short or long:
+ * never sent, never kept); a key that can't be checked (offline) is kept. Wakes whoever waits for
  * a key (a chat card). Without the Keychain the key is held in memory only, never written down.
  */
 export async function saveAi33Key(key: string): Promise<Ai33SetKeyResult> {
@@ -80,6 +86,7 @@ export async function saveAi33Key(key: string): Promise<Ai33SetKeyResult> {
       checked: true
     }
   }
+  // checkKey refuses what can't be a key without sending it anywhere
   const check = await checkKey(k)
   if (check.status === 'rejected') throw new Error(AI33_REJECTED)
   let persisted = false

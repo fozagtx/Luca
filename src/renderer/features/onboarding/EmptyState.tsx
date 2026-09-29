@@ -4,6 +4,7 @@ import type { Aspect, StyleId, VideoTypeId } from '@shared/types'
 import {
   AudioLines,
   Check,
+  CircleAlert,
   Clapperboard,
   Film,
   FolderOpen,
@@ -42,7 +43,14 @@ import { luca } from '../../lib/luca'
 import { useAi33 } from '../../stores/ai33'
 import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
-import { attachmentOf, IMAGES_ONLY, kindOf, useStart, type Attachment } from '../../stores/start'
+import {
+  attachmentOf,
+  IMAGES_ONLY,
+  kindOf,
+  STOPPED,
+  useStart,
+  type Attachment
+} from '../../stores/start'
 import { Ai33KeyCard } from '../ai33/Ai33KeyCard'
 import { AssemblyAiKeyCard } from './AssemblyAiKeyCard'
 import { CreateProgressList } from './CreateProgress'
@@ -243,27 +251,18 @@ function StartCard(): ReactElement {
                 Start from a brief
               </Button>
             </div>
-            <button
-              type="button"
-              onClick={() => setScriptMode(true)}
-              className="-mt-1 text-[12px] font-medium text-text-2 underline-offset-2 transition-colors hover:text-text hover:underline"
-            >
+            <Button variant="secondary" size="md" onClick={() => setScriptMode(true)}>
               No footage? Start from a script
-            </button>
+            </Button>
             {files.length ? (
               <div className="fade-in rounded-[10px] border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[12px] text-danger">
                 {IMAGES_ONLY}
               </div>
             ) : null}
+            {error && error !== IMAGES_ONLY ? <StartError className="w-full text-left" /> : null}
           </div>
         )}
       </div>
-
-      {error && !busy ? (
-        <div className="fade-in -mt-2 w-full rounded-[10px] border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[12px] text-danger select-text">
-          {error}
-        </div>
-      ) : null}
 
       {!busy ? (
         <button
@@ -280,6 +279,48 @@ function StartCard(): ReactElement {
 }
 
 /**
+ * Why the start didn't happen, inside the card where the person is looking (the card is taller than
+ * a small window, so a message under it is out of sight) and scrolled to. Cancel is a quiet note,
+ * not a red box.
+ */
+function StartError({ className }: { className?: string }): ReactElement | null {
+  const error = useStart((s) => s.error)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    // the panel comes back scrolled to the top, and the message sits below the fold of a small window
+    const el = ref.current
+    if (!error || !el) return
+    // the row under it has the button to try again: bring both in, the message first if they don't fit
+    ;(el.nextElementSibling ?? el).scrollIntoView?.({ block: 'nearest' })
+    el.scrollIntoView?.({ block: 'nearest' })
+  }, [error])
+  if (!error) return null
+  if (error === STOPPED)
+    return (
+      <div
+        ref={ref}
+        role="status"
+        className={cn('fade-in text-[12px] text-text-2 select-text', className)}
+      >
+        {error}
+      </div>
+    )
+  return (
+    <div
+      ref={ref}
+      role="alert"
+      className={cn(
+        'fade-in flex items-start gap-2 rounded-[10px] border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[12px] text-danger select-text',
+        className
+      )}
+    >
+      <CircleAlert size={13} className="mt-[3px] shrink-0" />
+      <span className="min-w-0">{error}</span>
+    </div>
+  )
+}
+
+/**
  * The card's form: the style, the kind of video, a reference, the steps, the brief, and go. With a
  * script to record it leads with the script fields.
  */
@@ -290,6 +331,8 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [keyLater, setKeyLater] = useState(false)
   const hasAi33 = useAi33((s) => s.hasKey)
+  // a script typed before footage was dropped is kept, out of sight
+  const savedScript = useStart((s) => !script && !!s.script.text.trim())
   const ref = useRef<HTMLTextAreaElement>(null)
   const kind = kindOf(files)
   const brief = kind === 'brief'
@@ -341,15 +384,21 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
   }, [notes])
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      onGo()
-    }
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+    // recording a script uses credits: there Enter is a new line, as in the script box, and ⌘↩ starts
+    if (script && !(e.metaKey || e.ctrlKey)) return
+    e.preventDefault()
+    onGo()
   }
 
   return (
     <div className="rise-in flex flex-col">
       <div className="flex flex-col gap-5 p-4">
+        {savedScript ? (
+          <p className="fade-in text-[12px] text-text-2">
+            Your script is saved. Remove the video to go back to it.
+          </p>
+        ) : null}
         {script ? <ScriptFields onGo={onGo} /> : <Tiles />}
         {script && files.length ? (
           // a logo or screenshots dropped on the card before the script came along
@@ -527,7 +576,9 @@ function EditForm({ onGo, script = false }: { onGo: () => void; script?: boolean
         </Field>
       </div>
 
-      <div className="sticky bottom-0 z-10 -mx-px flex flex-wrap items-center gap-2 rounded-b-[18px] border-t border-border bg-input px-4 py-3">
+      <StartError className="mx-4 mb-4" />
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
         <span className="text-[12px] font-medium text-text-2">Format</span>
         {/* it starts out matching the first video's shape: pick 9:16 to make a short of it */}
         <Segmented

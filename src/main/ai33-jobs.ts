@@ -37,7 +37,7 @@ export type LedgerEntry = {
 export const inflight = new Map<string, Promise<JobOutcome>>()
 
 const MAX_ENTRIES = 200
-/** A job whose result was collected is forgotten after this long. */
+/** A job whose result was collected, or that never finished and was given up on, is forgotten after this long. */
 const KEEP_COLLECTED_MS = 30 * 24 * 60 * 60 * 1000
 const LOST_ON_QUIT = 'Luca was closed before ai33 answered, so this job can’t be found again.'
 
@@ -139,7 +139,12 @@ function load(): LedgerEntry[] {
 /** Oldest finished entries go first when the ledger is full; a job still running never does. */
 function prune(all: LedgerEntry[]): LedgerEntry[] {
   const now = Date.now()
-  const kept = all.filter((e) => !(e.collected && now - e.submittedAt > KEEP_COLLECTED_MS))
+  const kept = all.filter((e) => {
+    if (now - e.submittedAt <= KEEP_COLLECTED_MS) return true
+    // a month on, a job still `working` that no poller follows (or one that was lost) has nothing left to wait for
+    const abandoned = (e.state === 'working' || e.state === 'lost') && !active.has(e.jobId)
+    return !(e.collected || abandoned)
+  })
   if (kept.length <= MAX_ENTRIES) return kept
   const byAge = [...kept].sort((a, b) => a.submittedAt - b.submittedAt)
   const drop = new Set<string>()
@@ -197,6 +202,19 @@ export function upsert(entry: LedgerEntry): void {
   const at = all.findIndex((e) => e.jobId === entry.jobId)
   if (at >= 0) all[at] = copy
   else all.push(copy)
+  save()
+}
+
+/**
+ * The result of a job has been saved (into a project, or handed to Luca): it is no longer waiting
+ * to be collected. Called only once the files exist; the rest of the entry (its files at ai33, its
+ * cost) is left as it is.
+ */
+export function markCollected(jobId: string, dest: string[] = []): void {
+  const all = load()
+  const at = all.findIndex((e) => e.jobId === jobId)
+  if (at < 0) return
+  all[at] = { ...all[at], collected: true, ...(dest.length ? { dest: [...dest] } : {}) }
   save()
 }
 

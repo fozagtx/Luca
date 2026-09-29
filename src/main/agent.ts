@@ -24,7 +24,7 @@ import type {
 import { alwaysAllowRule, describeActivity, describeResult, shellWords } from '../shared/activity'
 import { hasAi33Key, onKeyConnected } from './ai33-account'
 import type { Ai33Ctx, Ai33Turn, ToolName } from './ai33-ctx'
-import { ASK_TIMEOUT_MS } from './ai33-spend'
+import { ASK_TIMEOUT_MS, endPreapproval } from './ai33-spend'
 import { childEnv, HYPERFRAMES, run, which } from './env'
 import { Channels, broadcast, notifyInBackground } from './ipc'
 import { catalogTitle } from './library'
@@ -49,7 +49,7 @@ const SYSTEM_RULES = [
   '9. When the user attaches a video and asks to make theirs like it, move like it, or use it as a reference or inspiration, call reference_study with it instead of putting it on the timeline, then follow the instructions it returns.',
   '10. Sound nobody recorded is made with speech_generate (a voiceover from words, a spoken line, or a conversation between voices), music_generate (music under the video) and sfx_generate (a whoosh, a hit, an ambience). They spend the user’s ai33 credits and take from seconds to a few minutes: use them only when the user asks or the edit plan in .luca/EDIT.md switches them on, one item per request unless they ask for more (music already comes with a second take; sfx_generate takes several effects in one call), and say in one short line what you are about to make, and that it takes a minute or two when it does, before you call. The tools place the result on the timeline themselves at a good level: never write audio tags by hand and never change a level the user set. You cannot hear: report what you made, where it plays and how long it is, never how it sounds, and offer one next step (the other take, a different voice or mood). Music is instrumental and sits quietly under the voice, made after the cuts and titles so it fits the final length; a sound effect marks one moment (a title landing, a hit, a turn) and is never a texture under everything. The user’s own music always wins over making some.',
   '11. The tools ask the user themselves before anything that costs a lot, so do not ask permission; for a batch (many effects) say the rough total in one short line first. If a tool says the user declined, has not connected ai33, has too few credits, or failed, say what it tells you in one plain sentence and stop: never call it again for the same thing, never make it another way, never blame the user. If it says a job is still working, tell the user it will be ready in a few minutes and do not start it again; when asked, call ai33_status. After an undo the files are still saved: look with ai33_status (saved) and use audio_place before making anything again. Say credits (never dollars) when a tool tells you to. You may say ai33 when the key, the credits or an error make it useful; never name the companies behind the voices or music, never say a voice or music is royalty free or safe to sell (if asked, say ai33’s terms apply).',
-  '12. Voices: when the user names a tone or a kind of person (calm, warm, a deep man), let speech_generate pick and go ahead; when they want to hear, browse or change the voice, call voice_search, say one short line and stop so they can listen and pick. Read a script exactly as written; names, brands and acronyms that need a special sound go in say, with one line telling the user how you will say them. Never clone or imitate a real person’s voice. When a video already has a voice, a line made with speech_generate needs a start time and the captions still follow the original recording. A voiceover Luca recorded from the user’s script has exact words and times already: call transcribe to read them (it is free and sends nothing anywhere), never pass force, and never call clean_edit on it; to change its voice or speed, tell the user it means starting again from the script (parts already recorded are not paid for twice).',
+  '12. Voices: when the user names a tone or a kind of person (calm, warm, a deep man), let speech_generate pick and go ahead; when they want to hear, browse or change the voice, call voice_search, say one short line and stop so they can listen and pick. Read a script exactly as written; names, brands and acronyms that need a special sound go in say, with one line telling the user how you will say them. Never clone or imitate a real person’s voice. When a video already has a voice, a line made with speech_generate needs a start time and the captions still follow the original recording. A voiceover Luca recorded from the user’s script has exact words and times already: call transcribe to read them (it is free and sends nothing anywhere), never pass force, and never call clean_edit on it; to change its voice or speed, tell the user it means starting again from the script (a different voice or speed is recorded and charged again; only an identical retry is free).',
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
   'Never name the technology behind Luca in replies: no HyperFrames, Remocn, Remotion, GSAP, Three.js, WebGL, shaders, compositions, keyframes, snippets or lint. Call things what the viewer sees (a cut, zoom, title, caption, B-roll, animation, effect, transition) and use the plain-English title of anything you added, not its id.',
   'Keep replies short: say what you changed and why, no preamble.'
@@ -94,6 +94,15 @@ const DISALLOWED_TOOLS = [
   'mcp__playwright__*',
   'mcp__chrome-devtools__*'
 ]
+
+/** Files Luca writes itself: what the person agreed to (ai33) and where a project's words come from (script). */
+const LUCA_OWNED = new Set(['.luca/ai33.json', '.luca/script.json'])
+
+/**
+ * The same, as deny rules. A tool in ALLOWED_TOOLS is allowed without canUseTool being asked, so
+ * the check there alone would not hold; a deny rule is looked at first.
+ */
+const NO_EDIT = [...LUCA_OWNED].flatMap((f) => [`Edit(${f})`, `Write(${f})`])
 
 type Pending = {
   resolve: (r: PermissionResult) => void
@@ -238,6 +247,8 @@ export class ProjectAgent {
   private turnStartedAt = 0
   private streamedText = ''
   private working = false
+  /** The turn has ended and its listeners are still running: nothing else is dispatched until they are done. */
+  private ending = false
   private queued: Turn[] = []
   /** The turn being answered now. */
   private active: Turn | null = null
@@ -381,7 +392,7 @@ export class ProjectAgent {
       systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM_RULES },
       permissionMode: 'acceptEdits',
       allowedTools: ALLOWED_TOOLS,
-      disallowedTools: DISALLOWED_TOOLS,
+      disallowedTools: [...DISALLOWED_TOOLS, ...NO_EDIT],
       mcpServers: { luca: lucaMcpServer(this.project.dir, this.ai33Ctx()) },
       canUseTool: this.canUseTool,
       includePartialMessages: true,
@@ -585,7 +596,7 @@ export class ProjectAgent {
   /** Stop the current turn. Messages sent while it ran stay queued and are answered next. */
   async interrupt(): Promise<void> {
     // messages queued meanwhile stay queued and are answered next ("Luca will read this next")
-    if (this.working) {
+    if (this.working && !this.ending) {
       this.interrupted = true
       // the person's Stop is the one thing that cancels an ai33 job at ai33
       this.stopTurn.abort()
@@ -627,9 +638,16 @@ export class ProjectAgent {
       if (!abs.startsWith(resolve(this.project.dir) + sep)) {
         return { behavior: 'deny', message: 'Luca only allows edits inside the project folder.' }
       }
-      const rel = abs.slice(resolve(this.project.dir).length + 1)
+      // lower case: the Mac's disk doesn't tell .luca/AI33.json from .luca/ai33.json
+      const rel = abs.slice(resolve(this.project.dir).length + 1).toLowerCase()
       if (rel.startsWith(`media${sep}`) || rel.startsWith(`renders${sep}`)) {
         return { behavior: 'deny', message: 'media/ and renders/ are immutable in Luca.' }
+      }
+      if (LUCA_OWNED.has(rel.split(sep).join('/'))) {
+        return {
+          behavior: 'deny',
+          message: 'Luca keeps that file itself; it can’t be edited here.'
+        }
       }
     }
     if (getSettings().approvals === 'full') return { behavior: 'allow', updatedInput: input }
@@ -1043,8 +1061,9 @@ export class ProjectAgent {
   }
 
   private finishTurn(isError: boolean, error?: string): void {
-    if (!this.working) return
-    this.working = false
+    if (!this.working || this.ending) return
+    // still `working` until the listeners are done: a message sent meanwhile is queued, not dispatched
+    this.ending = true
     // a turn the person stopped isn't shown as a failure, but whoever waits on it must not
     // carry on as if it had succeeded
     const stopped = this.interrupted
@@ -1080,27 +1099,62 @@ export class ProjectAgent {
       error: stopped ? 'Stopped' : error
     }
     this.emit(end)
-    for (const cb of turnEndListeners) cb(this.project, end)
-    const turn = this.active
-    this.active = null
-    // a stopped turn is not a success for whoever waits on it (clean edit, Save Look), and
-    // they show the error to the person, so it is in plain words
-    turn?.done?.({
-      isError: end.isError,
-      error: stopped ? 'Stopped' : error && (PLAIN_ERRORS[error] ?? error)
+    // the Music start chip covered this project's first turn, whether or not it made any music
+    endPreapproval(this.project.dir)
+    // each listener starts now, in order; the turn is over for whoever waits on it only once they
+    // are all done (captions re-timed, the version queued), and before the next turn starts
+    const listeners = [...turnEndListeners].map((cb) => {
+      try {
+        return Promise.resolve(cb(this.project, end))
+      } catch (err) {
+        return Promise.reject(err)
+      }
     })
-    if (this.state === 'working') this.setState('ready')
-    // without a live session the queue waits for the next start (restart, or the next send)
-    if (this.q) {
-      const next = this.queued.shift()
-      if (next) this.dispatch(next)
-    }
+    void listenersDone(listeners).then(() => {
+      const turn = this.active
+      this.active = null
+      this.working = false
+      this.ending = false
+      // a stopped turn is not a success for whoever waits on it (clean edit, Save Look), and
+      // they show the error to the person, so it is in plain words
+      turn?.done?.({
+        isError: end.isError,
+        error: stopped ? 'Stopped' : error && (PLAIN_ERRORS[error] ?? error)
+      })
+      if (this.state === 'working') this.setState('ready')
+      // without a live session the queue waits for the next start (restart, or the next send)
+      if (this.q) {
+        const next = this.queued.shift()
+        if (next) this.dispatch(next)
+      }
+    })
   }
+}
+
+/** How long a turn's end waits for its listeners: one that hangs must not leave the chat stuck. */
+const LISTENERS_MAX_MS = 120_000
+
+/** Settled when every listener has finished (a failing one is only logged) or the wait is up. */
+async function listenersDone(listeners: Promise<void>[]): Promise<void> {
+  let timer: NodeJS.Timeout | undefined
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, LISTENERS_MAX_MS)
+    timer.unref()
+  })
+  const all = Promise.allSettled(listeners).then((rs) => {
+    for (const r of rs)
+      if (r.status === 'rejected') console.warn('[luca] turn end failed', r.reason)
+  })
+  await Promise.race([all, late])
+  clearTimeout(timer)
 }
 
 // ------------------------------------------------------------------ registry
 let active: ProjectAgent | null = null
-type TurnEndListener = (project: Project, e: Extract<AgentEvent, { type: 'turn-end' }>) => void
+type TurnEndListener = (
+  project: Project,
+  e: Extract<AgentEvent, { type: 'turn-end' }>
+) => void | Promise<void>
 const turnEndListeners = new Set<TurnEndListener>()
 
 export function agentFor(project: Project): ProjectAgent {

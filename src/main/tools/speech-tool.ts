@@ -11,6 +11,7 @@ import {
   type Grant,
   type Placed,
   type Say,
+  type SpendReq,
   type SpeechReq,
   type SpeechResult,
   type VoiceRef
@@ -22,6 +23,7 @@ import {
   makeSpeech,
   previewSpeech,
   SpeechDeclined,
+  SpeechPartError,
   SpeechStillWorking,
   voiceHealth
 } from '../ai33-speech'
@@ -32,7 +34,15 @@ import {
   speakersUsed,
   wordsFromScript
 } from '../ai33-speech-text'
-import { settleSpend } from '../ai33-spend'
+import {
+  gateSpendWith,
+  holdSpend,
+  lostRecently,
+  mayHaveBeenCharged,
+  precheckSpend,
+  settleSpend,
+  voiceLabel
+} from '../ai33-spend'
 import { patchProjectAi33, readProjectAi33 } from '../ai33-store'
 import { listVoices, pickVoice, resolveVoice } from '../ai33-voices'
 import { findSaved, importGenerated, placeAudio, probeAudio, projectHasVoice } from '../place'
@@ -43,7 +53,6 @@ import {
   okJson,
   OVERLOADED,
   SPEND_DECLINED,
-  spend,
   STILL_WORKING,
   type Guard
 } from './common'
@@ -215,9 +224,6 @@ type Gate = {
   paid: number
 }
 
-const isGrant = (r: Grant | CallToolResult): r is Grant =>
-  typeof (r as Grant).reserved === 'number' && typeof (r as Grant).id === 'string'
-
 /** A few of the words, for the saved file's name. */
 function slugFrom(name: string | undefined, text: string): string {
   const said = (name?.trim() || text.split(/\s+/).slice(0, 5).join(' ')).trim()
@@ -249,7 +255,7 @@ function tellFor(o: {
   const used = o.reused ? 'no credits used' : `used ${formatCredits(o.credits)} credits`
   const left = o.left === null ? '' : `, ${formatCredits(o.left)} left`
   return [
-    `Tell the user in two short lines what you recorded${o.dialogue ? '' : ` in ${o.voice.name}’s voice`}, where it plays and how long it is (${formatSpan(o.seconds)}), the credits clause (${used}${left}) and one next step, for example “Want a different voice? I can show a few to listen to.”`,
+    `Tell the user in two short lines what you recorded${o.dialogue ? '' : ` in ${voiceLabel(o.voice.name)}’s voice`}, where it plays and how long it is (${formatSpan(o.seconds)}), the credits clause (${used}${left}) and one next step, for example “Want a different voice? I can show a few to listen to.”`,
     'You cannot hear it: never say how it sounds.',
     o.left !== null && o.left < LOW_BALANCE ? 'Credits are running low: mention it once.' : ''
   ]
@@ -302,17 +308,20 @@ async function generate(
   }
 
   const gate: Gate = { grant: null, refused: null, paid: 0 }
+  // an identical part was sent a moment ago and ai33 never answered: it may have been charged
+  const again = !saved && preview.uncachedHashes.some(lostRecently)
+  const spendReq = (units: number, estimate?: Ai33Estimate): SpendReq => ({
+    kind: dialogue ? 'dialogue' : 'speech',
+    units,
+    summary: `${dialogue ? 'Conversation' : 'Voiceover'}, ${formatCredits(units)} characters`,
+    estimate,
+    voice: dialogue ? null : { id: heard.id, name: heard.name },
+    ...(a.at !== undefined && !dialogue ? { thing: 'the line' } : {})
+  })
   const ask = async (units: number, estimate?: Ai33Estimate): Promise<boolean> => {
-    const r = await spend(ctx, {
-      kind: dialogue ? 'dialogue' : 'speech',
-      units,
-      summary: `${dialogue ? 'Conversation' : 'Voiceover'}, ${formatCredits(units)} characters`,
-      estimate,
-      voice: dialogue ? null : { id: heard.id, name: heard.name },
-      ...(a.at !== undefined && !dialogue ? { thing: 'the line' } : {})
-    })
-    if (isGrant(r)) gate.grant = r
-    else gate.refused = r
+    const r = await gateSpendWith(ctx, spendReq(units, estimate), { again })
+    if (r.go) gate.grant = r.grant
+    else gate.refused = r.result
     return gate.grant !== null
   }
 
@@ -321,10 +330,17 @@ async function generate(
   if (!saved) {
     if (preview.uncachedParts > 0 && (await voiceHealth(ids)) === 'overloaded')
       return fail(OVERLOADED)
-    // one part left to record is asked about now; more are asked about once the first shows what they cost
-    const upfront = preview.uncachedParts <= 1
+    // one part left to record is asked about now, and so is a repeat of one that may have been
+    // charged; more are asked about once the first shows what they cost
+    const upfront = preview.uncachedParts <= 1 || again
     if (preview.uncachedParts > 0 && upfront && !(await ask(preview.uncachedChars)))
       return gate.refused as CallToolResult
+    // that first part is paid before anything can be asked, so the caps and the balance are
+    // checked first (no card: a card needs the price it shows)
+    if (!upfront && preview.firstChars > 0) {
+      const first = await precheckSpend(ctx, spendReq(preview.firstChars))
+      if (!first.go) return first.result
+    }
     try {
       made = await makeSpeech(req, {
         signal: g.signal,
@@ -347,13 +363,13 @@ async function generate(
       })
     } catch (err) {
       if (gate.grant) {
-        // a part still recording at ai33 keeps its estimate; anything else settles at what it used
-        const used = (err as { credits?: number }).credits ?? 0
-        settleSpend(
-          ctx,
-          gate.grant,
-          err instanceof SpeechStillWorking ? gate.grant.reserved : Math.max(0, used - gate.paid)
-        )
+        // a part still recording at ai33, or one that may have been charged, keeps its estimate and
+        // its place in the caps (settling at 0 would free it for a retry); anything else settles at what it used
+        const used = Math.max(0, ((err as { credits?: number }).credits ?? 0) - gate.paid)
+        const wrapped = err instanceof SpeechPartError ? err.cause : err
+        if (err instanceof SpeechStillWorking) holdSpend(ctx, gate.grant)
+        else if (used === 0 && mayHaveBeenCharged(wrapped)) holdSpend(ctx, gate.grant)
+        else settleSpend(ctx, gate.grant, used)
       }
       if (err instanceof SpeechDeclined)
         return gate.refused ?? okJson({ ok: false, declined: true, tell: SPEND_DECLINED })

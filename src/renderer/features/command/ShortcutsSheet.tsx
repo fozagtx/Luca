@@ -45,7 +45,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       ['⇧⌘W', 'Home: close the project'],
       ['⇧⌘R', 'Show the project in Finder'],
       ['⇧⌘E', 'Clean edit'],
-      ['⌘Y', 'Versions']
+      ['⌘Y', 'Versions'],
+      ['⌘,', 'Connections']
     ]
   },
   {

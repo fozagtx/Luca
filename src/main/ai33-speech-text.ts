@@ -47,9 +47,15 @@ function ends(text: string, limit: number): number[] {
   return out
 }
 
+/** The last whitespace of any kind (a tab, a no-break or ideographic space...) at or before `max`, or -1. */
+function lastBreak(text: string, max: number): number {
+  for (let i = Math.min(max, text.length - 1); i > 0; i--) if (/\s/u.test(text[i])) return i
+  return -1
+}
+
 /**
  * The first at-most-`max` characters cut where a sentence ends (else at a comma or other clause
- * end, else at a space, else in the middle of a word), and what follows. `blank`: the cut fell
+ * end, else at whitespace, else in the middle of a word), and what follows. `blank`: the cut fell
  * where a blank line follows, so a paragraph ended there.
  */
 export function cutAt(text: string, max: number): { head: string; rest: string; blank: boolean } {
@@ -61,8 +67,7 @@ export function cutAt(text: string, max: number): { head: string; rest: string; 
       cut = m.index + 1
     }
   }
-  if (cut < 1) cut = text.lastIndexOf(' ', max)
-  if (cut < 1) cut = text.lastIndexOf('\n', max)
+  if (cut < 1) cut = lastBreak(text, max)
   if (cut < 1) {
     cut = max
     // never between the halves of a character outside the BMP
@@ -647,8 +652,30 @@ export type Cue = { start: number; end: number; text: string }
 
 const STAMP = /(\d+):(\d\d):(\d\d)[,.](\d{1,3})/g
 
-/** The cues of an SRT file (times in seconds), or none when it isn't one. */
+/** A subtitle or word-time file bigger than this is not read: real ones are a few hundred KB at most. */
+export const TIMING_FILE_MAX_BYTES = 2 * 1024 * 1024
+/** A time line is `00:00:01,000 --> 00:00:02,000` and a little more. */
+const STAMP_LINE_MAX = 200
+
+/** `text` without the spans that open with `open` and end at the next `close`; an unclosed one stays. */
+function withoutSpans(text: string, open: string, close: string): string {
+  let out = ''
+  let from = 0
+  for (;;) {
+    const at = text.indexOf(open, from)
+    if (at < 0) break
+    const end = text.indexOf(close, at + 1)
+    // no closing character left means no later span can close either: stop looking
+    if (end < 0) break
+    out += text.slice(from, at)
+    from = end + 1
+  }
+  return out + text.slice(from)
+}
+
+/** The cues of an SRT file (times in seconds), or none when it isn't one (or is too big to read). */
 export function parseSrt(srt: string): Cue[] {
+  if (srt.length > TIMING_FILE_MAX_BYTES) return []
   const cues: Cue[] = []
   for (const block of srt
     .replace(/\r\n?/g, '\n')
@@ -657,15 +684,12 @@ export function parseSrt(srt: string): Cue[] {
     const lines = block.split('\n')
     const at = lines.findIndex((l) => l.includes('-->'))
     if (at < 0) continue
-    const stamps = [...lines[at].matchAll(STAMP)].map(
+    const stamps = [...lines[at].slice(0, STAMP_LINE_MAX).matchAll(STAMP)].map(
       (m) =>
         Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4].padEnd(3, '0')) / 1000
     )
     if (stamps.length < 2) continue
-    const text = lines
-      .slice(at + 1)
-      .join(' ')
-      .replace(/<[^>]*>|\{[^}]*\}/g, '')
+    const text = withoutSpans(withoutSpans(lines.slice(at + 1).join(' '), '<', '>'), '{', '}')
       .replace(/\s+/g, ' ')
       .trim()
     if (text) cues.push({ start: stamps[0], end: stamps[1], text })

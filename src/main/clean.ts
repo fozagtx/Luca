@@ -8,6 +8,7 @@ import { isScriptProject } from './ai33-store'
 import { hasTranscript, refreshCaptions } from './captions'
 import { speechClips } from './captions-html'
 import { footageVideos } from './color'
+import { unescapeAttr } from './timeline-read'
 import { ffmpegProgress, probeMedia } from './env'
 import { AUDIO_EXT } from './footage'
 import { closingOffset, findTagById, findTags, replaceTag, setAttrs, type TagMatch } from './html'
@@ -307,7 +308,8 @@ function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): vo
   const pieces: Piece[] = []
   for (const tag of tags) {
     if ((tag.name !== 'video' && tag.name !== 'audio') || !topLevel(tag)) continue
-    const src = tag.attrs.src ?? ''
+    // the parser hands back what is written: "Q&amp;A.mp3" is the source "Q&A.mp3"
+    const src = unescapeAttr(tag.attrs.src ?? '')
     const isSource = sourceRels.has(src)
     if (!isSource && !CLEAN_FILE.test(src)) continue
     const before = isSource ? [] : cutsOf(p, src)

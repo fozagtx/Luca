@@ -306,10 +306,22 @@ const clock = (seconds: number): string => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
+/**
+ * What a job cost, as words for the end of a step's label: "610 credits", "no credits" only when
+ * the result says the work was reused (nothing was spent), and nothing when the result doesn't say.
+ */
 const used = (r: { credits?: unknown; reused?: unknown }): string =>
-  r.reused === true || !r.credits || typeof r.credits !== 'number'
+  r.reused === true
     ? 'no credits'
-    : `${formatCredits(r.credits)} credits`
+    : typeof r.credits === 'number' && r.credits > 0
+      ? `${formatCredits(r.credits)} credits`
+      : ''
+
+/** A step's label with its cost after it (` · 610 credits`), or as it is when there is none to say. */
+const withCost = (label: string, r: { credits?: unknown; reused?: unknown }): string => {
+  const cost = used(r)
+  return cost ? `${label} · ${cost}` : label
+}
 
 const number = (v: unknown): number | null => (typeof v === 'number' && isFinite(v) ? v : null)
 
@@ -346,26 +358,23 @@ export function describeResult(
     case 'speech_generate': {
       const seconds = number(r.seconds)
       const what = seconds === null ? 'the voiceover' : `a ${formatSpan(seconds)} voiceover`
-      return { done: `Recorded ${what} · ${used(r)}` }
+      return { done: withCost(`Recorded ${what}`, r) }
     }
     case 'music_generate':
       return {
         done:
-          r.reused === true ? 'Used the music already made · no credits' : `Made music · ${used(r)}`
+          r.reused === true ? 'Used the music already made · no credits' : withCost('Made music', r)
       }
     case 'sfx_generate': {
       const placed = Array.isArray(r.placed) ? (r.placed as Record<string, unknown>[]) : []
       const count = Math.max(placed.length, Array.isArray(r.files) ? r.files.length : 0)
-      if (count > 1) return { done: `Made ${count} sound effects · ${used(r)}` }
+      if (count > 1) return { done: withCost(`Made ${count} sound effects`, r) }
       const one = placed[0]
       const title = typeof one?.title === 'string' ? one.title.trim().toLowerCase() : ''
       const start = number(one?.start)
       const noun = title ? `${/^[aeiou]/.test(title) ? 'an' : 'a'} ${title}` : 'a sound effect'
       return {
-        done:
-          start === null
-            ? `Made ${noun} · ${used(r)}`
-            : `Added ${noun} at ${clock(start)} · ${used(r)}`
+        done: withCost(start === null ? `Made ${noun}` : `Added ${noun} at ${clock(start)}`, r)
       }
     }
     default:

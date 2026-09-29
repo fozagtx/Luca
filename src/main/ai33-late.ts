@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Ai33Kind, Ai33Notice, SavedAsset } from '../shared/ai33'
 import type { Project } from '../shared/types'
-import { dataDir, downloadTo, thingFor } from './ai33-client'
+import { dataDir, downloadTo, takeUrls, thingFor } from './ai33-client'
 import { upsert, type JobEvent, type LedgerEntry } from './ai33-jobs'
 import { findSaved, importGenerated } from './place'
 
@@ -49,8 +49,8 @@ const slugOf = (text: string, fallback: string): string =>
  * has them, and checked before they are kept. Files already saved are used as they are.
  */
 async function saveFinished(p: Project, entry: LedgerEntry): Promise<string[]> {
-  const urls = entry.urls
-  const from = urls?.audios?.length ? urls.audios : urls?.audio ? [urls.audio] : []
+  // only as many links as this kind of job makes, whatever ai33 lists
+  const from = takeUrls(entry.kind, entry.urls ?? {})
   if (!from.length) return []
   const kind: SavedAsset['kind'] = entry.kind === 'dialogue' ? 'speech' : entry.kind
   const have = findSaved(p.dir, kind, entry.requestHash)

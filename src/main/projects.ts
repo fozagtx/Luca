@@ -24,7 +24,7 @@ import type {
 } from '../shared/types'
 import { hasAi33Key } from './ai33-account'
 import { getCredits } from './ai33-client'
-import { grantPreapproval, MUSIC_SEED } from './ai33-spend'
+import { endPreapproval, grantPreapproval, MUSIC_SEED, voiceLabel } from './ai33-spend'
 import { finishScriptStart, scriptToAudio, startAbort, throwIfStopped } from './ai33-start'
 import { childEnv, HYPERFRAMES, probeMedia, run, runHyperframes, which } from './env'
 import {
@@ -359,7 +359,9 @@ async function createProject(
     void ensurePoster(project)
     return { project, kind, brief }
   } catch (err) {
-    // the folder is this call's own (uniqueDir made it): don't leave half a project behind
+    // the folder is this call's own (uniqueDir made it): don't leave half a project behind, nor
+    // the Music chip's permission for it (ended first: it also writes into the folder)
+    endPreapproval(dir)
     rmSync(dir, { recursive: true, force: true })
     throw err
   } finally {
@@ -609,7 +611,7 @@ const NO_MUSIC_UNKNOWN =
 function scriptBrief(p: PreparedScript): string {
   const language = languageFor(p.language)
   const lines = [
-    `The voiceover is ${p.voice.name}’s voice reading the user’s script${language && language.id !== 'en' ? `, in ${language.name}: write every title in ${language.name} too` : ''}.`
+    `The voiceover is ${voiceLabel(p.voice.name)}’s voice reading the user’s script${language && language.id !== 'en' ? `, in ${language.name}: write every title in ${language.name} too` : ''}.`
   ]
   lines.push(
     p.credits > 0

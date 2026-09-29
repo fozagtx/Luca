@@ -80,7 +80,18 @@ async function ensureRepoNow(dir: string): Promise<void> {
   const g = git(dir)
   if (!existsSync(join(dir, '.git'))) await g.init()
   const gi = join(dir, '.gitignore')
-  const topped = toppedUpGitignore(existsSync(gi) ? readFileSync(gi, 'utf8') : null)
+  const existing = existsSync(gi) ? readFileSync(gi, 'utf8') : null
+  // a file another tool wrote is the person's own: it is only added to when this project has
+  // generated sound that would otherwise be tracked (opening a project never makes a version)
+  const generated = [
+    join('media', 'generated'),
+    join('.luca', 'ai33.json'),
+    join('.luca', 'script.json')
+  ]
+  const topped =
+    existing === null || generated.some((f) => existsSync(join(dir, f)))
+      ? toppedUpGitignore(existing)
+      : null
   if (topped !== null) writeFileSync(gi, topped)
   const fresh = (await g.raw(['rev-list', '--count', 'HEAD']).catch(() => '0')).trim() === '0'
   await g.add(['-A'])

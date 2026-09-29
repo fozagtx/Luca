@@ -20,6 +20,16 @@ export type Ai33KeyCardProps = {
   className?: string
 }
 
+/**
+ * Whether a card that appears on its own may take the focus: not while a message is being typed
+ * (the words that come next would land in the masked key field, and Enter would send them to ai33
+ * as a key). An empty or unfocused message box has nothing to lose.
+ */
+function mayTakeFocus(): boolean {
+  const box = document.getElementById('chat-composer') as HTMLTextAreaElement | null
+  return !box || document.activeElement !== box || box.value.trim() === ''
+}
+
 const linkClass =
   'inline-flex items-center gap-0.5 text-[11px] font-medium text-accent hover:underline'
 
@@ -45,6 +55,9 @@ export function Ai33KeyCard({
   const [changing, setChanging] = useState(false)
   const [confirmOff, setConfirmOff] = useState(false)
   const field = useRef<HTMLInputElement>(null)
+  const change = useRef<HTMLButtonElement>(null)
+  // read once, as the card appears: focus is asked for then or not at all
+  const [mayFocus] = useState(mayTakeFocus)
 
   // credits and running jobs when the card appears (a card with no key has none to read)
   useEffect(() => {
@@ -56,11 +69,16 @@ export function Ai33KeyCard({
     if (!k || busy) return
     setBusy(true)
     setError(null)
+    // the field goes away once connected: in the sheet the focus moves on to "Change key"
+    const hadFocus = context === 'sheet' && document.activeElement === field.current
     try {
       const res = await saveKey(k)
       setKey('')
       setChanging(false)
       setNote(res.note ?? null)
+      // the sheet pulls the focus back to itself for a frame or two once the field is gone: wait it out
+      if (hadFocus)
+        requestAnimationFrame(() => requestAnimationFrame(() => change.current?.focus()))
       onDone?.()
     } catch (err) {
       // the field keeps what was pasted, so a typo is one edit away
@@ -140,7 +158,7 @@ export function Ai33KeyCard({
             </div>
           ) : chat ? null : (
             <div className="mt-2 flex items-center gap-1.5">
-              <Button size="sm" variant="ghost" onClick={() => setChanging(true)}>
+              <Button ref={change} size="sm" variant="ghost" onClick={() => setChanging(true)}>
                 Change key
               </Button>
               <Button size="sm" variant="ghost" loading={busy} onClick={() => void askDisconnect()}>
@@ -182,7 +200,7 @@ export function Ai33KeyCard({
             onChange={(e) => setKey(e.target.value)}
             placeholder="Paste your ai33 key"
             aria-label="ai33 key"
-            autoFocus={chat || changing || !!onDismiss}
+            autoFocus={changing || ((chat || !!onDismiss) && mayFocus)}
             className="mt-2"
             onKeyDown={(e) => e.key === 'Enter' && void save()}
           />

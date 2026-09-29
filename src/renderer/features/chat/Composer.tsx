@@ -77,10 +77,18 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const starting = useStart((s) => s.busy)
   const scriptMode = useStart((s) => s.scriptMode)
   const media = kindOf(startFiles) !== 'brief'
+  // a script typed on the start card is what a message here starts from, so it records, not edits
+  const scripted = useStart((s) => s.scriptMode && !!s.script.text.trim())
   const disabled = starting
   // a file still on its way in would be missing from the message
   const canSend = (hasText || (noProject && media)) && attaching.length === 0
-  const sendLabel = noProject ? 'Make it' : working ? 'Add to the queue' : 'Send'
+  const sendLabel = noProject
+    ? scripted && !media
+      ? 'Record and edit'
+      : 'Make it'
+    : working
+      ? 'Add to the queue'
+      : 'Send'
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -269,7 +277,11 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                 noProject
                   ? media
                     ? 'Anything Luca should know? (optional)'
-                    : 'Describe the video you want…'
+                    : scriptMode
+                      ? scripted
+                        ? 'Add notes for your script…'
+                        : 'Paste your script on the start card first…'
+                      : 'Describe the video you want…'
                   : 'Tell Luca what to change…'
               }
               className={cn(
@@ -322,7 +334,9 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                       ? '↩ to add to the queue'
                       : canSend
                         ? noProject
-                          ? '↩ to start editing'
+                          ? scripted && !media
+                            ? '↩ to record and edit'
+                            : '↩ to start editing'
                           : '↩ to send'
                         : ''}
               </span>

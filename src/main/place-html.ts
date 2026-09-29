@@ -5,7 +5,7 @@
  */
 import { basename, extname } from 'node:path'
 import type { PlaceAudio, Placed } from '../shared/ai33'
-import { sourceTags } from './captions-html'
+import { clipSrc, sourceTags } from './captions-html'
 import {
   closingOffset,
   findTagById,
@@ -16,6 +16,7 @@ import {
   setAttrs,
   type TagMatch
 } from './html'
+import { unescapeAttr } from './timeline-read'
 
 export type RowRole = PlaceAudio['role']
 
@@ -145,13 +146,6 @@ export type ClipInfo = {
   title: string | null
 }
 
-const unescapeAttr = (v: string): string =>
-  v
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-
 /** The `<audio>` with this id, or null. */
 export function findClip(html: string, id: string): ClipInfo | null {
   const tag = findTagById(html, id)
@@ -162,7 +156,7 @@ export function findClip(html: string, id: string): ClipInfo | null {
   return {
     id,
     role: roleOf(tag),
-    src: (tag.attrs.src ?? '').split(/[?#]/)[0],
+    src: clipSrc(tag),
     start,
     end: length > 0 ? r3(start + length) : null,
     row: num(tag.attrs['data-track-index'], 0),
@@ -188,6 +182,12 @@ const ROLE_WORD: Record<RowRole, string> = {
 
 const escapeAttr = (v: string): string =>
   v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/**
+ * A file name goes in as it is written on disk, with only the quote that would end the attribute
+ * escaped: "&" is common in names, and the parser never undoes an "&amp;" it finds.
+ */
+const escapeSrc = (v: string): string => v.replace(/"/g, '&quot;')
 
 const slugOf = (s: string): string =>
   s
@@ -271,7 +271,7 @@ export function insertAudio(
     ['data-luca-role', o.role],
     ...(title ? [['data-luca-title', title] as [string, string]] : [])
   ]
-  const tag = `<audio ${attrs.map(([k, v]) => `${k}="${escapeAttr(v)}"`).join(' ')}></audio>`
+  const tag = `<audio ${attrs.map(([k, v]) => `${k}="${k === 'src' ? escapeSrc(v) : escapeAttr(v)}"`).join(' ')}></audio>`
   let out = insertIntoRoot(base, `      ${tag}\n`)
   if (!out) throw new Error('Couldn’t find the video’s timeline in index.html to add the sound to.')
 
@@ -314,7 +314,7 @@ export function clampBeds(
     const current = num(tag.attrs['data-duration'], NaN)
     // no length written: the clip plays what the file has, and there is nothing to shorten
     if (!(current > 0) || start >= o.rootDuration) continue
-    const file = o.fileDurations[(tag.attrs.src ?? '').split(/[?#]/)[0]]
+    const file = o.fileDurations[clipSrc(tag)]
     const inFile = file > 0 ? file - Math.max(0, num(tag.attrs['data-media-start'], 0)) : Infinity
     const next = Math.min(current, o.rootDuration - start, inFile)
     if (next > 0 && next < current - 0.01)

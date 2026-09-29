@@ -354,6 +354,19 @@ export function AssistantMessage({
 
 // ------------------------------------------------------------------------------------ permission
 
+/**
+ * A text field with words in it, where ⌘↩ belongs to the field. An empty message box (where the
+ * caret usually is) is not typing, so the shortcut on a card still works from it. A key being
+ * pasted, or any field in a sheet, is left alone: allowing a step is never a side effect of that.
+ */
+function isTyping(t: HTMLElement | null): boolean {
+  if (!t) return false
+  if (t.isContentEditable) return true
+  if (t.tagName !== 'TEXTAREA' && t.tagName !== 'INPUT') return false
+  const field = t as HTMLInputElement | HTMLTextAreaElement
+  return field.value.trim() !== '' || field.type === 'password' || !!t.closest('[role="dialog"]')
+}
+
 /** What "Always allow" would permit. Only plain read-only commands get a rule (see canUseTool). */
 function allowScope(rule: string): string {
   const bash = /^Bash\((.+)\)$/.exec(rule)
@@ -395,7 +408,12 @@ function PermissionCard({
       if (askKind && e.shiftKey) return
       // typing a message: ⌘↩ sends it rather than allowing the step
       const t = e.target as HTMLElement | null
-      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return
+      // only an ai33 card treats an empty message box as "not typing"; every other permission
+      // card keeps the strict rule that any field means the person is typing
+      const typing = askKind
+        ? isTyping(t)
+        : !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)
+      if (typing) return
       e.preventDefault()
       e.stopImmediatePropagation()
       void decide(part.id, e.shiftKey && scope ? 'allow-always' : 'allow')
@@ -562,8 +580,20 @@ function AskCard({
           <AudioLines size={15} strokeWidth={1.75} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[12.5px] font-semibold text-text">
-            {connect ? ask.title || 'Luca needs an ai33 key' : ask.title}
+          {/* Luca is stopped until this is answered: it is announced as it comes up */}
+          <div role="alert">
+            <div className="text-[12.5px] font-semibold text-text">
+              {connect ? ask.title || 'Luca needs an ai33 key' : ask.title}
+            </div>
+            {connect ? null : (
+              <div className="mt-0.5 text-[12px] leading-[1.45] text-text-2">{ask.detail}</div>
+            )}
+            {!connect && ask.warn ? (
+              <div className="mt-1.5 flex items-start gap-1.5 text-[11.5px] leading-[1.4] text-text-2">
+                <CircleAlert size={12} className="mt-px shrink-0 text-warning" />
+                <span>{ask.warn}</span>
+              </div>
+            ) : null}
           </div>
           {connect ? (
             // the key field, Connect and Not now; connecting is typing a key, never a shortcut
@@ -574,13 +604,6 @@ function AskCard({
             />
           ) : (
             <>
-              <div className="mt-0.5 text-[12px] leading-[1.45] text-text-2">{ask.detail}</div>
-              {ask.warn ? (
-                <div className="mt-1.5 flex items-start gap-1.5 text-[11.5px] leading-[1.4] text-text-2">
-                  <CircleAlert size={12} className="mt-px shrink-0 text-warning" />
-                  <span>{ask.warn}</span>
-                </div>
-              ) : null}
               {ask.voice ? (
                 <div className="mt-2 flex items-center gap-1 text-[11.5px] text-text-2">
                   <AudioPreview voiceId={ask.voice.id} label={`Hear ${ask.voice.name}`} />

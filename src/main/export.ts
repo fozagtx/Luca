@@ -1,7 +1,7 @@
 import { utilityProcess, type UtilityProcess } from 'electron'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { cpus, totalmem } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { ExportOptions, ExportProgress, Project } from '../shared/types'
 import { childEnv, run, which } from './env'
 import {
@@ -64,7 +64,8 @@ async function probeSound(file: string): Promise<AudioProbe | null> {
       'stream=codec_type,duration:format=duration',
       '-of',
       'json',
-      file
+      ...['-protocol_whitelist', 'file'],
+      resolve(file)
     ],
     { env: await childEnv(), timeoutMs: 20_000 }
   )

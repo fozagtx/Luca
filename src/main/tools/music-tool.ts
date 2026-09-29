@@ -4,18 +4,18 @@ import type { Grant, MusicReq, MusicResult } from '../../shared/ai33'
 import type { Ai33Ctx, Ai33Tool } from '../ai33-ctx'
 import {
   costClause,
-  isGrant,
   lowNote,
   makeMusic,
   musicAlongside,
   musicIsFree,
+  musicLostRecently,
   musicRange,
   secs,
-  spentOnFailure
+  settleFailure
 } from '../ai33-sound'
-import { settleSpend } from '../ai33-spend'
+import { gateSpendWith, holdSpend, settleSpend } from '../ai33-spend'
 import { readProject } from '../projects'
-import { fail, guarded, okJson, spend, STILL_WORKING } from './common'
+import { fail, guarded, okJson, STILL_WORKING } from './common'
 
 /** music_generate, for the ai33 MCP server (mcp-ai33.ts). */
 export function musicTools(ctx: Ai33Ctx, projectDir: string): Ai33Tool[] {
@@ -72,14 +72,18 @@ export function musicTools(ctx: Ai33Ctx, projectDir: string): Ai33Tool[] {
           // music already made for this request is free: no card, and nothing reserved
           let grant: Grant | null = null
           if (!(await musicIsFree(req, p))) {
-            const gate = await spend(ctx, {
-              kind: 'music',
-              units: 1,
-              summary: `Music: ${req.mood.replace(/\s+/g, ' ').trim()}`.slice(0, 80),
-              thing: 'music'
-            })
-            if (!isGrant(gate)) return gate
-            grant = gate
+            const gate = await gateSpendWith(
+              ctx,
+              {
+                kind: 'music',
+                units: 1,
+                summary: `Music: ${req.mood.replace(/\s+/g, ' ').trim()}`.slice(0, 80),
+                thing: 'music'
+              },
+              { again: musicLostRecently(req) }
+            )
+            if (!gate.go) return gate.result
+            grant = gate.grant
           }
 
           let made: MusicResult
@@ -95,13 +99,14 @@ export function musicTools(ctx: Ai33Ctx, projectDir: string): Ai33Tool[] {
               { approved: grant !== null }
             )
           } catch (err) {
-            if (grant) settleSpend(ctx, grant, spentOnFailure(err, grant))
+            if (grant) settleFailure(ctx, grant, err)
             throw err
           }
 
-          // a job still running at ai33 keeps its estimate: what it costs isn't known yet
+          // a job still running at ai33 keeps its estimate: what it costs isn't known yet, so no
+          // price is learned from it either
           if (made.working) {
-            if (grant) settleSpend(ctx, grant, grant.reserved)
+            if (grant) holdSpend(ctx, grant)
             return okJson({
               ok: true,
               kind: 'music',

@@ -183,10 +183,10 @@ export function CommandPalette(): ReactElement {
     },
     {
       id: 'connect-ai33',
-      label: 'Connect ai33…',
+      label: 'Connections…',
       shortcut: '⌘,',
       icon: <Plug size={14} strokeWidth={1.5} />,
-      keywords: ['connections', 'key', 'credits', 'voices', 'music', 'sound'],
+      keywords: ['ai33', 'connect', 'settings', 'key', 'credits', 'voices', 'music', 'sound'],
       run: () => ui.setSettings(true)
     },
     {

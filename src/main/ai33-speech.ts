@@ -40,6 +40,7 @@ import {
   type JobSpec
 } from './ai33-client'
 import type { ProgressFn, SpendCtx } from './ai33-ctx'
+import { markCollected } from './ai33-jobs'
 import {
   chunkDialogue,
   chunkScript,
@@ -51,6 +52,7 @@ import {
   rulesHash8,
   speakersUsed,
   stripLabels,
+  TIMING_FILE_MAX_BYTES,
   timingLadder,
   wholeHash,
   worstTier,
@@ -62,7 +64,7 @@ import {
 import { patchProjectAi33, readProjectAi33 } from './ai33-store'
 import { pickVoice, providerOf, rememberVoice } from './ai33-voices'
 import { childEnv, run, which } from './env'
-import { probeAudio } from './place'
+import { isSoundFile, probeAudio } from './place'
 
 export { listVoices, pickVoice, resolveVoice, voicePreview } from './ai33-voices'
 export type { PickVoiceOpts } from './ai33-voices'
@@ -70,8 +72,8 @@ export { timingLadder, wordsFromScript }
 
 /** A recorded part is ai33's audio, whole: the biggest a download may be. */
 const AUDIO_MAX_BYTES = 300 * 1024 * 1024
-/** The transcript and subtitle files that come with a recorded part are small. */
-const TEXT_MAX_BYTES = 20 * 1024 * 1024
+/** The transcript and subtitle files that come with a recorded part are small: the timing code caps them too. */
+const TEXT_MAX_BYTES = TIMING_FILE_MAX_BYTES
 /** How long the background poller keeps going for one part. */
 const PART_DEADLINE_MS = 10 * 60_000
 /** Parts recorded at the same time. */
@@ -143,6 +145,13 @@ export class SpeechPartError extends Ai33Error {
 
 const stopped = (): Ai33Error =>
   new Ai33Error('stopped', 'Stopped before the voiceover was ready.', { charged: false })
+
+/** A failure after ai33 finished a part: the error says what that part cost, so nobody settles it as free. */
+function paidFor(err: unknown, credits: number): Ai33Error {
+  return Object.assign(err instanceof Ai33Error ? err : plainError(err, 'voiceover'), {
+    paid: credits
+  })
+}
 
 // ------------------------------------------------------------------------------ dictionary
 
@@ -404,6 +413,10 @@ export type SpeechPreview = {
   /** What still has to be recorded (and paid for). */
   uncachedParts: number
   uncachedChars: number
+  /** The first part's characters when it is not saved: it is recorded (and paid) before the rest is asked about, else 0. */
+  firstChars: number
+  /** The request hashes of what still has to be recorded (each way a part may be sent). */
+  uncachedHashes: string[]
   /** What the whole recording's hash would be (with and without a dictionary), to find a saved file. */
   hashes: string[]
 }
@@ -421,6 +434,8 @@ export async function previewSpeech(req: SpeechReq): Promise<SpeechPreview> {
     chars: plan.parts.reduce((n, p) => n + p.chars, 0),
     uncachedParts: uncached.length,
     uncachedChars: uncached.reduce((n, p) => n + p.chars, 0),
+    firstChars: plan.parts.length && uncached.includes(plan.parts[0]) ? plan.parts[0].chars : 0,
+    uncachedHashes: uncached.flatMap((p) => p.keys.map((k) => k.hash)),
     hashes: [...new Set([wholeHash(withDictionary, gaps), wholeHash(withText, gaps)])]
   }
 }
@@ -461,6 +476,7 @@ async function speechRegion(
     [
       '-hide_banner',
       '-nostats',
+      ...['-protocol_whitelist', 'file'],
       '-i',
       file,
       '-af',
@@ -507,7 +523,7 @@ async function joinParts(
       '-y',
       '-v',
       'error',
-      ...files.flatMap((f) => ['-i', f]),
+      ...files.flatMap((f) => ['-protocol_whitelist', 'file', '-i', f]),
       '-filter_complex',
       graph,
       '-map',
@@ -690,16 +706,21 @@ export async function makeSpeech(req: SpeechReq, c: SpeechCtx): Promise<SpeechRe
     })
     if (outcome.state === 'working') throw new SpeechStillWorking(outcome.jobId, 0)
 
+    // from here the part is paid for (unless ai33 already had it), whatever happens to its file
+    const paidNow = outcome.reused ? 0 : outcome.creditCost
     const url = outcome.urls.audio ?? outcome.urls.audios?.[0]
     if (!url)
-      throw new Ai33Error('unusable', 'ai33 finished but sent no voiceover file.', {
-        charged: true
-      })
+      throw paidFor(
+        new Ai33Error('unusable', 'ai33 finished but sent no voiceover file.', { charged: true }),
+        paidNow
+      )
     const tmp = join(cacheDir(), `${key.hash}.${randomUUID().slice(0, 8)}.dl`)
     try {
       await downloadTo(url, tmp, { signal: c.signal, maxBytes: AUDIO_MAX_BYTES })
       let seconds: number
       try {
+        // only real sound goes to ffprobe and ffmpeg: not a playlist or a page
+        if (!isSoundFile(tmp)) throw new Error('not sound')
         seconds = (await probeAudio(tmp)).seconds
       } catch {
         throw new Ai33Error(
@@ -730,15 +751,19 @@ export async function makeSpeech(req: SpeechReq, c: SpeechCtx): Promise<SpeechRe
       // the mp3 is renamed last, so a part that exists is a part that is complete
       writeFileSync(metaFile(key.hash), JSON.stringify(meta))
       renameSync(tmp, partFile(key.hash))
+      // the part is safely in the cache, so the ledger no longer needs to hand it out
+      markCollected(outcome.jobId)
       // an identical job made before (kept in the ledger) is not paid for again
       return {
         key,
         file: partFile(key.hash),
         seconds,
-        credits: outcome.reused ? 0 : outcome.creditCost,
+        credits: paidNow,
         cached: outcome.reused === true,
         meta
       }
+    } catch (err) {
+      throw paidFor(err, paidNow)
     } finally {
       rmSync(tmp, { force: true })
     }
@@ -821,81 +846,91 @@ export async function makeSpeech(req: SpeechReq, c: SpeechCtx): Promise<SpeechRe
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, rest.length) }, worker))
   if (failed.length) throw endOf(failed, done, total)
 
-  const parts = done as Done[]
-  const keys = parts.map((d) => d.key)
-  const gaps = plan.parts.map((p) => p.gapAfter)
-  const hash = wholeHash(
-    keys.map((k) => k.hash),
-    gaps
-  )
-  const joined = join(cacheDir(), 'joined', `${hash.slice(0, 20)}.mp3`)
-  if (!existsSync(joined))
-    await joinParts(
-      parts.map((d) => d.file),
-      gaps,
-      joined,
-      c.signal
+  // every part is recorded and paid for: whatever fails from here says so, so it is never settled as free
+  const assemble = async (): Promise<SpeechResult> => {
+    const parts = done as Done[]
+    const keys = parts.map((d) => d.key)
+    const gaps = plan.parts.map((p) => p.gapAfter)
+    const hash = wholeHash(
+      keys.map((k) => k.hash),
+      gaps
     )
-  const seconds = (await probeAudio(joined)).seconds
+    const joined = join(cacheDir(), 'joined', `${hash.slice(0, 20)}.mp3`)
+    if (!existsSync(joined))
+      await joinParts(
+        parts.map((d) => d.file),
+        gaps,
+        joined,
+        c.signal
+      )
+    const seconds = (await probeAudio(joined)).seconds
 
-  const starts: number[] = []
-  let at = 0
-  for (let i = 0; i < total; i++) {
-    starts.push(at)
-    at += parts[i].seconds + (i < total - 1 ? gaps[i] : 0)
-  }
-
-  let words: TimedWord[] | null = null
-  let timing: SpeechTiming | null = null
-  if (req.withTranscript) {
-    const timed: TimedWord[] = []
-    const tiers: SpeechTiming[] = []
+    const starts: number[] = []
+    let at = 0
     for (let i = 0; i < total; i++) {
-      const d = parts[i]
-      const r = await timingLadder({
-        tokens: wordsFromScript(plan.parts[i].text, req.language ?? ''),
-        seconds: d.seconds,
-        json: d.meta.json,
-        srt: d.meta.srt,
-        region: () => speechRegion(d.file, d.seconds, c.signal)
-      })
-      tiers.push(r.tier)
-      for (const w of r.words)
-        timed.push({
-          id: `w${timed.length + 1}`,
-          text: w.text,
-          start: r3(w.start + starts[i]),
-          end: r3(w.end + starts[i])
-        })
+      starts.push(at)
+      at += parts[i].seconds + (i < total - 1 ? gaps[i] : 0)
     }
-    words = timed
-    timing = worstTier(tiers)
-  }
 
-  const credits = paid()
-  const left = await getCredits({ fresh: credits > 0 }).catch(() => null)
-  if (voices.kind === 'speech') rememberVoice(req.language, voices.main)
-  const speechParts: SpeechPart[] = parts.map((d, i) => ({
-    hash: d.key.hash,
-    file: d.file,
-    seconds: d.seconds,
-    chars: plan.parts[i].chars,
-    start: r3(starts[i]),
-    end: r3(starts[i] + d.seconds),
-    cached: d.cached
-  }))
-  return {
-    file: joined,
-    seconds,
-    parts: speechParts,
-    words,
-    timing,
-    voice: voices.main,
-    dictionaryId: keys.some((k) => k.via === 'dict') ? dictionaryId : null,
-    credits,
-    left,
-    reused: parts.every((d) => d.cached),
-    hash
+    let words: TimedWord[] | null = null
+    let timing: SpeechTiming | null = null
+    if (req.withTranscript) {
+      const timed: TimedWord[] = []
+      const tiers: SpeechTiming[] = []
+      for (let i = 0; i < total; i++) {
+        const d = parts[i]
+        const r = await timingLadder({
+          tokens: wordsFromScript(plan.parts[i].text, req.language ?? ''),
+          seconds: d.seconds,
+          json: d.meta.json,
+          srt: d.meta.srt,
+          region: () => speechRegion(d.file, d.seconds, c.signal)
+        })
+        tiers.push(r.tier)
+        for (const w of r.words)
+          timed.push({
+            id: `w${timed.length + 1}`,
+            text: w.text,
+            start: r3(w.start + starts[i]),
+            end: r3(w.end + starts[i])
+          })
+      }
+      words = timed
+      timing = worstTier(tiers)
+    }
+
+    const credits = paid()
+    const left = await getCredits({ fresh: credits > 0 }).catch(() => null)
+    if (voices.kind === 'speech') rememberVoice(req.language, voices.main)
+    const speechParts: SpeechPart[] = parts.map((d, i) => ({
+      hash: d.key.hash,
+      file: d.file,
+      seconds: d.seconds,
+      chars: plan.parts[i].chars,
+      start: r3(starts[i]),
+      end: r3(starts[i] + d.seconds),
+      cached: d.cached
+    }))
+    return {
+      file: joined,
+      seconds,
+      parts: speechParts,
+      words,
+      timing,
+      voice: voices.main,
+      dictionaryId: keys.some((k) => k.via === 'dict') ? dictionaryId : null,
+      credits,
+      left,
+      reused: parts.every((d) => d.cached),
+      hash
+    }
+  }
+  try {
+    return await assemble()
+  } catch (err) {
+    throw Object.assign(err instanceof Ai33Error ? err : plainError(err, 'voiceover'), {
+      credits: paid()
+    })
   }
 }
 
@@ -906,7 +941,13 @@ function endOf(
   total: number
 ): unknown {
   const lowest = failures.reduce((a, b) => (b.i < a.i ? b : a))
-  const credits = done.reduce((n, d) => n + (d && !d.cached ? d.credits : 0), 0)
+  // parts that were paid for and then failed (an unusable file) count too; two parts sharing one
+  // job share its failure, which is counted once
+  const failedPaid = [...new Set(failures.map((f) => f.err))].reduce<number>(
+    (n, err) => n + ((err as { paid?: number } | null)?.paid ?? 0),
+    0
+  )
+  const credits = done.reduce((n, d) => n + (d && !d.cached ? d.credits : 0), failedPaid)
   const err = lowest.err
   if (err instanceof SpeechStillWorking) return new SpeechStillWorking(err.jobId, credits)
   const cause = err instanceof Ai33Error ? err : plainError(err, 'voiceover')

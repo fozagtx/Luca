@@ -8,6 +8,7 @@ import { createWriteStream, mkdirSync, renameSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
+import { promises as dnsPromises } from 'node:dns'
 import { pipeline } from 'node:stream/promises'
 import {
   formatCredits,
@@ -112,7 +113,7 @@ export class Ai33Error extends Error {
 }
 
 const KEY_MISSING = 'ai33 isn’t connected. Connect it in Connections (Cmd+,).'
-const KEY_REJECTED = 'ai33 didn’t accept the API key. Check it in Connections (Cmd+,).'
+const KEY_REJECTED = 'Your ai33 key wasn’t accepted. Check it in Connections (Cmd+,).'
 const BUSY = 'ai33 is busy right now (its queue is full). Wait a minute, then ask again.'
 const TROUBLE = 'ai33 is having trouble right now.'
 const TROUBLE_SUBMIT = `${TROUBLE} It may have started the job, so Luca didn’t start it again.`
@@ -132,20 +133,42 @@ const THINGS: Record<Ai33Kind, string> = {
 /** What a kind of job makes, as the person would say it ("voiceover", "music"). */
 export const thingFor = (kind: Ai33Kind): string => THINGS[kind]
 
-/** Not enough credits, in the words a tool gives Luca; `need` when the price is known. */
-export const notEnough = (balance: number, need?: number | null): string =>
-  `There aren’t enough ai33 credits for this (${formatCredits(balance)} left${need ? `, it needs about ${formatCredits(need)}` : ''}). Tell the user in one short sentence they can add credits with ai33, then ask again. Do not make it another way.`
+const enoughLine = (balance: number, need?: number | null): string =>
+  `There aren’t enough ai33 credits for this (${formatCredits(balance)} left${need ? `, it needs about ${formatCredits(need)}` : ''}).`
 
-/** After a task fails, from the balance before and after: whether the credits came back. One place to blank it. */
+/** Not enough credits, as the person reads it (what an Ai33Error carries); `need` when the price is known. */
+export const creditsShort = (balance: number, need?: number | null): string =>
+  `${enoughLine(balance, need)} You can add credits with ai33.`
+
+/**
+ * The same in the words a tool gives Luca (what to say, and not to work around it). Only the
+ * spend gate's refusal, which is never shown as an error, uses it; tools/common.ts adds the
+ * instruction to a credits failure itself.
+ */
+export const notEnough = (balance: number, need?: number | null): string =>
+  `${enoughLine(balance, need)} Tell the user in one short sentence they can add credits with ai33, then ask again. Do not make it another way.`
+
+/**
+ * After a task fails, from the balance before and after: whether the credits came back. One place
+ * to blank it. "Back" only when nothing is missing: a smaller balance says nothing about a refund.
+ */
 export const refundLine = (before: number | null, after: number | null): string => {
   if (after === null) return ''
-  return before !== null && Math.abs(after - before) <= Math.max(1, before * 0.01)
+  return before !== null && after >= before
     ? `Your credits are back (${formatCredits(after)} left).`
-    : `ai33 returns credits for a job that fails. You have ${formatCredits(after)} credits.`
+    : `You have ${formatCredits(after)} credits.`
 }
 
+/** What the background poller says when it gives up: the job stays in the ledger to be collected. */
 const deadlineText = (thing: string): string =>
   `Your ${thing} is taking a long time at ai33. It may still finish; ask Luca to check it later.`
+
+/** What a caller is told when a job it asked for again has run past its deadline: it is dropped, so asking again starts it again. */
+const pastDeadlineText = (thing: string): string =>
+  `Your ${thing} is still not ready at ai33, so Luca stopped waiting for it. Asking again will start it again.`
+
+const goneText = (thing: string): string =>
+  `ai33 no longer has your ${thing}, so Luca can’t get it. Asking again will make it again.`
 
 const stoppedError = (thing: string, refund = 0): Ai33Error =>
   new Ai33Error(
@@ -160,16 +183,37 @@ function scrub(text: string): string {
   return key && key.length > 5 ? text.split(key).join('…') : text
 }
 
+/**
+ * Words that came from outside (ai33's answers) as one plain line of at most `max` characters:
+ * they reach the person and the model, so no markup, control or invisible characters, and the key
+ * is removed first (a key with a line break in it would survive once the lines were joined).
+ */
+function oneLine(text: string, max: number): string {
+  const flat = scrub(text)
+    // bounded before the pattern runs, so a huge answer of "<" costs nothing
+    .slice(0, 4_000)
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\p{Cf}+/gu, '')
+    .replace(/[\p{Cc}\u2028\u2029]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.\s]+$/, '')
+  // by characters, not UTF-16 halves, so an emoji is never cut in two
+  return flat.length > max
+    ? `${Array.from(flat)
+        .slice(0, max - 1)
+        .join('')}…`
+    : flat
+}
+
+/** The longest stretch of ai33's own words shown in an error. */
+const SERVER_WORDS_MAX = 120
+
 /** ai33's own words from an error answer (`message`, `error`, `detail`), short and on one line. */
 function serverWords(data: Ai33Raw, raw = ''): string {
   const pick = data?.message ?? data?.error?.message ?? data?.error ?? data?.detail ?? data?.msg
   const text = typeof pick === 'string' ? pick : pick ? JSON.stringify(pick) : ''
-  const flat = (text || (data === undefined ? raw : ''))
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/[.\s]+$/, '')
-  return scrub(flat.length > 200 ? `${flat.slice(0, 199)}…` : flat)
+  return oneLine(text || (data === undefined ? raw : ''), SERVER_WORDS_MAX)
 }
 
 const NETWORK_CODES = new Set([
@@ -205,7 +249,10 @@ export function plainError(err: unknown, thing = 'result'): Ai33Error {
     (err instanceof TypeError && /fetch failed|network/i.test(err.message))
   )
     return new Ai33Error('network', UNREACHABLE, { charged: 'unknown', cause: err })
-  const text = scrub((err instanceof Error ? err.message : String(err)).split('\n')[0].trim())
+  // the key comes out before the message is cut to its first line
+  const text = scrub(err instanceof Error ? err.message : String(err))
+    .split('\n')[0]
+    .trim()
   return new Ai33Error('task', text.slice(0, 300) || 'Something went wrong.', {
     charged: 'unknown',
     cause: err
@@ -342,6 +389,10 @@ function retryAfterMs(headers: Headers): number | null {
 const RATE_STEPS = [2_000, 5_000, 12_000]
 const RATE_CAP_MS = 45_000
 const RATE_MAX_WAIT_MS = 30_000
+/** Whatever ai33 says ("Retry-After: 0"), the queue is never asked again sooner than this... */
+const RATE_MIN_WAIT_MS = 500
+/** ...and never more than this many times in a row. */
+const RATE_TRIES = 5
 
 /**
  * One request to ai33 (JSON or multipart form) with the key; the answer parsed, or an Ai33Error.
@@ -357,11 +408,9 @@ export async function request(path: string, o: RequestOpts = {}): Promise<Ai33Ra
   for (let attempt = 0; ; attempt++) {
     const res = await exchange(method, url, key, o)
     if (res.status !== 429) return interpret(method, path, res, o)
-    const step = Math.min(
-      retryAfterMs(res.headers) ?? RATE_STEPS[Math.min(attempt, RATE_STEPS.length - 1)],
-      RATE_MAX_WAIT_MS
-    )
-    if (waited + step > RATE_CAP_MS)
+    const asked = retryAfterMs(res.headers) ?? RATE_STEPS[Math.min(attempt, RATE_STEPS.length - 1)]
+    const step = Math.min(Math.max(asked, RATE_MIN_WAIT_MS), RATE_MAX_WAIT_MS)
+    if (attempt + 1 >= RATE_TRIES || waited + step > RATE_CAP_MS)
       throw new Ai33Error('rate', BUSY, { status: 429, charged: false })
     await sleep(step, o.signal)
     waited += step
@@ -437,7 +486,10 @@ async function refused(
     // unreadable: say what ai33 said
   }
   if (credits !== null && (o.needCredits ? credits < o.needCredits : credits <= 0))
-    return new Ai33Error('credits', notEnough(credits, o.needCredits), { status, charged: false })
+    return new Ai33Error('credits', creditsShort(credits, o.needCredits), {
+      status,
+      charged: false
+    })
   const why = serverWords(data)
   return new Ai33Error('validation', `ai33 didn’t accept that request${why ? ` (${why})` : ''}.`, {
     status,
@@ -501,12 +553,21 @@ export function resetAccount(): void {
 }
 
 /**
- * Whether ai33 accepts a key, before it is kept: 'rejected' only for a 401 or 403 (a key that
- * merely couldn't be checked, offline or with ai33 down, is 'unreachable' and still kept).
+ * Whether a string can be a key: printable ASCII with no spaces, of a sensible length. Anything
+ * else (a pasted sentence, a line break that would end an HTTP header early) is refused before
+ * it is kept or sent.
+ */
+export const isKeyShape = (key: string): boolean => /^[\x21-\x7e]{8,200}$/.test(key)
+
+/**
+ * Whether ai33 accepts a key, before it is kept: 'rejected' for a 401 or 403, and for a string that
+ * can't be a key (never sent); a key that merely couldn't be checked, offline or with ai33 down,
+ * is 'unreachable' and still kept.
  */
 export async function checkKey(
   key: string
 ): Promise<{ status: 'ok' | 'rejected' | 'unreachable'; credits: number | null }> {
+  if (!isKeyShape(key)) return { status: 'rejected', credits: null }
   try {
     const res = await exchange('GET', endpoint('/v1/credits'), key, { timeoutMs: 10_000 })
     if (res.status === 401 || res.status === 403) return { status: 'rejected', credits: null }
@@ -573,13 +634,120 @@ export function resultUrls(task: Ai33Raw): Ai33Urls {
 
 /** No answer, or no bytes, for this long ends a download. */
 const STALL_MS = 30_000
+/** Even a download that keeps trickling in is given up on after this long (files stay at ai33). */
+const DOWNLOAD_TOTAL_MS = 5 * 60_000
+/** A name is looked up for at most this long; an answer that doesn't come is not a reason to refuse. */
+const LOOKUP_MS = 5_000
 
-/** Where a download may come from: https anywhere, or http on this Mac while ai33 itself is. */
-function allowedForDownload(u: URL): boolean {
+/** How many audio files a finished job of each kind carries: music comes as two takes, the rest as one. */
+const TAKES: Record<Ai33Kind, number> = { speech: 1, dialogue: 1, music: 2, sfx: 1 }
+
+/** The audio files of a finished job worth downloading: what its kind makes, never every link ai33 lists. */
+export function takeUrls(kind: Ai33Kind, urls: { audio?: string; audios?: string[] }): string[] {
+  const all = urls.audios?.length ? urls.audios : urls.audio ? [urls.audio] : []
+  return all.slice(0, TAKES[kind])
+}
+
+/** The four numbers of a dotted IPv4 address, or null. */
+function v4Parts(host: string): number[] | null {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  if (!m) return null
+  const parts = m.slice(1).map(Number)
+  return parts.every((n) => n <= 255) ? parts : null
+}
+
+/** Addresses that reach this Mac or its network, not the internet. */
+function privateV4([a, b, c]: number[]): boolean {
   return (
-    u.protocol === 'https:' ||
-    (u.protocol === 'http:' && config().loopbackHttp && isLoopback(u.hostname))
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 192 && b === 0 && c === 0) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
   )
+}
+
+/** The 16 bytes of an IPv6 address (brackets, a zone and a dotted ending allowed), or null. */
+function v6Bytes(text: string): number[] | null {
+  let s = text.replace(/^\[|\]$/g, '').replace(/%.*$/, '')
+  const dotted = /(\d+\.\d+\.\d+\.\d+)$/.exec(s)
+  if (dotted) {
+    const p = v4Parts(dotted[1])
+    if (!p) return null
+    s = `${s.slice(0, -dotted[1].length)}${((p[0] << 8) | p[1]).toString(16)}:${((p[2] << 8) | p[3]).toString(16)}`
+  }
+  const halves = s.split('::')
+  if (halves.length > 2) return null
+  const groups = (h: string): string[] => (h ? h.split(':') : [])
+  const head = groups(halves[0])
+  const tail = halves.length === 2 ? groups(halves[1]) : []
+  const missing = 8 - head.length - tail.length
+  if (halves.length === 2 ? missing < 1 : missing !== 0) return null
+  const all = [...head, ...new Array<string>(halves.length === 2 ? missing : 0).fill('0'), ...tail]
+  if (!all.every((g) => /^[0-9a-f]{1,4}$/i.test(g))) return null
+  return all.flatMap((g) => [parseInt(g, 16) >> 8, parseInt(g, 16) & 255])
+}
+
+function privateV6(b: number[]): boolean {
+  const zeros = (from: number, to: number): boolean => b.slice(from, to).every((x) => x === 0)
+  // ::, ::1 and the old IPv4-compatible form
+  if (zeros(0, 12)) return true
+  // IPv4-mapped, and NAT64: the address inside decides
+  if (zeros(0, 10) && b[10] === 0xff && b[11] === 0xff) return privateV4(b.slice(12))
+  if (b[0] === 0 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b && zeros(4, 12))
+    return privateV4(b.slice(12))
+  // 6to4 carries an IPv4 address after its prefix
+  if (b[0] === 0x20 && b[1] === 0x02) return privateV4(b.slice(2, 6))
+  // unique local, link local, site local, multicast
+  return (b[0] & 0xfe) === 0xfc || (b[0] === 0xfe && (b[1] & 0x80) === 0x80) || b[0] === 0xff
+}
+
+/** Whether an address (as `dns.lookup` or a URL spells it) is one that isn't on the internet. */
+function isPrivateAddress(address: string): boolean {
+  const v4 = v4Parts(address)
+  if (v4) return privateV4(v4)
+  const v6 = v6Bytes(address)
+  return v6 ? privateV6(v6) : false
+}
+
+const LOCAL_NAME = /(?:^|\.)(?:localhost|local|internal|localdomain|home\.arpa)$/
+
+const refusedLink = (): Ai33Error =>
+  new Ai33Error('unusable', 'ai33 sent back a link Luca won’t open, so nothing was added.', {
+    charged: 'unknown'
+  })
+
+/**
+ * Where a download may come from: https to a host on the internet (a link to this Mac or its
+ * network would make Luca fetch on ai33's behalf), or http to this Mac while ai33 itself is there
+ * (the development server). A name is looked up first and refused if it answers with a private
+ * address; a name that can't be looked up is left to the download itself to fail.
+ */
+async function assertDownloadable(u: URL): Promise<void> {
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') throw refusedLink()
+  if (config().loopbackHttp && isLoopback(u.hostname)) return
+  if (u.protocol !== 'https:') throw refusedLink()
+  const host = u.hostname.toLowerCase().replace(/\.$/, '')
+  if (host.startsWith('[') || v4Parts(host)) {
+    if (isPrivateAddress(host)) throw refusedLink()
+    return
+  }
+  if (LOCAL_NAME.test(host) || !host.includes('.')) throw refusedLink()
+  let answers: { address: string }[] = []
+  try {
+    answers = await Promise.race([
+      dnsPromises.lookup(host, { all: true }),
+      new Promise<never>((_resolve, reject) => setTimeout(reject, LOOKUP_MS).unref())
+    ])
+  } catch {
+    return
+  }
+  if (answers.some((a) => isPrivateAddress(a.address))) throw refusedLink()
 }
 
 const downloadFailed = (cause?: unknown): Ai33Error =>
@@ -592,12 +760,13 @@ const downloadFailed = (cause?: unknown): Ai33Error =>
 /**
  * Download a result file (https only, the key never sent to another host): to `<dest>.part`,
  * renamed when whole. Result files come from CDN hosts without the key; only when the file is on
- * ai33's own host and refuses without it is it asked for again with the key.
+ * ai33's own host and refuses without it is it asked for again with the key. `totalMs` bounds the
+ * whole download (redirects included), however steadily the bytes arrive.
  */
 export async function downloadTo(
   url: string,
   dest: string,
-  o: { signal?: AbortSignal; maxBytes: number }
+  o: { signal?: AbortSignal; maxBytes: number; totalMs?: number }
 ): Promise<{ bytes: number; mime: string }> {
   const { origin, c } = config()
   const part = `${dest}.part`
@@ -614,22 +783,16 @@ export async function downloadTo(
     )
   }
   mkdirSync(dirname(dest), { recursive: true })
+  const overall = AbortSignal.timeout(o.totalMs ?? DOWNLOAD_TOTAL_MS)
   let withKey = false
   try {
     for (let hop = 0; hop < 6; hop++) {
-      if (!allowedForDownload(target))
-        throw new Ai33Error(
-          'unusable',
-          'ai33 sent back a link Luca won’t open, so nothing was added.',
-          {
-            charged: 'unknown'
-          }
-        )
+      await assertDownloadable(target)
       const headers: Record<string, string> = {}
       const key = c.getKey()
       if (withKey && key && target.origin === origin) headers['xi-api-key'] = key
       const stall = new AbortController()
-      const watch = anySignal(o.signal, stall.signal)
+      const watch = anySignal(o.signal, stall.signal, overall)
       const timer = setTimeout(() => stall.abort(), STALL_MS)
       try {
         const res = await fetch(target, { headers, redirect: 'manual', signal: watch })
@@ -657,7 +820,7 @@ export async function downloadTo(
             else cb(null, chunk)
           }
         })
-        // once the answer starts, only a stall (no bytes for a while) counts as a timeout
+        // once the answer starts, only a stall (no bytes for a while) or the total time counts
         timer.refresh()
         await pipeline(
           Readable.fromWeb(res.body as unknown as WebReadableStream),
@@ -713,7 +876,14 @@ export async function listRecentTasks(sinceMs: number): Promise<Ai33Raw[]> {
 const flat = (s: unknown): string =>
   typeof s === 'string' ? s.replace(/\s+/g, ' ').trim().toLowerCase() : ''
 
-/** Whether a listed task is the one we sent: our words at the start of its preview, or our file name. */
+/** Our words are compared by their first this many characters (a list shows only a preview). */
+const MATCH_HEAD = 40
+
+/**
+ * Whether a listed task is the one we sent: our words at the start of its preview, or our file
+ * name. A text shorter than the head must be the whole preview: "a quick whoosh" is only the
+ * start of "a quick whoosh, long and deep", which is somebody else's task.
+ */
 function matches(task: Ai33Raw, m: NonNullable<JobSpec['match']>): boolean {
   const meta: Ai33Raw = task?.metadata ?? {}
   const previews = [
@@ -725,26 +895,42 @@ function matches(task: Ai33Raw, m: NonNullable<JobSpec['match']>): boolean {
     meta.description
   ].map(flat)
   const starts = (ours?: string): boolean => {
-    const head = flat(ours).slice(0, 40)
-    return !!head && previews.some((p) => p.startsWith(head))
+    const mine = flat(ours)
+    if (!mine) return false
+    return mine.length < MATCH_HEAD
+      ? previews.some((p) => p === mine)
+      : previews.some((p) => p.startsWith(mine.slice(0, MATCH_HEAD)))
   }
   if (starts(m.text) || starts(m.prompt)) return true
   return !!m.fileName && (meta.file_name === m.fileName || task?.file_name === m.fileName)
 }
 
 /**
+ * Jobs whose submit has not been answered yet, by job: what each would recognise as its own. A
+ * task that fits one of these as well as the job looking is nobody's to claim.
+ */
+const unanswered = new Map<string, NonNullable<JobSpec['match']>>()
+
+/**
  * After a submit that got no answer: the one task in the account's recent list that is ours, else
- * null (none, or several: then nothing is assumed). A task already claimed by another job is not a
- * candidate.
+ * null (none, or several: then nothing is assumed). A task already claimed by another job, or that
+ * another job still waiting for its own answer would recognise too, is not a candidate.
  */
 async function reconcile(entry: LedgerEntry, m: JobSpec['match']): Promise<string | null> {
   if (!m) return null
-  const claimed = new Set(list().map((e) => e.taskId))
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt) await sleep(2_500)
     try {
-      const found = (await listRecentTasks(entry.submittedAt - 5_000)).filter(
-        (t) => typeof t?.id === 'string' && !claimed.has(t.id) && matches(t, m)
+      const recent = await listRecentTasks(entry.submittedAt - 5_000)
+      // read after the list arrives: another job's answer may have come in while it was fetched
+      const claimed = new Set(list().map((e) => e.taskId))
+      const rivals = [...unanswered].filter(([id]) => id !== entry.jobId).map(([, r]) => r)
+      const found = recent.filter(
+        (t) =>
+          typeof t?.id === 'string' &&
+          !claimed.has(t.id) &&
+          matches(t, m) &&
+          !rivals.some((r) => matches(t, r))
       )
       if (found.length === 1) return found[0].id
       if (found.length > 1) return null
@@ -880,6 +1066,8 @@ async function enterSubmit(signal?: AbortSignal): Promise<(() => void) | null> {
 type PollEnd =
   | { kind: 'done'; task: Ai33Raw }
   | { kind: 'error'; task: Ai33Raw }
+  /** ai33 no longer knows the task (asked twice in a row and answered "no such task"). */
+  | { kind: 'gone' }
   | { kind: 'budget' }
   | { kind: 'deadline' }
   | { kind: 'stop' }
@@ -893,13 +1081,28 @@ const statusOf = (task: Ai33Raw): string =>
     .trim()
     .toLowerCase()
 
+/** ai33 documents `error`; the others are how a task that has ended badly may be worded. */
+const FAILED_STATUSES = new Set(['error', 'failed', 'cancelled', 'canceled'])
+const isFailed = (status: string): boolean => FAILED_STATUSES.has(status)
+
+/** Answers in a row that say the task doesn't exist before it is taken as gone. */
+const GONE_LIMIT = 2
+
+/**
+ * A poll ai33 answered by refusing it, which for a task means it isn't there (404, or a 4xx or
+ * success:false about it). A 401 or 403 is about the key, not the task.
+ */
+const isGone = (err: unknown): boolean =>
+  err instanceof Ai33Error && err.kind === 'validation' && err.status !== 401 && err.status !== 403
+
 const fetchTask = (taskId: string, signal?: AbortSignal): Promise<Ai33Raw> =>
   request(`/v1/task/${encodeURIComponent(taskId)}`, { signal, timeoutMs: 10_000 })
 
 /**
  * Poll a task until it is done or errored, the caller stops waiting, or the deadline passes. Any
- * status but done and error counts as still running; a failed poll is never a reason to cancel
- * the job, only to say so and slow down.
+ * status but done and the failed ones counts as still running; a failed poll is never a reason to
+ * cancel the job, only to say so and slow down. A task ai33 says it doesn't have, twice in a row,
+ * is gone, not "waiting for the internet".
  */
 async function pollTask(
   entry: LedgerEntry,
@@ -916,9 +1119,12 @@ async function pollTask(
 ): Promise<PollEnd> {
   const watch = anySignal(o.stop, o.detach)
   let fails = 0
+  let missing = 0
   let lastError: unknown = null
   let noted = false
   let shown: number | null | undefined
+  /** The highest progress seen: what is shown never goes back. */
+  let peak = 0
   let zeroSince: number | null = null
   let first = o.pollNow
   for (;;) {
@@ -941,6 +1147,11 @@ async function pollTask(
       task = await fetchTask(entry.taskId as string, watch)
     } catch (err) {
       if (endOf(o.stop, o.detach)) continue
+      if (isGone(err)) {
+        if (++missing >= GONE_LIMIT) return { kind: 'gone' }
+        continue
+      }
+      missing = 0
       fails++
       lastError = err
       if (fails >= POLL_FAIL_LIMIT && !noted) {
@@ -956,13 +1167,14 @@ async function pollTask(
       continue
     }
     fails = 0
+    missing = 0
     if (noted) {
       noted = false
       o.report({ pct: shown ?? null })
     }
     const status = statusOf(task)
     if (status === 'done') return { kind: 'done', task }
-    if (status === 'error') return { kind: 'error', task }
+    if (isFailed(status)) return { kind: 'error', task }
     // doing, or a status this version doesn't know: still running
     const raw = toInt(task?.progress)
     let pct = raw === null ? null : Math.min(99, Math.max(0, raw))
@@ -970,6 +1182,9 @@ async function pollTask(
     if (pct === null || pct === 0) zeroSince ??= now
     else zeroSince = null
     if (pct === 0 && zeroSince !== null && now - zeroSince >= STUCK_MS) pct = null
+    // ai33's numbers can wander (40, 10, 60, 0): the bar keeps the most it has reached
+    if (pct !== null) peak = Math.max(peak, pct)
+    if (peak > 0) pct = peak
     if (pct !== shown) {
       shown = pct
       o.report({ pct })
@@ -1081,6 +1296,16 @@ async function cancelRemote(entry: LedgerEntry): Promise<Ai33Error> {
   return stoppedError(THINGS[entry.kind], refund)
 }
 
+/**
+ * A job with a task that will not be collected: it is `lost`, so the same request is priced and
+ * asked again instead of joining a job that can never end.
+ */
+function giveUp(entry: LedgerEntry, text: string): void {
+  entry.state = 'lost'
+  entry.error = text
+  upsert(entry)
+}
+
 // --- jobs that outlive their caller
 
 /** Background pollers by job; a caller that takes a job over stops its poller. */
@@ -1117,6 +1342,9 @@ function background(entry: LedgerEntry): void {
       } else if (end.kind === 'error') {
         await concludeError(entry, end.task)
         emitJobEvent({ type: 'settled', entry: { ...entry }, result: 'failed' })
+      } else if (end.kind === 'gone') {
+        giveUp(entry, goneText(THINGS[entry.kind]))
+        emitJobEvent({ type: 'settled', entry: { ...entry }, result: 'failed' })
       } else if (end.kind === 'deadline') {
         entry.error = deadlineText(THINGS[entry.kind])
         upsert(entry)
@@ -1142,7 +1370,11 @@ function takeOver(jobId: string): void {
   own.abort()
 }
 
-/** Where a job stands now (asks ai33 again): its files once done, or still working. */
+/**
+ * Where a job stands now (asks ai33 again): its files once done, or still working. The job is not
+ * marked collected here: that is for whoever saves the files (`markCollected`), so a download that
+ * fails leaves the job waiting to be collected again.
+ */
 async function outcomeFor(entry: LedgerEntry): Promise<JobOutcome | null> {
   if (!entry.taskId || entry.state === 'lost' || entry.state === 'cancelled') return null
   if (entry.state === 'failed')
@@ -1154,18 +1386,23 @@ async function outcomeFor(entry: LedgerEntry): Promise<JobOutcome | null> {
     task = await fetchTask(entry.taskId)
   } catch (err) {
     if (entry.state === 'done' && entry.urls) return fromLedger(entry)
+    if (isGone(err) && (await stillGone(entry.taskId))) {
+      // ai33 doesn't have it any more: nothing will ever be collected, and the request is free to be made again
+      takeOver(entry.jobId)
+      untrack(entry.jobId)
+      giveUp(entry, goneText(THINGS[entry.kind]))
+      return null
+    }
     throw plainError(err, THINGS[entry.kind])
   }
   const status = statusOf(task)
-  if (status === 'done' || status === 'error') {
+  if (status === 'done' || isFailed(status)) {
     // it has ended: nothing is left for a background poller to do
     takeOver(entry.jobId)
     untrack(entry.jobId)
   }
   if (status === 'done') {
     const d = await concludeDone(entry, task)
-    entry.collected = true
-    upsert(entry)
     return {
       state: 'done',
       jobId: entry.jobId,
@@ -1176,9 +1413,20 @@ async function outcomeFor(entry: LedgerEntry): Promise<JobOutcome | null> {
       payload: task
     }
   }
-  if (status === 'error') throw await concludeError(entry, task)
+  if (isFailed(status)) throw await concludeError(entry, task)
   if (!pollers.has(entry.jobId)) background(entry)
   return { state: 'working', jobId: entry.jobId, taskId: entry.taskId }
+}
+
+/** Asks once more, a moment later, whether ai33 still says a task isn't there (one answer can be a blip). */
+async function stillGone(taskId: string): Promise<boolean> {
+  await sleep(1_500)
+  try {
+    await fetchTask(taskId)
+    return false
+  } catch (err) {
+    return isGone(err)
+  }
 }
 
 /** A finished job from the ledger alone (ai33 couldn't be asked): the same answer, nothing paid again. */
@@ -1196,6 +1444,9 @@ function fromLedger(entry: LedgerEntry): JobOutcome {
 }
 
 // --- running a job
+
+/** Thrown between reading the balance and sending the request when the caller has already stopped. */
+class NotSent extends Error {}
 
 const NEVER = new AbortController().signal
 const sinks = new Map<string, Set<Progress>>()
@@ -1324,10 +1575,13 @@ async function submitNew(spec: JobSpec, ctx: RunCtx, report: Progress): Promise<
       freed = true
     }
     let taskId: string
+    if (spec.match) unanswered.set(entry.jobId, spec.match)
     try {
       entry.submittedAt = Date.now()
       entry.balanceBefore = await getCredits()
       upsert(entry)
+      // Stop, or the project closing, while the balance was read: nothing has left yet, so nothing is made
+      if (endOf(ctx.stop, ctx.detach)) throw new NotSent()
       const sent = await spec.submit(ctx.stop ?? NEVER)
       if (typeof sent?.taskId !== 'string' || !sent.taskId)
         throw new Ai33Error('server', TROUBLE_SUBMIT, { charged: 'unknown' })
@@ -1337,9 +1591,16 @@ async function submitNew(spec: JobSpec, ctx: RunCtx, report: Progress): Promise<
     } catch (err) {
       // the line moves on while ai33 is asked whether the job exists
       free()
+      if (err instanceof NotSent) {
+        entry.state = 'cancelled'
+        entry.error = 'Stopped'
+        upsert(entry)
+        throw stoppedError(thing)
+      }
       taskId = await recover(err, entry, spec, ctx)
     } finally {
       free()
+      unanswered.delete(entry.jobId)
     }
     entry.taskId = taskId
     entry.state = 'working'
@@ -1410,8 +1671,6 @@ async function settle(
   switch (end.kind) {
     case 'done': {
       const d = await concludeDone(entry, end.task)
-      entry.collected = true
-      upsert(entry)
       return {
         state: 'done',
         jobId: entry.jobId,
@@ -1427,10 +1686,14 @@ async function settle(
       throw await concludeError(entry, end.task)
     case 'stop':
       throw await cancelRemote(entry)
+    case 'gone': {
+      giveUp(entry, goneText(thing))
+      throw new Ai33Error('unusable', goneText(thing), { charged: 'unknown' })
+    }
     case 'deadline': {
-      entry.error = deadlineText(thing)
-      upsert(entry)
-      throw new Ai33Error('deadline', entry.error, { charged: 'unknown' })
+      // no poller keeps this one: left `working` it would be joined by every identical ask for good
+      giveUp(entry, pastDeadlineText(thing))
+      throw new Ai33Error('deadline', pastDeadlineText(thing), { charged: 'unknown' })
     }
     default:
       // the wait ran out, or the project closed: the job carries on and is followed in the background

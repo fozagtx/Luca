@@ -26,6 +26,16 @@ const isEditable = (t: EventTarget | null): boolean => {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
 }
 
+/**
+ * Controls Space belongs to: it presses a focused button or link, picks a radio, option or tab and
+ * ticks a checkbox, so it can't also play the video. Anything inside a list of options counts.
+ */
+const SPACE_IS_THEIRS =
+  'button, a, [role="radio"], [role="option"], [role="tab"], [role="checkbox"], [role="menuitem"], [role="listbox"]'
+
+const usesSpace = (t: EventTarget | null): boolean =>
+  t instanceof Element && t.closest(SPACE_IS_THEIRS) !== null
+
 /** Open the chat if it's hidden and put the caret in the message box. */
 async function focusChat(): Promise<void> {
   const ui = useUi.getState()
@@ -95,6 +105,8 @@ export function useShortcuts(): void {
           if (selected) void trimToPlayhead(selected, 'end')
           break
         case ' ':
+          // a focused button (a voice, a chip, "Say it right") is pressed by Space, not by Enter alone
+          if (usesSpace(e.target)) break
           e.preventDefault()
           player.togglePlay()
           break

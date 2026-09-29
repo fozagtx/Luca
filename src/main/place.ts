@@ -22,7 +22,7 @@ import {
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { PlaceAudio, Placed, SavedAsset } from '../shared/ai33'
 import type { Project } from '../shared/types'
-import { sourceTags } from './captions-html'
+import { clipSrc, sourceTags } from './captions-html'
 import { childEnv, run, which } from './env'
 import { findTags } from './html'
 import {
@@ -87,7 +87,9 @@ async function probeFile(file: string): Promise<Probe> {
         'stream=codec_type,codec_name,duration:format=duration,format_name',
         '-of',
         'json',
-        file
+        // only a file on this Mac: a playlist can't send it to an address or another file
+        ...['-protocol_whitelist', 'file'],
+        resolve(file)
       ],
       { env: await childEnv(), timeoutMs: 30_000 }
     )
@@ -133,8 +135,8 @@ export async function probeAudio(file: string): Promise<{ seconds: number }> {
   return { seconds: r.seconds }
 }
 
-/** What the first bytes say: a page or data (never sound), or anything else for ffprobe to judge. */
-function looksLikePage(file: string): boolean {
+/** The first bytes of a file. */
+function headOf(file: string): Buffer {
   const fd = openSync(file, 'r')
   const buf = Buffer.alloc(1024)
   let n: number
@@ -143,17 +145,30 @@ function looksLikePage(file: string): boolean {
   } finally {
     closeSync(fd)
   }
-  const head = buf.subarray(0, n)
-  const known =
-    head.subarray(0, 3).toString('latin1') === 'ID3' ||
-    head.subarray(0, 4).toString('latin1') === 'fLaC' ||
-    head.subarray(0, 4).toString('latin1') === 'OggS' ||
-    head.subarray(4, 8).toString('latin1') === 'ftyp' ||
-    (head.subarray(0, 4).toString('latin1') === 'RIFF' &&
-      head.subarray(8, 12).toString('latin1') === 'WAVE') ||
-    (n > 1 && head[0] === 0xff && (head[1] & 0xe0) === 0xe0)
-  if (known) return false
-  const text = head
+  return buf.subarray(0, n)
+}
+
+/**
+ * Whether the first bytes are one of the sound formats ai33 sends (mp3, wav, flac, ogg, m4a). An
+ * allowlist: ffprobe and ffmpeg also read playlists and scripts that name other files and
+ * addresses, which nothing downloaded may be. Only the file's own bytes count, never its name.
+ */
+export function isSoundFile(file: string): boolean {
+  const head = headOf(file)
+  const at = (from: number, to: number): string => head.subarray(from, to).toString('latin1')
+  return (
+    at(0, 3) === 'ID3' ||
+    at(0, 4) === 'fLaC' ||
+    at(0, 4) === 'OggS' ||
+    at(4, 8) === 'ftyp' ||
+    (at(0, 4) === 'RIFF' && at(8, 12) === 'WAVE') ||
+    (head.length > 1 && head[0] === 0xff && (head[1] & 0xe0) === 0xe0)
+  )
+}
+
+/** A page or data where a sound should be (an error answer saved under a sound's name). */
+function looksLikePage(file: string): boolean {
+  const text = headOf(file)
     .toString('utf8')
     .replace(/^\uFEFF/, '')
     .trimStart()
@@ -211,9 +226,16 @@ function moveFile(from: string, to: string): void {
 /** ffmpeg: `args`, failing with a plain message. */
 async function ffmpeg(args: string[], timeoutMs: number): Promise<{ stderr: string }> {
   const bin = (await which('ffmpeg')) ?? 'ffmpeg'
+  // every input is read as a file on this Mac by its absolute path, never as a URL or an option
+  const guarded: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-i' && i + 1 < args.length)
+      guarded.push('-protocol_whitelist', 'file', '-i', resolve(args[++i]))
+    else guarded.push(args[i])
+  }
   let r: Awaited<ReturnType<typeof run>>
   try {
-    r = await run(bin, ['-hide_banner', '-nostats', ...args], {
+    r = await run(bin, ['-hide_banner', '-nostats', ...guarded], {
       env: await childEnv(),
       timeoutMs
     })
@@ -323,7 +345,12 @@ export async function importGenerated(
     }
     if (!existsSync(tmp)) throw new Error(WHY_GENERATED.missing)
     if (statSync(tmp).size === 0) throw new Error(WHY_GENERATED.empty)
-    if (looksLikePage(tmp)) throw new Error('ai33 sent back a web page instead of a sound.')
+    if (!isSoundFile(tmp))
+      throw new Error(
+        looksLikePage(tmp)
+          ? 'ai33 sent back a web page instead of a sound.'
+          : WHY_GENERATED.unreadable
+      )
     const found = await probeFile(tmp)
     if (!found.ok) throw new Error(WHY_GENERATED[found.why])
     mkdirSync(dirname(abs), { recursive: true })
@@ -376,7 +403,7 @@ export function savedAssets(p: Project): SavedAsset[] {
   const playing = new Map<string, string>()
   try {
     for (const t of findTags(readFileSync(join(p.dir, 'index.html'), 'utf8'), 'audio')) {
-      const src = (t.attrs.src ?? '').split(/[?#]/)[0]
+      const src = clipSrc(t)
       if (t.attrs.id && !playing.has(src)) playing.set(src, t.attrs.id)
     }
   } catch {
@@ -540,7 +567,7 @@ function voiceClip(
       .sort((a, b) => num(a.attrs['data-start'], 0) - num(b.attrs['data-start'], 0))[0] ?? made[0]
   if (!hit?.attrs.src) return null
   return {
-    src: hit.attrs.src.split(/[?#]/)[0],
+    src: clipSrc(hit),
     from: num(hit.attrs['data-media-start'], 0),
     seconds: num(hit.attrs['data-duration'], 60),
     volume: num(hit.attrs['data-volume'], 1)
@@ -721,7 +748,7 @@ export async function refitBeds(p: Project): Promise<boolean> {
   if (!found.length) return false
   const fileDurations: Record<string, number> = {}
   for (const t of found) {
-    const src = (t.attrs.src ?? '').split(/[?#]/)[0]
+    const src = clipSrc(t)
     if (!src || src in fileDurations || /^[a-z][a-z0-9+.-]*:/i.test(src)) continue
     const seconds = await lengthOf(resolve(p.dir, src))
     if (seconds) fileDurations[src] = seconds
