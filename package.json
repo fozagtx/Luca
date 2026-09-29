@@ -15,6 +15,7 @@
     "fonts": "node scripts/fonts-manifest.ts",
     "luts": "node scripts/luts-manifest.ts",
     "ai33:fake": "node scripts/fake-ai33.ts",
+    "ai33:smoke": "node scripts/ai33-smoke.ts",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
