@@ -28,6 +28,7 @@
     "@hyperframes/core": "^0.8.78",
     "@hyperframes/player": "^0.8.78",
     "@hyperframes/producer": "^0.8.78",
+    "@paper-design/shaders-react": "^0.0.81",
     "@xzdarcy/timeline-engine": "1.0.0",
     "assemblyai": "^4.41.5",
     "chokidar": "^5.0.0",
