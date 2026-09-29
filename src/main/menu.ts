@@ -31,7 +31,7 @@ export function buildAppMenu(): void {
     {
       label: 'File',
       submenu: [
-        { label: 'New Project…', accelerator: 'Cmd+N', click: () => send('new-project') },
+        { label: 'Edit a Video…', accelerator: 'Cmd+N', click: () => send('new-project') },
         { label: 'Open Project…', accelerator: 'Cmd+O', click: () => send('open-project') },
         { label: 'Open Recent', submenu: [{ label: 'Clear Menu', enabled: false }] },
         { type: 'separator' },

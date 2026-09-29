@@ -12,7 +12,6 @@ type UiStore = {
   historyOpen: boolean
   exportOpen: boolean
   settingsOpen: boolean
-  newProject: { file: string } | null
   gotoOpen: boolean
   windowActive: boolean
   /** macOS fullscreen: the traffic lights are gone, so the toolbar drops its inset. */
@@ -36,7 +35,6 @@ type UiStore = {
   setHistory: (open: boolean) => void
   setExport: (open: boolean) => void
   setSettings: (open: boolean) => void
-  setNewProject: (v: { file: string } | null) => void
   setGoto: (open: boolean) => void
   setWindowActive: (a: boolean) => void
 }
@@ -50,7 +48,6 @@ export const useUi = create<UiStore>((set, get) => ({
   historyOpen: false,
   exportOpen: false,
   settingsOpen: false,
-  newProject: null,
   gotoOpen: false,
   windowActive: true,
   fullscreen: false,
@@ -77,7 +74,6 @@ export const useUi = create<UiStore>((set, get) => ({
   setHistory: (historyOpen) => set({ historyOpen }),
   setExport: (exportOpen) => set({ exportOpen }),
   setSettings: (settingsOpen) => set({ settingsOpen }),
-  setNewProject: (newProject) => set({ newProject }),
   setGoto: (gotoOpen) => set({ gotoOpen }),
   setWindowActive: (windowActive) => set({ windowActive })
 }))

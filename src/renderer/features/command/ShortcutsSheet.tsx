@@ -40,7 +40,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
   {
     title: 'Projects',
     rows: [
-      ['⌘N', 'New project from a video'],
+      ['⌘N', 'Edit a video or a voiceover'],
       ['⌘O', 'Open a project'],
       ['⇧⌘W', 'Home: close the project'],
       ['⇧⌘R', 'Show the project in Finder'],

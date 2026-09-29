@@ -5,7 +5,7 @@ import { bundledFontsDir, bundledLutsDir } from './resources'
 import { registerHandlers } from './handlers'
 import { Channels, broadcast } from './ipc'
 import { buildAppMenu } from './menu'
-import { VIDEO_EXT } from './projects'
+import { AUDIO_EXT, VIDEO_EXT } from './projects'
 import { DEV_PORT, LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, setCurrentProject } from './state'
@@ -98,7 +98,9 @@ function createWindow(): BrowserWindow {
 
 app.on('open-file', (e, path) => {
   e.preventDefault()
-  if (VIDEO_EXT.has(extname(basename(path)).toLowerCase())) {
+  // a video or a voiceover opened from Finder goes on the start card
+  const ext = extname(basename(path)).toLowerCase()
+  if (VIDEO_EXT.has(ext) || AUDIO_EXT.has(ext)) {
     if (mainWindow) broadcast(Channels.projectDropFile, path)
     else pendingOpenFile = path
   }

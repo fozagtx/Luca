@@ -3,6 +3,7 @@ import { luca } from '../../lib/luca'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { stopLuca } from '../../stores/queue'
+import { useStart } from '../../stores/start'
 import { useTimeline } from '../../stores/timeline'
 import { useUpdates } from '../../stores/updates'
 import { useVoice } from '../../stores/voice'
@@ -145,8 +146,8 @@ export function useShortcuts(): void {
       const proj = useProject.getState()
       switch (cmd) {
         case 'new-project': {
-          const file = await luca.project.pickVideo()
-          if (file) ui.setNewProject({ file })
+          const paths = await luca.project.pickMedia()
+          if (paths.length) await useStart.getState().startFrom(paths)
           break
         }
         case 'open-project': {
@@ -269,9 +270,7 @@ export function useShortcuts(): void {
       }
     })
 
-    const offDrop = luca.project.onDropFile((path) =>
-      useUi.getState().setNewProject({ file: path })
-    )
+    const offDrop = luca.project.onDropFile((path) => void useStart.getState().startFrom([path]))
     const offActive = luca.window.onActive((active) => {
       useUi.getState().setWindowActive(active)
       document.body.classList.toggle('inactive', !active)

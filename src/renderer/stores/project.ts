@@ -14,12 +14,6 @@ type ProjectStore = {
   loading: boolean
   error: string | null
   init: () => Promise<void>
-  create: (args: {
-    file: string
-    name?: string
-    aspect: Project['aspect']
-    look?: string | null
-  }) => Promise<void>
   open: (dir: string) => Promise<void>
   close: () => Promise<void>
   refreshRecent: () => Promise<void>
@@ -55,19 +49,6 @@ export const useProject = create<ProjectStore>((set, get) => ({
         ...(e.composition ? { previewVersion: e.version } : {})
       })
     )
-  },
-
-  create: async (args) => {
-    set({ loading: true, error: null })
-    try {
-      const p = await luca.project.create(args)
-      set({ project: p, version: 0, previewVersion: 0 })
-    } catch (err) {
-      set({ error: errorMessage(err) })
-      throw err
-    } finally {
-      set({ loading: false })
-    }
   },
 
   open: async (dir) => {

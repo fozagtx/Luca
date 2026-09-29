@@ -103,8 +103,6 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.05);
   --tip-bg: #1c1c1e;
   --tip-fg: #ffffff;
-  /* how strongly the home screen's Pexels backdrop is dimmed under the words */
-  --home-scrim: 74%;
   --vng-primary: var(--accent);
   --vng-primary-foreground: var(--accent-fg);
   --vng-radius-md: 6px;
@@ -155,7 +153,6 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --tip-bg: #26262a;
   --tip-fg: #f4f4f5;
-  --home-scrim: 62%;
   color-scheme: dark;
 }
 
@@ -431,11 +428,6 @@ body.inactive ::selection {
   transform: scale(0.94);
 }
 
-/* Home: a Pexels photo or video behind the start card, dimmed in the theme's own color */
-.home-scrim {
-  background: color-mix(in srgb, var(--viewer-bg) var(--home-scrim), transparent);
-}
-
 /* Cards */
 .card {
   background: var(--bg);
@@ -612,23 +604,6 @@ body.inactive ::selection {
     font-weight: 600;
   }
 
-  /* Horizontal chip rail with faded edges */
-  .chip-rail {
-    display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    mask-image: linear-gradient(
-      90deg,
-      transparent 0,
-      #000 10px,
-      #000 calc(100% - 18px),
-      transparent
-    );
-  }
-  .chip-rail::-webkit-scrollbar {
-    display: none;
-  }
   .chip {
     display: inline-flex;
     flex-shrink: 0;

@@ -19,7 +19,6 @@ import { useShortcuts } from './features/command/useShortcuts'
 import { CaptionStudio } from './features/captions/CaptionStudio'
 import { ColorStudio } from './features/color/ColorStudio'
 import { ExportBar, ExportSheet } from './features/export/ExportSheet'
-import { NewProjectSheet } from './features/onboarding/NewProjectSheet'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Timeline } from './features/timeline/Timeline'
 import { Toolbar } from './features/toolbar/Toolbar'
@@ -232,7 +231,6 @@ export default function App(): ReactElement {
         )}
       </div>
       <CommandPalette />
-      <NewProjectSheet />
       <ExportSheet />
       <GotoSheet />
       <ShortcutsSheet />

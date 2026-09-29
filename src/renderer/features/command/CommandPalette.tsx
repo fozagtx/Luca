@@ -21,6 +21,7 @@ import type { ReactElement } from 'react'
 import { luca } from '../../lib/luca'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
+import { useStart } from '../../stores/start'
 import { useUi } from '../../stores/ui'
 import { useUpdates } from '../../stores/updates'
 import { useVoice } from '../../stores/voice'
@@ -46,12 +47,12 @@ export function CommandPalette(): ReactElement {
   const items: Item[] = [
     {
       id: 'new',
-      label: 'New Project…',
+      label: 'Edit a Video…',
       shortcut: '⌘N',
       icon: <Plus size={14} strokeWidth={1.5} />,
       run: async () => {
-        const file = await luca.project.pickVideo()
-        if (file) ui.setNewProject({ file })
+        const paths = await luca.project.pickMedia()
+        if (paths.length) await useStart.getState().startFrom(paths)
       }
     },
     {
