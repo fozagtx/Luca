@@ -1,3 +1,4 @@
+import { formatCredits, type Ai33Ask } from '@shared/ai33'
 import type { ChatContentPart, ChatMessage, Chip } from '@shared/types'
 import {
   AudioLines,
@@ -25,9 +26,12 @@ import { Button } from '../../components/ui/button'
 import { cn } from '../../lib/cn'
 import { formatDuration } from '../../lib/format'
 import { clock } from '../../lib/timecode'
+import { useAi33 } from '../../stores/ai33'
 import { useChat } from '../../stores/chat'
 import { stopLuca } from '../../stores/queue'
-import type { ToolPart } from './activity'
+import { Ai33KeyCard } from '../ai33/Ai33KeyCard'
+import { AudioPreview } from '../ai33/AudioPreview'
+import { activityOf, lowerFirst, type ToolPart } from './activity'
 import { Steps } from './Steps'
 
 // ------------------------------------------------------------------------------------ chips
@@ -159,22 +163,27 @@ export function UserMessage({ m, animate }: { m: ChatMessage; animate: boolean }
 
 // ------------------------------------------------------------------------------------ assistant
 
+type PermissionPart = Extract<ChatContentPart, { type: 'permission' }>
+
 type Group =
   | { kind: 'steps'; parts: ToolPart[] }
   | { kind: 'text'; text: string }
-  | { kind: 'permission'; part: Extract<ChatContentPart, { type: 'permission' }> }
+  /** `after`: the step that was running when the card came up (a tool's own question). */
+  | { kind: 'permission'; part: PermissionPart; after?: ToolPart }
 
 function group(parts: ChatContentPart[]): Group[] {
   const out: Group[] = []
+  let after: ToolPart | undefined
   for (const p of parts) {
     const last = out[out.length - 1]
     if (p.type === 'tool') {
+      after = p
       if (last?.kind === 'steps') last.parts.push(p)
       else out.push({ kind: 'steps', parts: [p] })
     } else if (p.type === 'text') {
       if (!p.text.trim()) continue
       out.push({ kind: 'text', text: p.text })
-    } else out.push({ kind: 'permission', part: p })
+    } else out.push({ kind: 'permission', part: p, after })
   }
   return out
 }
@@ -251,7 +260,11 @@ export function AssistantMessage({
   return (
     <div className={cn('group/msg flex flex-col gap-2.5', animate && 'msg-in')}>
       {groups.map((g, i) => {
-        if (g.kind === 'steps')
+        if (g.kind === 'steps') {
+          // a tool that asked a question of its own is stopped on the card that follows it
+          const next = groups[i + 1]
+          const ask = next?.kind === 'permission' ? next.part.ask : undefined
+          const answer = next?.kind === 'permission' ? next.part.resolved : undefined
           return (
             <Steps
               key={i}
@@ -259,11 +272,26 @@ export function AssistantMessage({
               live={!!m.pending}
               stopped={!!m.stopped}
               animate={anim}
+              waiting={
+                ask && !answer
+                  ? ask.kind === 'connect'
+                    ? 'Waiting for your ai33 key'
+                    : 'Waiting for your OK'
+                  : undefined
+              }
+              declined={!!ask && answer === 'deny'}
             />
           )
+        }
         if (g.kind === 'permission')
           return (
-            <PermissionCard key={g.part.id} part={g.part} stopped={!!m.stopped} animate={anim} />
+            <PermissionCard
+              key={g.part.id}
+              part={g.part}
+              after={g.after}
+              stopped={!!m.stopped}
+              animate={anim}
+            />
           )
         return (
           <Markdown
@@ -330,28 +358,37 @@ function allowScope(rule: string): string {
 
 function PermissionCard({
   part,
+  after,
   stopped,
   animate
 }: {
-  part: Extract<ChatContentPart, { type: 'permission' }>
+  part: PermissionPart
+  /** The step that was running when the card came up, which names what a tool's own question is about. */
+  after?: ToolPart
   /** The turn was stopped, so an unanswered card was closed by Stop, not by the person. */
   stopped: boolean
   animate: boolean
 }): ReactElement {
   const decide = useChat((s) => s.decide)
+  const credits = useAi33((s) => s.credits)
   const [details, setDetails] = useState(false)
   const input = (part.input ?? {}) as Record<string, unknown>
-  const activity = describeActivity(part.tool, input)
+  const ask = part.ask
+  const activity = ask && after ? activityOf(after) : describeActivity(part.tool, input)
   const bash = part.tool === 'Bash'
   const exact = bash ? String(input.command ?? '') : JSON.stringify(input, null, 2)
   const scope = part.rule ? allowScope(part.rule) : null
+  const askKind = ask?.kind
 
   // ⌘↩ allows once, ⇧⌘↩ always (when offered): Luca is blocked until you answer, so this comes
   // before the queue
   useEffect(() => {
-    if (part.resolved) return
+    // the key card takes a pasted key, so no shortcut may answer it
+    if (part.resolved || askKind === 'connect') return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing) return
+      // a cost card has no "always": ⇧⌘↩ is not a way to spend
+      if (askKind && e.shiftKey) return
       // typing a message: ⌘↩ sends it rather than allowing the step
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return
@@ -361,7 +398,7 @@ function PermissionCard({
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [part.id, part.resolved, scope, decide])
+  }, [part.id, part.resolved, scope, askKind, decide])
 
   if (part.resolved) {
     const denied = part.resolved === 'deny'
@@ -375,19 +412,23 @@ function PermissionCard({
           <Check size={12} className="shrink-0 text-success" />
         )}
         <span className="min-w-0 truncate">
-          {denied
-            ? stopped
-              ? `Stopped before ${activity.active.toLowerCase()}`
-              : part.cancelled
-                ? `Skipped: ${activity.active.toLowerCase()}`
-                : `You didn't allow: ${activity.active.toLowerCase()}`
-            : part.resolved === 'allow-always'
-              ? `Always allowed in this project: ${scope ?? activity.active.toLowerCase()}`
-              : `Allowed once: ${activity.active.toLowerCase()}`}
+          {ask
+            ? askOutcome(ask, part, lowerFirst(activity.active), stopped, credits)
+            : denied
+              ? stopped
+                ? `Stopped before ${activity.active.toLowerCase()}`
+                : part.cancelled
+                  ? `Skipped: ${activity.active.toLowerCase()}`
+                  : `You didn't allow: ${activity.active.toLowerCase()}`
+              : part.resolved === 'allow-always'
+                ? `Always allowed in this project: ${scope ?? activity.active.toLowerCase()}`
+                : `Allowed once: ${activity.active.toLowerCase()}`}
         </span>
       </div>
     )
   }
+
+  if (ask) return <AskCard part={part} ask={ask} animate={animate} />
 
   return (
     <div
@@ -455,6 +496,108 @@ function PermissionCard({
           ? `Always allow lets ${scope} run in this project without asking again.`
           : 'Luca asks every time for commands that could change, delete or download things.'}
       </p>
+    </div>
+  )
+}
+
+/** How an answered question from one of Luca's own tools reads in the chat. */
+function askOutcome(
+  ask: Ai33Ask,
+  part: PermissionPart,
+  what: string,
+  stopped: boolean,
+  credits: number | null
+): string {
+  const denied = part.resolved === 'deny'
+  if (ask.kind === 'connect') {
+    if (!denied)
+      return credits === null ? 'Connected' : `Connected · ${formatCredits(credits)} credits`
+    return stopped
+      ? 'Stopped before connecting ai33'
+      : part.cancelled
+        ? 'Skipped: connecting ai33'
+        : 'You didn’t connect ai33'
+  }
+  if (!denied) return `Allowed once: ${what}`
+  return stopped ? `Stopped before ${what}` : `Skipped: ${what}`
+}
+
+/**
+ * A question one of Luca's own tools asks in the chat: `connect` (it needs an ai33 key) or
+ * `spend` (a cost card). Main writes the words; there is no "always allow" and no safe list.
+ */
+function AskCard({
+  part,
+  ask,
+  animate
+}: {
+  part: PermissionPart
+  ask: Ai33Ask
+  animate: boolean
+}): ReactElement {
+  const decide = useChat((s) => s.decide)
+  const connect = ask.kind === 'connect'
+  return (
+    <div
+      role="group"
+      aria-label={ask.title}
+      className={cn(
+        'rounded-[12px] border border-border bg-bg p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
+        animate && 'msg-in'
+      )}
+    >
+      <div className="flex items-start gap-2.5">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-secondary text-secondary-fg">
+          <AudioLines size={15} strokeWidth={1.75} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[12.5px] font-semibold text-text">
+            {connect ? ask.title || 'Luca needs an ai33 key' : ask.title}
+          </div>
+          {connect ? (
+            // the key field, Connect and Not now; connecting is typing a key, never a shortcut
+            <Ai33KeyCard
+              context="chat"
+              onDismiss={() => void decide(part.id, 'deny')}
+              className="mt-0.5"
+            />
+          ) : (
+            <>
+              <div className="mt-0.5 text-[12px] leading-[1.45] text-text-2">{ask.detail}</div>
+              {ask.warn ? (
+                <div className="mt-1.5 flex items-start gap-1.5 text-[11.5px] leading-[1.4] text-text-2">
+                  <CircleAlert size={12} className="mt-px shrink-0 text-warning" />
+                  <span>{ask.warn}</span>
+                </div>
+              ) : null}
+              {ask.voice ? (
+                <div className="mt-2 flex items-center gap-1 text-[11.5px] text-text-2">
+                  <AudioPreview voiceId={ask.voice.id} label={`Hear ${ask.voice.name}`} />
+                  {/* the words play it too; the button beside them is what keyboards and readers use */}
+                  <span
+                    aria-hidden
+                    className="cursor-default"
+                    onClick={(e) => e.currentTarget.parentElement?.querySelector('button')?.click()}
+                  >
+                    Hear {ask.voice.name}
+                  </span>
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+      {connect ? null : (
+        <div className="mt-3 flex flex-wrap gap-1.5 pl-[38px]">
+          <Button size="sm" variant="primary" onClick={() => void decide(part.id, 'allow')}>
+            {ask.labels?.allow ?? 'Go ahead'}{' '}
+            <kbd className="ml-0.5 font-mono text-[10px] opacity-70">⌘↩</kbd>
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => void decide(part.id, 'deny')}>
+            {ask.labels?.deny ?? 'Not now'}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
