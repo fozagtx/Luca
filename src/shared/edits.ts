@@ -53,7 +53,7 @@ export const EDIT_STEPS: EditStep[] = [
     needsWords: true,
     needsPicture: false,
     guide:
-      'B-roll: where the words name something a viewer would want to see (a product, a place, a company or its logo, an object, a person, a number), show a picture or short clip of it for 1.5–4 s with broll_search and broll_add, as a full-frame cutaway or a card over the footage, while the voice keeps playing. Only for things actually said, never as decoration or a background.'
+      'B-roll: where the words name something a viewer would want to see (a product, a place, a company or its logo, an object, a person, a number), show a picture or short clip of it for 1.5–4 s with broll_search and broll_add, as a full-frame cutaway or a card over the footage (with only a voiceover, full frame as the scenes themselves), while the voice keeps playing. Only for things actually said, never as decoration or a background.'
   },
   {
     id: 'name',
@@ -218,7 +218,9 @@ export function editGuide(
   if (notes) out.push('## The user’s notes', notes, '')
   out.push(
     '## Rules',
-    '- The user’s footage is the video: it fills the frame. No stock or animated backgrounds behind it, no intro or outro they didn’t ask for.',
+    opts.voiceOnly
+      ? '- There is no footage: every frame needs a visual that follows what is said (B-roll, animated key words, simple diagrams). No intro or outro they didn’t ask for.'
+      : '- The user’s footage is the video: it fills the frame. No stock or animated backgrounds behind it, no intro or outro they didn’t ask for.',
     '- Keep what they said and the order they said it in; cut only what the steps above ask for.',
     '- When you’re done, reply in 2–4 short lines: what you did, with times, and one thing they could ask for next.'
   )

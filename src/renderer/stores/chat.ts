@@ -10,7 +10,7 @@ import type {
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 import { errorMessage, useProject } from './project'
-import { attachmentOf, kindOf, NO_FOOTAGE, useStart } from './start'
+import { attachmentOf, IMAGES_ONLY, kindOf, NO_FOOTAGE, useStart } from './start'
 
 /** A file on its way into the project for the chat; videos can take a moment to get ready. */
 export type PendingMedia = { id: number; name: string; media: MediaKind; progress?: number }
@@ -57,25 +57,19 @@ type ChatStore = {
   /** Typing: the draft is now the person's own words. */
   setDraft: (d: string) => void
   /**
-   * Fill the box on the person's behalf (an idea, a catalog card, a suggestion). Replaces a draft
-   * that is empty or still exactly what an earlier fill wrote (dropping only chips that fill
-   * added), but never words the person typed; the chip is attached either way. `add` names a
-   * catalog item being added: adds in a row build one request ("Add A and B").
+   * Fill the box on the person's behalf (a suggestion, a B-roll pick). Replaces a draft that is
+   * empty or still exactly what an earlier fill wrote (dropping only chips that fill added), but
+   * never words the person typed; the chip is attached either way.
    */
-  fillDraft: (text: string, chip?: Chip, add?: string) => void
+  fillDraft: (text: string, chip?: Chip) => void
   /** What the last fill wrote while the person hasn't changed it, and the chips it added. */
-  auto: { draft: string; chips: string[]; adds?: string[] } | null
+  auto: { draft: string; chips: string[] } | null
   signIn: () => Promise<void>
   retry: () => Promise<void>
 }
 
-/** Chips a fill can attach and later take back: catalog items and B-roll. */
-const chipName = (c: Chip): string | undefined =>
-  c.kind === 'catalog' ? c.name : c.kind === 'broll' ? c.id : undefined
-
-/** "A", "A and B", "A, B and C". */
-const listOf = (xs: string[]): string =>
-  xs.length < 2 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`
+/** Chips a fill can attach and later take back: B-roll picks. */
+const chipName = (c: Chip): string | undefined => (c.kind === 'broll' ? c.id : undefined)
 
 let attachSeq = 0
 /** Files go into the project one at a time: preparing two videos at once only slows both. */
@@ -150,12 +144,15 @@ export const useChat = create<ChatStore>((set, get) => ({
     if (!useProject.getState().project) {
       const start = useStart.getState()
       if (!kindOf(start.files)) {
-        set({ error: NO_FOOTAGE })
+        set({ error: start.files.length ? IMAGES_ONLY : NO_FOOTAGE })
         return false
       }
       if (!opts?.keepDraft) set({ draft: '', auto: null, error: null })
-      // a failed start keeps the words, in the notes on the start card
-      start.addNotes(text)
+      // a failed start keeps the words, in the notes on the start card; a request sent again
+      // after one (queued or spoken) is in them already
+      const words = text.trim()
+      const notes = start.edit.notes?.trim() ?? ''
+      if (notes !== words && !notes.endsWith(`\n\n${words}`)) start.addNotes(text)
       const spoken = !!(context as { voice?: boolean } | null)?.voice
       const ok = await start.create({ spoken })
       if (!ok) set({ error: useStart.getState().error })
@@ -238,7 +235,7 @@ export const useChat = create<ChatStore>((set, get) => ({
   removeChip: (i) => set((s) => ({ chips: s.chips.filter((_, j) => j !== i) })),
   clearChips: () => set({ chips: [] }),
   setDraft: (draft) => set({ draft, auto: null }),
-  fillDraft: (text, chip, add) => {
+  fillDraft: (text, chip) => {
     const { draft, auto, chips } = get()
     const name = chip && chipName(chip)
     const attached = (cs: Chip[]): boolean => !!name && cs.some((c) => chipName(c) === name)
@@ -248,20 +245,14 @@ export const useChat = create<ChatStore>((set, get) => ({
       if (chip && !attached(chips)) set({ chips: [...chips, chip] })
       return
     }
-    const adds = add
-      ? [...new Set([...(untouched && auto?.adds ? auto.adds : []), add])]
-      : undefined
-    const building = !!adds && adds.length > 1
     // replacing an earlier fill takes back the chips it added, not ones the person attached
-    let next =
-      untouched && !building ? chips.filter((c) => !auto.chips.includes(chipName(c) ?? '')) : chips
-    const owned = building && auto ? [...auto.chips] : []
+    let next = untouched ? chips.filter((c) => !auto.chips.includes(chipName(c) ?? '')) : chips
+    const owned: string[] = []
     if (chip && !attached(next)) {
       next = [...next, chip]
       if (name) owned.push(name)
     }
-    const text2 = building ? `Add ${listOf(adds)} ` : text
-    set({ draft: text2, chips: next, auto: { draft: text2, chips: owned, adds } })
+    set({ draft: text, chips: next, auto: { draft: text, chips: owned } })
   },
   signIn: async () => {
     await luca.env.openClaudeLogin()

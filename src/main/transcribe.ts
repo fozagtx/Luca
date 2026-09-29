@@ -3,7 +3,7 @@ import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from
 import { join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import type { CleanStatus, Transcript, Word } from '../shared/types'
-import { ffmpegProgress, probeMedia } from './env'
+import { childEnv, ffmpegProgress, probeMedia, run, which } from './env'
 import { getSecret } from './secrets'
 
 export const FILLERS = new Set(['um', 'uh', 'erm', 'er', 'ah', 'hmm', 'mm', 'uhm', 'mhm'])
@@ -13,6 +13,31 @@ export function isFiller(text: string): boolean {
 }
 
 export type StageReport = (s: Pick<CleanStatus, 'stage' | 'progress' | 'estimated'>) => void
+
+/** Whether a file has a sound track at all (a screen recording often has none); true when unsure. */
+export async function hasAudioStream(file: string): Promise<boolean> {
+  try {
+    const ffprobe = (await which('ffprobe')) ?? 'ffprobe'
+    const r = await run(
+      ffprobe,
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        'a',
+        '-show_entries',
+        'stream=index',
+        '-of',
+        'csv=p=0',
+        file
+      ],
+      { env: await childEnv(), timeoutMs: 30_000 }
+    )
+    return r.code !== 0 || r.stdout.trim() !== ''
+  } catch {
+    return true
+  }
+}
 
 /** Mono 16 kHz FLAC of the source's audio at .luca/audio.flac (about a tenth of the video). */
 export async function extractAudio(

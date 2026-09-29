@@ -1,7 +1,7 @@
 import type {
   AgentEvent,
-  BackgroundResults,
-  BackgroundSearch,
+  BrollResults,
+  BrollSearch,
   CaptionConfig,
   CaptionState,
   ColorState,
@@ -10,7 +10,6 @@ import type {
   ProjectFont,
   StartArgs,
   StartResult,
-  CatalogItem,
   ChatMessage,
   Checkpoint,
   Chip,
@@ -27,7 +26,6 @@ import type {
   Project,
   ProjectChanged,
   RecentProject,
-  RemocnItem,
   Settings,
   Timeline,
   TimelineEdit,
@@ -111,20 +109,12 @@ export type LucaApi = {
     /** A message that was added or changed (new tool step, permission, end of turn). */
     onMessage: (cb: (m: ChatMessage) => void) => Unsubscribe
   }
-  catalog: {
-    list: (args?: { refresh?: boolean }) => Promise<CatalogItem[]>
-    add: (name: string) => Promise<{ ok: boolean; snippet?: string; error?: string }>
-    remocn: (args?: { refresh?: boolean }) => Promise<RemocnItem[]>
-    remocnPreview: (name: string) => Promise<string | null>
-    remocnStudioStatus: () => Promise<{ ready: boolean; step?: string; error?: string }>
-    remocnSetup: () => Promise<{ ok: boolean; error?: string }>
-  }
   /** Free stock photos and videos from Pexels, for B-roll. */
-  backgrounds: {
+  broll: {
     hasKey: () => Promise<boolean>
     /** Checks the key with Pexels and saves it (empty removes it); rejects when Pexels refuses it. */
     setKey: (key: string) => Promise<boolean>
-    search: (args: BackgroundSearch) => Promise<BackgroundResults>
+    search: (args: BrollSearch) => Promise<BrollResults>
   }
   /** Video generation and editing with Gemini Omni, on the person's own API key. */
   gemini: {

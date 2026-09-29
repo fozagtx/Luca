@@ -9,7 +9,7 @@ import {
   Image as ImageIcon,
   ImagePlay,
   MousePointer2,
-  Package,
+  Paperclip,
   RotateCcw,
   Scissors,
   ShieldCheck,
@@ -38,8 +38,6 @@ function chipIcon(chip: Chip): ReactElement {
       return <MousePointer2 size={11} />
     case 'frame':
       return <ImageIcon size={11} />
-    case 'catalog':
-      return <Package size={11} />
     case 'clip':
       return <Scissors size={11} />
     case 'transcript':
@@ -56,6 +54,9 @@ function chipIcon(chip: Chip): ReactElement {
       ) : (
         <ImageIcon size={11} />
       )
+    default:
+      // a kind this Luca doesn't know (saved by an older or newer one)
+      return <Paperclip size={11} />
   }
 }
 
@@ -70,8 +71,6 @@ function chipLabel(chip: Chip): string {
       )
     case 'frame':
       return `Frame at ${clock(chip.time)}`
-    case 'catalog':
-      return chip.title || chip.name
     case 'clip':
       return chip.clipId.replace(/[-_]/g, ' ')
     case 'transcript':
@@ -82,6 +81,10 @@ function chipLabel(chip: Chip): string {
       return chip.label
     case 'media':
       return chip.duration ? `${chip.name} · ${formatDuration(chip.duration)}` : chip.name
+    default: {
+      const other = chip as { kind: string; label?: string; title?: string }
+      return other.label ?? other.title ?? other.kind
+    }
   }
 }
 

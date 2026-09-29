@@ -32,7 +32,10 @@ export function BrollTab(): ReactElement {
           hint="Click one, then say where or just send"
         />
       ) : (
-        <EmptyPane title="No project open" hint="Open a project to find B-roll for it." />
+        <EmptyPane
+          title="Add your video first"
+          hint="Luca finds B-roll of what you talk about once your video or voiceover is in."
+        />
       )}
     </div>
   )
