@@ -2,7 +2,6 @@ import { app, BrowserWindow, dialog, nativeImage, nativeTheme, shell } from 'ele
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type {
-  Aspect,
   BackgroundSearch,
   CaptionConfig,
   Chip,
@@ -33,6 +32,7 @@ import {
 import {
   applyEdl,
   cleanStatus,
+  placeVoiceover,
   readEdl,
   readTranscript,
   runCleanEdit,
@@ -170,6 +170,9 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     const report = (p: CreateProgress): void => broadcast(Channels.projectCreateProgress, p)
     try {
       const res = await startProject(args, report)
+      // init leaves a voiceover off the timeline: it plays from the first frame, even when Luca
+      // can't transcribe it
+      if (res.kind === 'audio') await placeVoiceover(res.project)
       // the Look goes in before the project opens, so it opens (repo, watcher, Claude) only once;
       // a Look that only partly applied still opens the project, then reports what failed
       let lookError: unknown = null
@@ -188,20 +191,14 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     }
   }
   handle(Channels.projectStart, start)
-  handle(
-    Channels.projectCreate,
-    async (args: { file: string; name?: string; aspect: Aspect; look?: string | null }) =>
-      (await start({ name: args.name, aspect: args.aspect, look: args.look, files: [args.file] }))
-        .project
-  )
   handle(Channels.projectPickMedia, async () => {
     const ext = (set: Set<string>): string[] => [...set].map((e) => e.slice(1))
     const res = await openDialog(getWin(), {
-      title: 'Choose a video, audio or images',
+      title: 'Choose your video or voiceover',
       properties: ['openFile', 'multiSelections'],
       filters: [
         {
-          name: 'Video, audio or images',
+          name: 'Video, voiceover or images',
           extensions: [...ext(VIDEO_EXT), ...ext(AUDIO_EXT), ...ext(IMAGE_EXT)]
         }
       ]
@@ -252,14 +249,6 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   })
   handle(Channels.projectCurrent, currentProject)
   handle(Channels.projectRecent, recentProjects)
-  handle(Channels.projectPickVideo, async () => {
-    const res = await openDialog(getWin(), {
-      title: 'Choose a video',
-      properties: ['openFile'],
-      filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'm4v', 'webm'] }]
-    })
-    return res.canceled ? null : (res.filePaths[0] ?? null)
-  })
   handle(Channels.projectPickDir, async () => {
     const res = await openDialog(getWin(), {
       title: 'Open a Luca project',

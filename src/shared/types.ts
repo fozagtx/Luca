@@ -572,7 +572,7 @@ export type BackgroundResults = {
 export type AddedBackground = {
   id: string
   media: BackgroundMedia
-  /** Project-relative path, e.g. media/backgrounds/pexels-video-123.mp4. */
+  /** Project-relative path, e.g. media/broll/pexels-video-123.mp4. */
   file: string
   width: number
   height: number

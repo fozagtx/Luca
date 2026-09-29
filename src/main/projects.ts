@@ -20,7 +20,7 @@ import type {
   StartEdit,
   StartKind
 } from '../shared/types'
-import { childEnv, run, runHyperframes, which } from './env'
+import { childEnv, probeMedia, run, runHyperframes, which } from './env'
 import {
   aspectOf,
   AUDIO_EXT,
@@ -193,7 +193,7 @@ export async function startProject(
     let brief =
       kind === 'video'
         ? videoBrief(await placeClips(dir, source, videos, ready, probes, report), args.aspect)
-        : voiceoverBrief(dir, source, args.aspect)
+        : await voiceoverBrief(dir, source, args.aspect)
     if (extras.length) {
       const added = await importExtras(dir, extras, report)
       brief += ` The user also added ${added.length === 1 ? 'this file' : 'these files'}, in the order they added them: ${added.join(', ')}. Use ${added.length === 1 ? 'it' : 'them'} where ${added.length === 1 ? 'it fits' : 'they fit'} (images: a logo, screenshots or pictures of what is said; audio: the voiceover when the footage is silent, music under the voice otherwise).`
@@ -411,12 +411,16 @@ function videoBrief(clips: PlacedClip[], aspect: Aspect): string {
 }
 
 /** What Luca is told about a voiceover: nothing is on screen yet, so every visual is Luca's. */
-function voiceoverBrief(dir: string, source: string, aspect: Aspect): string {
+async function voiceoverBrief(dir: string, source: string, aspect: Aspect): Promise<string> {
   const [w, h] = SIZE[aspect]
-  const html = readFileSync(join(dir, 'index.html'), 'utf8')
-  const length = Number(
-    findTags(html).find((t) => t.attrs['data-composition-id'])?.attrs['data-duration']
-  )
+  // the composition is a placeholder until the voiceover goes on the timeline: ask the file
+  const file = [join(dir, 'media', source), join(dir, source)].find((f) => existsSync(f))
+  const length = file
+    ? await probeMedia(file).then(
+        (m) => m.duration,
+        () => 0
+      )
+    : 0
   return `This project starts from the user's voiceover (${source}${length > 0 ? `, ${r2(length)}s` : ''}, in the timeline as audio) and nothing on screen yet, in a ${w}×${h} ${aspect} video. Every visual is yours to make, following what is said. Edit it as planned below.`
 }
 

@@ -1,6 +1,5 @@
 import type {
   AgentEvent,
-  Aspect,
   BackgroundResults,
   BackgroundSearch,
   CaptionConfig,
@@ -57,19 +56,12 @@ export type LucaApi = {
     savePanes: (key: string, sizes: number[]) => Promise<void>
   }
   project: {
-    create: (args: {
-      file: string
-      name?: string
-      aspect: Aspect
-      look?: string | null
-    }) => Promise<Project>
     open: (dir: string) => Promise<Project>
     close: () => Promise<void>
     current: () => Promise<Project | null>
     recent: () => Promise<RecentProject[]>
     /** New project from the person's footage or a voiceover (images next to them wait in media/). */
     start: (args: StartArgs) => Promise<StartResult>
-    pickVideo: () => Promise<string | null>
     /** Videos, audio or images (several at once) to start a project from. */
     pickMedia: () => Promise<string[]>
     /** Small data-URL preview of a local image or video file. */
