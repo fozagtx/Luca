@@ -11,7 +11,8 @@ const defaults = (): Settings => ({
   keyterms: [],
   recentProjects: [],
   panes: {},
-  alwaysAllow: {}
+  alwaysAllow: {},
+  approvals: 'ask'
 })
 
 let cache: Settings | null = null

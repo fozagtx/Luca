@@ -291,6 +291,8 @@ export type EnvStatus = {
 
 export type Theme = 'light' | 'dark'
 
+export type ApprovalMode = 'ask' | 'full'
+
 export type Settings = {
   projectsDir: string
   theme: Theme
@@ -300,6 +302,8 @@ export type Settings = {
   window?: { x?: number; y?: number; width: number; height: number }
   panes?: Record<string, number[]>
   alwaysAllow?: Record<string, string[]>
+  /** 'full' auto-approves every step Luca's hard guards allow; 'ask' shows approval cards. */
+  approvals?: ApprovalMode
   /** The version that last ran, to tell when Luca was updated. */
   lastVersion?: string
 }

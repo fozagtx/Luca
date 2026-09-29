@@ -581,6 +581,7 @@ export class ProjectAgent {
         return { behavior: 'deny', message: 'media/ and renders/ are immutable in Luca.' }
       }
     }
+    if (getSettings().approvals === 'full') return { behavior: 'allow', updatedInput: input }
     // "Always allow" remembers a command by its first word, so it is only offered (and only
     // honoured) for plain read-only commands; anything that could change, delete, download or
     // chain something asks every time
@@ -634,6 +635,22 @@ export class ProjectAgent {
     }
     // Luca keeps its own always-allow list; the SDK's suggested rules can be broader than the card says
     p.resolve({ behavior: 'allow' })
+  }
+
+  /** Allow every open permission request (the person switched to full access). */
+  allowPending(): void {
+    if (!this.pending.size) return
+    for (const [id, p] of this.pending) {
+      const part = this.current?.parts?.find(
+        (x): x is Extract<ChatContentPart, { type: 'permission' }> =>
+          x.type === 'permission' && x.id === id
+      )
+      if (part) part.resolved = 'allow'
+      this.emit({ type: 'permission-resolved', id })
+      p.resolve({ behavior: 'allow' })
+    }
+    this.pending.clear()
+    this.pushMessage(this.current)
   }
 
   /** Answer every open permission request with deny (the turn it belongs to is over). */

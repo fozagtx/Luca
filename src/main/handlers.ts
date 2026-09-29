@@ -129,6 +129,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.settingsGet, getSettings)
   handle(Channels.settingsUpdate, (patch: Partial<Settings>) => {
     const next = updateSettings(patch)
+    if (patch.approvals === 'full') activeAgent()?.allowPending()
     if (patch.theme) {
       nativeTheme.themeSource = next.theme
       buildAppMenu()

@@ -26,6 +26,7 @@ import { cn } from '../../lib/cn'
 import { formatDuration } from '../../lib/format'
 import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
+import { useProject } from '../../stores/project'
 import { stopLuca } from '../../stores/queue'
 import type { ToolPart } from './activity'
 import { Steps } from './Steps'
@@ -452,6 +453,13 @@ function PermissionCard({
         <Button size="sm" variant="ghost" onClick={() => void decide(part.id, 'deny')}>
           Don&apos;t allow
         </Button>
+        <button
+          type="button"
+          onClick={() => void useProject.getState().setApprovals('full')}
+          className="self-center text-[11px] text-text-3 underline-offset-2 hover:text-text hover:underline"
+        >
+          Turn on full access
+        </button>
       </div>
       <p className="mt-2 pl-[38px] text-[10.5px] leading-[1.4] text-text-3">
         {scope
