@@ -126,12 +126,6 @@ export type LucaApi = {
     setKey: (key: string) => Promise<boolean>
     search: (args: BackgroundSearch) => Promise<BackgroundResults>
   }
-  /** Video generation and editing with Gemini Omni, on the person's own API key. */
-  gemini: {
-    hasKey: () => Promise<boolean>
-    /** Checks the key with Google and saves it (empty removes it); rejects when Google refuses it. */
-    setKey: (key: string) => Promise<boolean>
-  }
   /** Luca updating itself from its GitHub releases. */
   updates: {
     status: () => Promise<UpdateStatus>

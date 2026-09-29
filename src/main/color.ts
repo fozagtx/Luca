@@ -18,7 +18,7 @@ const readIndex = (dir: string): string => readFileSync(join(dir, 'index.html'),
 
 /**
  * Every <video> in index.html playing the user's own footage (media/, but not B-roll Luca added
- * or clips Gemini generated — grading those would fight the look they were made with).
+ * — grading that would fight the look it was made with).
  */
 export function footageVideos(html: string): TagMatch[] {
   return findTags(html, 'video').filter((t) => {
@@ -26,8 +26,7 @@ export function footageVideos(html: string): TagMatch[] {
     return (
       src.startsWith('media/') &&
       !src.startsWith('media/broll/') &&
-      !src.startsWith('media/backgrounds/') &&
-      !src.startsWith('media/generated/')
+      !src.startsWith('media/backgrounds/')
     )
   })
 }

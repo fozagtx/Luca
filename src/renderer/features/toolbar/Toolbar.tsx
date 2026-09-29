@@ -20,7 +20,6 @@ import { useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
 import higgsfield from '../../assets/higgsfield.png'
 import { goHome } from '../command/go-home'
-import { GeminiButton } from '../gemini/GeminiButton'
 import { HistoryPopover } from '../history/HistoryPopover'
 
 const swap =
@@ -134,7 +133,6 @@ export function Toolbar(): ReactElement {
           </Button>
         </Tip>
         <div className="mx-1.5 h-4 w-px bg-border" />
-        <GeminiButton />
         <Higgsfield />
       </div>
 

@@ -31,16 +31,6 @@ import {
 } from './clean'
 import { library } from './library'
 import { HYPERFRAMES } from './env'
-import {
-  generateVideo,
-  hasGeminiKey,
-  MAX_EXTENDED_SECONDS,
-  MAX_SECONDS,
-  MIN_SECONDS,
-  RESOLUTIONS,
-  type MadeVideo,
-  type VideoResolution
-} from './gemini'
 import { addBroll, hasPexelsKey, searchBackgrounds } from './pexels'
 import { readProject } from './projects'
 import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
@@ -83,28 +73,6 @@ const categoryIds = CATEGORIES.map((c) => c.id) as [
 ]
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err))
-
-// ------------------------------------------------------------------ generated video
-
-const NO_GEMINI =
-  'Gemini is not connected yet (no API key). Tell the user in one short sentence to click Gemini in the toolbar and paste their Gemini API key, then ask again. Do not make the video another way.'
-
-const secs = (n: number): string => `${Math.round(n * 10) / 10} s`
-
-/** Where a new clip goes, in words Luca can act on. */
-function placement(v: MadeVideo): string {
-  const general =
-    'It has its own sound; keep it unless it fights the voice or music already there (then mute or lower it).'
-  const f = v.from
-  if (!f)
-    return `Put it on the timeline where it belongs, as a full-frame video clip (object-fit: cover) unless it is meant to be smaller. ${general}`
-  const end = f.start + f.seconds
-  if (f.mode === 'edit')
-    return `It is the changed version of ${f.file} from ${secs(f.start)} to ${secs(end)} of that file. Put it where that part of the clip plays now, in its place (same track, position and size), or wherever the user asked. ${general}`
-  return f.includesSource
-    ? `It starts with ${f.file} from ${secs(f.start)} on (lightly adjusted so the join is seamless) and then continues it. Put it in place of ${f.file} from that point, so the video carries straight on. ${general}`
-    : `It continues ${f.file} from its end (${secs(end)} into that file). Put it straight after that clip on the same track. ${general}`
-}
 
 // ------------------------------------------------------------------ captions
 
@@ -285,9 +253,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'their look; Luca keeps them in sync with every cut, so never write or edit them by hand. ' +
       'font_add adds a font that comes with Luca, or downloads a Google Fonts font, into the project ' +
       'so any text can use it offline. ' +
-      'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it. ' +
-      'video_generate makes a new video clip with Gemini Omni, or edits or continues a clip in the ' +
-      'project, and saves it in media/generated.',
+      'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it.',
     tools: [
       tool(
         'transcribe',
@@ -700,115 +666,6 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
             return text(
               `Applied ${info?.name ?? lut} at ${Math.round(level * 100)}% to ${state.targets} clip${state.targets === 1 ? '' : 's'}`
             )
-          } catch (err) {
-            return text({ ok: false, error: message(err) })
-          }
-        }
-      ),
-      tool(
-        'video_generate',
-        [
-          'Make a video clip with Gemini Omni (it comes with sound), or change or continue a clip in the project. It spends the user’s Gemini credits and takes a few minutes, so use it only when they ask for a generated or edited clip, and make one clip per request unless they ask for more.',
-          `- New footage: a prompt. ${MIN_SECONDS}–${MAX_SECONDS} s per clip.`,
-          '- From pictures: firstFrame starts the clip on a picture; add lastFrame to end on another one (the same picture for both makes a loop). To restyle a still (a picture the user attached) and bring it to life, pass it in images and describe the new look and the motion.',
-          '- People, products, a look or a motion to use from pictures or clips: images / videoRefs, referred to in the prompt as <IMAGE_REF_0>, <IMAGE_REF_1>… and <VIDEO_REF_0>… in the order given.',
-          `- Change a clip (restyle it, relight it, add or remove something, change the weather or season): video. Omni reads up to ${MAX_SECONDS} s of it, from start. Keep edit prompts short and end them with "Keep everything else the same."`,
-          `- Continue a clip: extend. Adds up to ${MAX_SECONDS} s each time, up to ${MAX_EXTENDED_SECONDS} s in all.`,
-          'Clips made here are edited and continued from Gemini’s own copy, so pass their media/generated file as it is.',
-          'Prompting: describe subject, action, setting, camera, light and sound like a director. Omni cuts between several shots unless you say "a single continuous shot, no cuts". Say what the sound should be (music, ambience, "no dialogue"). Timing works in words ("after 3 s…") or as "[0-3s] … [3-6s] …". Text on screen is rendered as written.',
-          'Returns the file, its size, length and frames from it to look at. If it clearly misses what the user asked, say so and offer to try again rather than retrying on your own.'
-        ].join('\n'),
-        {
-          prompt: z.string().describe('what to make or change, in plain words'),
-          video: z
-            .string()
-            .optional()
-            .describe('a clip in the project to change (project path, e.g. media/generated/…)'),
-          extend: z.string().optional().describe('a clip in the project to continue'),
-          start: z
-            .number()
-            .min(0)
-            .optional()
-            .describe(
-              `seconds into video/extend where the part Omni reads begins; default: the start of a clip to change, the last ${MAX_SECONDS} s of a clip to continue`
-            ),
-          firstFrame: z.string().optional().describe('a picture in the project to start on'),
-          lastFrame: z.string().optional().describe('a picture to end on (needs firstFrame)'),
-          images: z
-            .array(z.string())
-            .max(8)
-            .optional()
-            .describe('pictures in the project to use as references (<IMAGE_REF_n>)'),
-          videoRefs: z
-            .array(z.string())
-            .max(5)
-            .optional()
-            .describe(
-              'clips in the project to use as references (<VIDEO_REF_n>); about 3 s each is ideal, up to 3 clips'
-            ),
-          seconds: z
-            .number()
-            .int()
-            .min(MIN_SECONDS)
-            .max(MAX_SECONDS)
-            .optional()
-            .describe('length of the new clip (or of the part added); default: Gemini picks'),
-          aspect: z
-            .enum(['16:9', '9:16'])
-            .optional()
-            .describe(
-              'Omni makes 16:9 or 9:16; default: the one nearest this video’s shape (or the clip being changed)'
-            ),
-          resolution: z
-            .enum(RESOLUTIONS as [VideoResolution, ...VideoResolution[]])
-            .optional()
-            .describe(
-              'default: enough for this video (1080p); 720p and 360p are quicker and cheaper, 4k is the slowest'
-            ),
-          width: z
-            .number()
-            .int()
-            .min(64)
-            .max(4096)
-            .optional()
-            .describe(
-              'exact width in pixels when the user asks for a size (with height); Omni’s frame is cropped and scaled to it. Default: this video’s frame (a square video is cropped from 16:9)'
-            ),
-          height: z.number().int().min(64).max(4096).optional(),
-          sound: z
-            .enum(['keep', 'new'])
-            .optional()
-            .describe(
-              'for video/extend: keep the clip’s own sound (default) or have Omni make all-new sound'
-            )
-        },
-        async (args, extra) => {
-          if (!hasGeminiKey()) return text({ ok: false, error: NO_GEMINI })
-          const p = readProject(projectDir)
-          if (!p) return text({ ok: false, error: 'No project is open.' })
-          const signal = (extra as { signal?: AbortSignal } | undefined)?.signal
-          try {
-            const v = await generateVideo(projectDir, p.aspect, args, signal)
-            const content: Content[] = [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  ok: true,
-                  file: v.file,
-                  size: `${v.width}x${v.height}`,
-                  seconds: v.seconds,
-                  sound: v.hasSound,
-                  made: `${v.resolution} ${v.aspect}${v.reframed ? `, cropped and scaled to ${v.width}x${v.height}` : ''}`,
-                  ...(v.from ? { from: v.from } : {}),
-                  place: placement(v),
-                  ...(v.frames.length
-                    ? { frames: 'Frames from its start, middle and end follow.' }
-                    : {})
-                })
-              },
-              ...v.frames.map((data): Content => ({ type: 'image', data, mimeType: 'image/jpeg' }))
-            ]
-            return { content }
           } catch (err) {
             return text({ ok: false, error: message(err) })
           }
