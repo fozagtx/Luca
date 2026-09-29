@@ -3,34 +3,46 @@ import { create } from 'zustand'
 import { luca } from '../lib/luca'
 import { useChat } from './chat'
 import { useProject } from './project'
+import { useTimeline } from './timeline'
 
-/** A new video Luca is building from the start card: from the first request until that turn ends. */
+/** Luca's first edit of the footage from the start card: from the first request until that turn ends. */
 export type Making = {
   projectId: string
   kind: StartKind
   since: number
+  /** The footage's length in seconds, once known (the timeline tells when the start card can't). */
+  length: number | null
+  /** The first guess for footage this long, before what past edits took (see `guessSeconds`). */
+  guess: number
   /** How long it should take, in seconds (see `expectedSeconds`). */
   expected: number
   /** Luca's turn has begun (the request can go in while Luca is still starting up). */
   started: boolean
-  /** When Luca started checking or rendering the edit, the last steps of a build. */
+  /** When Luca started checking or rendering the edit, the last steps of it. */
   finishingSince?: number
-  /** The person chose to watch the video build instead of the veil over it. */
+  /** The person chose to watch Luca edit instead of the veil over it. */
   peek: boolean
 }
 
 type MakingStore = {
   making: Making | null
+  /** `length`: the footage's length in seconds, or null when the start card doesn't know it. */
   begin: (projectId: string, kind: StartKind, length: number | null) => void
   cancel: () => void
   setPeek: (peek: boolean) => void
 }
 
-/** A first guess in seconds, before this Mac has made any videos like it. */
-const GUESS: Record<StartKind, number> = { scratch: 180, images: 150, video: 120, audio: 180 }
-const TIMES_KEY = 'luca.making-times'
+/** A first guess in seconds for a minute of footage, before this Mac has edited any. */
+const GUESS: Record<StartKind, number> = { video: 150, audio: 240 }
+/**
+ * More for every minute after the first: transcribing, cutting and captioning a 10-minute video
+ * takes far longer than a 30-second clip, and a voiceover needs every visual made.
+ */
+const PER_MINUTE: Record<StartKind, number> = { video: 45, audio: 75 }
+/** How long past edits took next to their first guess (2 = twice as long), per kind. */
+const TIMES_KEY = 'luca.edit-times'
 
-function pastTimes(): Partial<Record<StartKind, number[]>> {
+function pastRatios(): Partial<Record<StartKind, number[]>> {
   try {
     return JSON.parse(localStorage.getItem(TIMES_KEY) ?? '{}') as Partial<
       Record<StartKind, number[]>
@@ -40,26 +52,30 @@ function pastTimes(): Partial<Record<StartKind, number[]>> {
   }
 }
 
-function remember(kind: StartKind, seconds: number): void {
+function remember(kind: StartKind, ratio: number): void {
   try {
-    const all = pastTimes()
-    all[kind] = [...(all[kind] ?? []), Math.round(seconds)].slice(-5)
+    const all = pastRatios()
+    all[kind] = [...(all[kind] ?? []), Math.round(ratio * 100) / 100].slice(-5)
     localStorage.setItem(TIMES_KEY, JSON.stringify(all))
   } catch {
     // only the estimate is lost
   }
 }
 
-/** How long making this kind of video takes: the median of a guess and the last few makes. */
-export function expectedSeconds(kind: StartKind, length: number | null): number {
-  // longer videos take longer to write: +30 s at 30 s, +90 s at a minute
-  const guess = GUESS[kind] + Math.min(120, Math.max(0, ((length ?? 15) - 15) * 2))
-  const xs = [guess, ...(pastTimes()[kind] ?? [])].sort((a, b) => a - b)
-  const mid = xs.length >> 1
-  return xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2
+/** The first guess for editing this much footage, in seconds; a minute when the length is unknown. */
+export function guessSeconds(kind: StartKind, length: number | null): number {
+  const minutes = Math.min(30, (length ?? 60) / 60)
+  return GUESS[kind] + PER_MINUTE[kind] * Math.max(0, minutes - 1)
 }
 
-/** Checking and rendering come last: once they start, the build is under a minute from done. */
+/** How long the first edit takes: the guess, scaled by the median of the last few edits. */
+export function expectedSeconds(kind: StartKind, guess: number): number {
+  const xs = [1, ...(pastRatios()[kind] ?? [])].sort((a, b) => a - b)
+  const mid = xs.length >> 1
+  return guess * (xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2)
+}
+
+/** Checking and rendering come last: once they start, the edit is under a minute from done. */
 const FINISHING = 45
 
 /** Seconds left from the estimate, or less once the last steps started; 0 or below = overdue. */
@@ -107,11 +123,19 @@ function bind(): void {
     )
       update({ finishingSince: Date.now() })
     else if (e.type === 'turn-end' && m.started) {
-      if (!e.isError) remember(m.kind, (Date.now() - m.since) / 1000)
+      if (!e.isError) remember(m.kind, (Date.now() - m.since) / 1000 / m.guess)
       useMaking.setState({ making: null })
     }
   })
-  // Home, or another project: this one's build isn't on screen any more
+  // a voiceover's length (or footage the start card couldn't read): from the timeline's first load
+  useTimeline.subscribe((s) => {
+    const m = useMaking.getState().making
+    const length = s.timeline?.duration
+    if (!m || m.length !== null || !length) return
+    const guess = guessSeconds(m.kind, length)
+    update({ length, guess, expected: expectedSeconds(m.kind, guess) })
+  })
+  // Home, or another project: this one's edit isn't on screen any more
   useProject.subscribe((s) => {
     const m = useMaking.getState().making
     if (m && s.project?.id !== m.projectId) useMaking.setState({ making: null })
@@ -128,12 +152,15 @@ export const useMaking = create<MakingStore>((set) => ({
   making: null,
   begin: (projectId, kind, length) => {
     bind()
+    const guess = guessSeconds(kind, length)
     set({
       making: {
         projectId,
         kind,
         since: Date.now(),
-        expected: expectedSeconds(kind, length),
+        length,
+        guess,
+        expected: expectedSeconds(kind, guess),
         started: false,
         peek: false
       }

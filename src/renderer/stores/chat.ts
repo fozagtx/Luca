@@ -10,7 +10,7 @@ import type {
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 import { errorMessage, useProject } from './project'
-import { attachmentOf, useStart } from './start'
+import { attachmentOf, kindOf, NO_FOOTAGE, useStart } from './start'
 
 /** A file on its way into the project for the chat; videos can take a moment to get ready. */
 export type PendingMedia = { id: number; name: string; media: MediaKind; progress?: number }
@@ -69,9 +69,9 @@ type ChatStore = {
   retry: () => Promise<void>
 }
 
-/** Chips a fill can attach and later take back: catalog items and backgrounds. */
+/** Chips a fill can attach and later take back: catalog items and B-roll. */
 const chipName = (c: Chip): string | undefined =>
-  c.kind === 'catalog' ? c.name : c.kind === 'background' ? c.id : undefined
+  c.kind === 'catalog' ? c.name : c.kind === 'broll' ? c.id : undefined
 
 /** "A", "A and B", "A, B and C". */
 const listOf = (xs: string[]): string =>
@@ -145,22 +145,20 @@ export const useChat = create<ChatStore>((set, get) => ({
   },
 
   send: async (text, context, opts) => {
-    // with nothing open, a message is an idea for a new video: typed, it goes through the start
-    // steps (theme, font…) on the start card; spoken, Luca starts on it right away
+    // with nothing open, a message (typed or spoken) is notes for the footage on the start card,
+    // and Luca starts editing it right away
     if (!useProject.getState().project) {
-      if (!opts?.keepDraft) set({ draft: '', error: null })
-      const spoken = !!(context as { voice?: boolean } | null)?.voice
-      if (!spoken) {
-        const begun = useStart.getState().begin(text)
-        if (begun === 'steps') return true
-        if (begun === 'invalid') {
-          set({ error: useStart.getState().error, ...(opts?.keepDraft ? {} : { draft: text }) })
-          return false
-        }
+      const start = useStart.getState()
+      if (!kindOf(start.files)) {
+        set({ error: NO_FOOTAGE })
+        return false
       }
-      const ok = await useStart.getState().create(text, { spoken })
-      if (!ok)
-        set({ error: useStart.getState().error, ...(opts?.keepDraft ? {} : { draft: text }) })
+      if (!opts?.keepDraft) set({ draft: '', auto: null, error: null })
+      // a failed start keeps the words, in the notes on the start card
+      start.addNotes(text)
+      const spoken = !!(context as { voice?: boolean } | null)?.voice
+      const ok = await start.create({ spoken })
+      if (!ok) set({ error: useStart.getState().error })
       return ok
     }
     const own = opts?.chips
