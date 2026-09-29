@@ -98,6 +98,8 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
   const recent = useProject((s) => s.recent)
   const [state, setState] = useState<CaptionState | null>(null)
   const [words, setWords] = useState<Word[] | null>(null)
+  // the words come from a script: they are exact, so the ums-and-stutters pass stays off
+  const [exact, setExact] = useState(false)
   const [cfg, setCfg] = useState<CaptionConfig | null>(null)
   const [busy, setBusy] = useState<'apply' | 'remove' | 'font' | 'google' | null>(null)
   const [clean, setClean] = useState<CleanStatus | null>(null)
@@ -109,11 +111,16 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
 
   useEffect(() => {
     let live = true
-    void Promise.all([luca.captions.state(), luca.captions.words()])
-      .then(([s, w]) => {
+    void Promise.all([
+      luca.captions.state(),
+      luca.captions.words(),
+      luca.ai33.isScriptProject().catch(() => false)
+    ])
+      .then(([s, w, x]) => {
         if (!live) return
         setState(s)
         setWords(w)
+        setExact(x)
         setCfg((c) => c ?? s.applied ?? configFor(CAPTION_STYLES[0].id))
       })
       .catch((e) => live && setError(errorMessage(e)))
@@ -134,18 +141,21 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
   const groups = useMemo(() => {
     if (!cfg) return []
     const src = words && words.length ? words : SAMPLE_WORDS
-    return groupWords(cleanWords(src, cfg.clean), { wordsPerLine: cfg.wordsPerLine, portrait })
-  }, [words, cfg, portrait])
+    return groupWords(cleanWords(src, cfg.clean && !exact), {
+      wordsPerLine: cfg.wordsPerLine,
+      portrait
+    })
+  }, [words, cfg, portrait, exact])
   const sample = useSampleGroups(groups, 8)
   // the gallery shows each style with its own defaults, over the same sample lines
   const galleryLines = useSampleGroups(
     useMemo(
       () =>
-        groupWords(cleanWords(words && words.length ? words : SAMPLE_WORDS, true), {
+        groupWords(cleanWords(words && words.length ? words : SAMPLE_WORDS, !exact), {
           wordsPerLine: 'short',
           portrait
         }),
-      [words, portrait]
+      [words, portrait, exact]
     ),
     4
   )
@@ -496,10 +506,17 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
           >
             <CaseUpper size={14} /> All caps
           </button>
-          <label className="ml-auto inline-flex items-center gap-2 text-[12px] text-text-2 select-none">
+          <label
+            title={exact ? 'The words come from your script, so none are removed.' : undefined}
+            className={cn(
+              'ml-auto inline-flex items-center gap-2 text-[12px] text-text-2 select-none',
+              exact && 'opacity-60'
+            )}
+          >
             <input
               type="checkbox"
-              checked={cfg.clean}
+              checked={cfg.clean && !exact}
+              disabled={exact}
               onChange={(e) => set({ clean: e.target.checked })}
               className="size-3.5 accent-[var(--accent)]"
             />

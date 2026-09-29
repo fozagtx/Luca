@@ -35,6 +35,7 @@ import type {
   ProjectFontFace,
   Transcript
 } from '../shared/types'
+import { isScriptProject } from './ai33-store'
 import { CAPTIONS_FILE, CAPTIONS_ID, captionsComposition, speechClips } from './captions-html'
 import { sourcePath } from './clean'
 import {
@@ -429,9 +430,10 @@ const slug = (s: string): string => s.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-
 
 /**
  * Adds fonts from a Google Fonts link or name to the project, the way fonts added from files
- * are: their woff2 files (Latin and Latin Extended) go in fonts/, listed in .luca/fonts.json and
- * declared with @font-face in index.html, so the preview shows them and exports never need the
- * internet. Adding a family again replaces its earlier download. Returns the families added.
+ * are: their woff2 files (Latin, Latin Extended and Vietnamese) go in fonts/, listed in
+ * .luca/fonts.json and declared with @font-face in index.html, so the preview shows them and
+ * exports never need the internet. Adding a family again replaces its earlier download. Returns
+ * the families added.
  */
 export async function addGoogleFont(dir: string, input: string): Promise<string[]> {
   const req = parseGoogleFontsInput(input)
@@ -537,7 +539,9 @@ function buildCaptions(
         : 'There is no transcript to caption yet. Transcribe the video first.'
     )
   const d = dims(html)
-  const groups = groupWords(cleanWords(placed.words, cfg.clean), {
+  // words recorded from a script are exact: the English filler and stutter pass would eat a
+  // German "er", an "ah" that is a word, or a repeat on purpose
+  const groups = groupWords(cleanWords(placed.words, cfg.clean && !isScriptProject(p.dir)), {
     wordsPerLine: cfg.wordsPerLine,
     portrait: d.h > d.w
   })
