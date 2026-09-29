@@ -1827,7 +1827,7 @@ const textOf = (r: { content: { type: string; text?: string }[] }): string =>
   r.content[0]?.text ?? ''
 
 async function sectionSpend(): Promise<void> {
-  const { spend, store, client } = b
+  const { spend, client } = b
   const V = { id: 'elevenlabs_21m00Tcm4TlvDq8ikWAM', name: 'Rachel' }
   const req = (o: Partial<SpendReq> & { kind: Ai33Kind }): SpendReq => ({
     units: 1,
@@ -2301,19 +2301,35 @@ async function sectionSpend(): Promise<void> {
     'deny'
   )
 
-  // preapproval: music only, once, the first turn, within limits
+  // preapproval: music only, once, the first turn, within limits. It lives in the main process's
+  // memory and nowhere else: the model can write files in a project, so no file can grant it.
   const p1 = proj('pre1')
   pointAtFake()
   spend.grantPreapproval(p1, ['speech', 'sfx'] as Ai33Kind[])
-  same('only music can be preapproved', store.readProjectAi33(p1).preapproved, undefined)
+  const { ctx: cK0, asks: askK0 } = mkCtx(p1, mkTurn(19))
+  const noSpeech = await spend.gateSpend(
+    cK0,
+    req({ kind: 'speech', units: 100, voice: V, estimate: known(2000) })
+  )
+  const noSfx = await spend.gateSpend(cK0, req({ kind: 'sfx', units: 5 }))
+  const noMusic = await spend.gateSpend(cK0, req({ kind: 'music' }))
+  check(
+    'only music can be preapproved: a grant for speech and effects covers nothing, not even music',
+    askK0.length === 3 && [noSpeech, noSfx, noMusic].every((g) => g.go && !g.grant.preapproved),
+    () => `${askK0.length} ${show([noSpeech, noSfx, noMusic])}`
+  )
   spend.grantPreapproval(p1, ['music'])
-  same('the Music chip is written to the project', store.readProjectAi33(p1).preapproved, ['music'])
+  check(
+    'granting writes nothing into the project folder: the chip is kept in memory',
+    readdirSync(p1).length === 0,
+    () => show(readdirSync(p1))
+  )
   const tK = mkTurn(20)
   const { ctx: cK, asks: askK } = mkCtx(p1, tK)
   const sfxBatch = await spend.gateSpend(cK, req({ kind: 'sfx', units: 5 }))
   check(
     'the chip does not cover other kinds: a batch of effects still asks',
-    sfxBatch.go && askK.length === 1,
+    sfxBatch.go && !sfxBatch.grant.preapproved && askK.length === 1,
     () => show(askK)
   )
   const covered = await spend.gateSpend(cK, req({ kind: 'music' }))
@@ -2322,18 +2338,72 @@ async function sectionSpend(): Promise<void> {
     covered.go && covered.grant.preapproved && askK.length === 1 && covered.grant.reserved === 3600,
     () => show(covered)
   )
-  if (covered.go) {
-    spend.settleSpend(cK, covered.grant, 3600)
-    same(
-      'and is used up when the music is settled',
-      store.readProjectAi33(p1).preapproved,
-      undefined
-    )
-  }
+  if (covered.go) spend.settleSpend(cK, covered.grant, 3600)
   const tL = mkTurn(21)
   const { ctx: cL, asks: askL } = mkCtx(p1, tL)
-  await spend.gateSpend(cL, req({ kind: 'music' }))
-  check('a later piece of music asks', askL.length === 1, () => show(askL))
+  const later = await spend.gateSpend(cL, req({ kind: 'music' }))
+  check(
+    'a later piece of music asks: the chip was used up when the music was settled',
+    later.go && !later.grant.preapproved && askL.length === 1,
+    () => show(askL)
+  )
+
+  // once, not merely for the first turn: a music job that failed (settled at 0, which gives its
+  // place in the turn's caps back) still uses the chip up, and a second try in the same turn asks
+  const p1b = proj('pre1b')
+  const p1c = proj('pre1c')
+  spend.grantPreapproval(`${p1b}/x/..`, ['music'])
+  const { ctx: cOther, asks: askOther } = mkCtx(p1c, mkTurn(22))
+  const other = await spend.gateSpend(cOther, req({ kind: 'music' }))
+  const { ctx: cNone, asks: askNone } = mkCtx(null, mkTurn(23))
+  const none = await spend.gateSpend(cNone, req({ kind: 'music' }))
+  check(
+    'a chip belongs to its own project: another project and a chat with no project still ask',
+    other.go &&
+      !other.grant.preapproved &&
+      askOther.length === 1 &&
+      none.go &&
+      !none.grant.preapproved &&
+      askNone.length === 1,
+    () => `${show(askOther)} ${show(askNone)}`
+  )
+  const tR = mkTurn(24)
+  const { ctx: cR, asks: askR } = mkCtx(p1b, tR)
+  const tried = await spend.gateSpend(cR, req({ kind: 'music' }))
+  check(
+    'the chip found its project whatever the path is spelled like, and the others left it alone',
+    tried.go && tried.grant.preapproved && askR.length === 0,
+    () => show(tried)
+  )
+  if (tried.go) spend.settleSpend(cR, tried.grant, 0)
+  const again = await spend.gateSpend(cR, req({ kind: 'music' }))
+  check(
+    'the chip is used up by one try, even one that failed, in the very same turn',
+    again.go && !again.grant.preapproved && askR.length === 1,
+    () => show(askR)
+  )
+  const p1d = proj('pre1d')
+  spend.grantPreapproval(p1d, ['music'])
+  spend.endPreapproval(p1d)
+  const { ctx: cS, asks: askS } = mkCtx(p1d, mkTurn(25))
+  await spend.gateSpend(cS, req({ kind: 'music' }))
+  check('a chip that was ended asks', askS.length === 1, () => show(askS))
+
+  // a file in the project can never be the chip, whatever it says and whoever wrote it
+  const p1e = proj('pre1e')
+  mkdirSync(join(p1e, '.luca'), { recursive: true })
+  const fileText = JSON.stringify({ v: 1, preapproved: ['music'] })
+  writeFileSync(join(p1e, '.luca', 'ai33.json'), fileText)
+  const { ctx: cT, asks: askT } = mkCtx(p1e, mkTurn(26))
+  const forged = await spend.gateSpend(cT, req({ kind: 'music' }))
+  check(
+    'a project file that says {"preapproved":["music"]} does not skip the card',
+    forged.go &&
+      !forged.grant.preapproved &&
+      askT.length === 1 &&
+      readFileSync(join(p1e, '.luca', 'ai33.json'), 'utf8') === fileText,
+    () => show(askT)
+  )
 
   const p2 = proj('pre2')
   pointAtFake()
@@ -2342,11 +2412,11 @@ async function sectionSpend(): Promise<void> {
   await spend.gateSpend(mkCtx(p2, tM).ctx, req({ kind: 'sfx', units: 1 }))
   const tN = mkTurn(31)
   const { ctx: cN, asks: askN } = mkCtx(p2, tN)
-  await spend.gateSpend(cN, req({ kind: 'music' }))
+  const lapsed = await spend.gateSpend(cN, req({ kind: 'music' }))
   check(
     'the chip lapses after the first turn that spends in the project',
-    askN.length === 1 && store.readProjectAi33(p2).preapproved === undefined,
-    () => `${askN.length} ${show(store.readProjectAi33(p2))}`
+    lapsed.go && !lapsed.grant.preapproved && askN.length === 1,
+    () => `${askN.length} ${show(lapsed)}`
   )
 
   const p3 = proj('pre3')
@@ -3612,9 +3682,8 @@ async function sectionPlan(): Promise<void> {
     { v: 1, voice, speed: 1.1 }
   )
   store.patchProjectAi33(dir, { say: [{ word: 'AI', as: 'A I' }] })
-  store.patchProjectAi33(dir, { preapproved: ['music'] })
-  store.patchProjectAi33(dir, { preapproved: [] })
-  same('an array is replaced whole', store.readProjectAi33(dir).preapproved, [])
+  store.patchProjectAi33(dir, { say: [{ word: 'ML', as: 'M L' }] })
+  same('an array is replaced whole', store.readProjectAi33(dir).say, [{ word: 'ML', as: 'M L' }])
   store.patchProjectAi33(dir, { speed: undefined })
   same(
     'a key set to undefined is dropped, the others stay',

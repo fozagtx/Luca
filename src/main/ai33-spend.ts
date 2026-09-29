@@ -1,7 +1,7 @@
 /**
  * The spend policy, in code: what a job is expected to cost, when the person is asked first,
  * what no card can override, and the bookkeeping of each turn. Imports only Node, the client,
- * the store and shared code (the smoke script bundles it), so the refusal texts below repeat the
+ * the job list and shared code (the smoke script bundles it), so the refusal texts below repeat the
  * ones in tools/common.ts (which pulls in the app) word for word.
  *
  * `gateSpend` reserves, the tool settles: a paid call is counted against the turn when it is
@@ -9,7 +9,7 @@
  */
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import {
   formatCredits,
@@ -24,7 +24,6 @@ import {
 import { Ai33Error, dataDir, getCredits, getHealth } from './ai33-client'
 import type { Ai33Turn, SpendCtx } from './ai33-ctx'
 import { list } from './ai33-jobs'
-import { patchProjectAi33 } from './ai33-store'
 
 /** Asked first when a job (or a batch) is estimated at this many credits or more. */
 export const ASK_ABOVE = 1500
@@ -272,20 +271,9 @@ const reservations = new Map<string, Reservation>()
  */
 const preapprovals = new Map<string, { turn: Ai33Turn | null }>()
 
-/** A record of the chip in the project file, for people reading it; the gate never looks at it. */
-function mirrorPreapproval(dir: string, on: boolean): void {
-  try {
-    // a project folder that is gone (closed, trashed) is not made again for a record
-    if (!on && !existsSync(join(dir, '.luca'))) return
-    patchProjectAi33(dir, { preapproved: on ? ['music'] : undefined })
-  } catch {
-    // an unwritable project file changes nothing the gate relies on
-  }
-}
-
 /** The preapproval is over: used, or the turn it was for has ended. */
 export function endPreapproval(projectDir: string): void {
-  if (preapprovals.delete(resolve(projectDir))) mirrorPreapproval(projectDir, false)
+  preapprovals.delete(resolve(projectDir))
 }
 
 /**
@@ -306,7 +294,6 @@ function preapprovalHolds(dir: string | null, turn: Ai33Turn): boolean {
 export function grantPreapproval(projectDir: string, kinds: Ai33Kind[]): void {
   if (!kinds.includes('music')) return
   preapprovals.set(resolve(projectDir), { turn: null })
-  mirrorPreapproval(projectDir, true)
 }
 
 // ---- the card
