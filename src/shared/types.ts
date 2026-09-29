@@ -78,11 +78,11 @@ export type Chip =
     }
   | { kind: 'clip'; clipId: string; track: number; start: number; end: number }
   | { kind: 'transcript'; text: string; start: number; end: number }
-  /** A choice from the start steps (template, theme, font…), shown on the first request. */
-  | { kind: 'style'; field: StyleField; label: string }
-  /** A Pexels photo or video the person picked as the background. */
+  /** What the person picked on the start card (video type, edit steps), shown on the first request. */
+  | { kind: 'edit'; label: string }
+  /** A Pexels photo or video the person picked as B-roll: Luca shows it where it fits. */
   | {
-      kind: 'background'
+      kind: 'broll'
       id: string
       media: BackgroundMedia
       title: string
@@ -382,44 +382,36 @@ export type CreateProgress = {
   progress?: number
 }
 
-/** What a new project starts from: a video, an audio track, images, or nothing but an idea. */
-export type StartKind = 'video' | 'audio' | 'images' | 'scratch'
+/** What a new project starts from: the person's footage, or a voiceover with nothing to show yet. */
+export type StartKind = 'video' | 'audio'
 
 export type StartArgs = {
   name?: string
   aspect: Aspect
   /**
    * Absolute paths, in the order they were added: videos (played back to back), images and at
-   * most one audio file. Next to videos or audio, images wait in media/ for Luca.
+   * most one audio file. At least one video or the audio; images wait in media/ for Luca (a logo,
+   * screenshots).
    */
   files: string[]
   look?: string | null
-  /** Target length in seconds for image and scratch projects. */
-  duration?: number
-  /** What the person picked on the start steps; Luca follows it (saved as .luca/STYLE.md). */
-  style?: StartStyle
+  /** What kind of video it is and what Luca does to it; saved as .luca/EDIT.md. */
+  edit?: StartEdit
 }
 
-/** One of the start steps' choices. */
-export type StyleField = 'template' | 'theme' | 'font' | 'background' | 'motion' | 'keyframes'
+/** The kinds of video Luca edits (src/shared/edits.ts). */
+export type VideoTypeId = 'talking' | 'explainer' | 'founder' | 'product'
 
-/**
- * The look picked on the start steps before Luca begins (ids from src/shared/styles.ts).
- * Anything left out is Luca's to decide.
- */
-export type StartStyle = {
-  /** A ready-made viral workflow. */
-  template?: string
-  theme?: string
-  /** A built-in font family. */
-  font?: string
-  /**
-   * Plain backgrounds in the theme's colours, none (the footage fills the frame), or the Pexels
-   * photo or video picked (it goes to Luca as its own chip).
-   */
-  background?: 'theme' | 'none' | 'picked'
-  motion?: string
-  keyframes?: string
+/** What Luca can do on the first edit (src/shared/edits.ts). */
+export type EditStepId = 'cut' | 'hook' | 'zooms' | 'broll' | 'name' | 'ending' | 'captions'
+
+/** Picked on the start card before Luca begins. */
+export type StartEdit = {
+  type: VideoTypeId
+  /** The steps switched on. */
+  steps: EditStepId[]
+  /** Anything Luca should know: who is speaking, the platform, the look. */
+  notes?: string
 }
 
 export type StartResult = {
@@ -536,7 +528,7 @@ export type ColorState = {
 
 export type BackgroundMedia = 'photo' | 'video'
 
-/** A free stock photo or video from Pexels, ready to become a video's background. */
+/** A free stock photo or video from Pexels, to show as B-roll. */
 export type Background = {
   /** `photo:<pexels id>` or `video:<pexels id>`. */
   id: string

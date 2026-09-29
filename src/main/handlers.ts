@@ -25,7 +25,6 @@ import {
   captionState,
   captionWords,
   FONT_EXT,
-  installBundledFont,
   installUsedBundledFonts,
   projectFonts,
   refreshCaptions,
@@ -171,14 +170,6 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     const report = (p: CreateProgress): void => broadcast(Channels.projectCreateProgress, p)
     try {
       const res = await startProject(args, report)
-      // a font picked on the start steps that comes with Luca is in the project before Luca starts
-      if (args.style?.font) {
-        try {
-          installBundledFont(res.project.dir, args.style.font)
-        } catch (err) {
-          console.warn('[luca] adding the start font failed', err)
-        }
-      }
       // the Look goes in before the project opens, so it opens (repo, watcher, Claude) only once;
       // a Look that only partly applied still opens the project, then reports what failed
       let lookError: unknown = null
