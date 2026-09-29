@@ -49,7 +49,7 @@ import { invalidateLibrary } from './library'
 import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
 import { hasGeminiKey, saveGeminiKey } from './gemini'
-import { hasPexelsKey, homeBackground, savePexelsKey, searchBackgrounds } from './pexels'
+import { hasPexelsKey, savePexelsKey, searchBackgrounds } from './pexels'
 import {
   checkForUpdates,
   installUpdate,
@@ -338,13 +338,10 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.updatesSetToken, (token: string) => saveUpdateToken(token))
   handle(Channels.updatesMove, moveToApplications)
 
-  // backgrounds (Pexels)
+  // B-roll (Pexels)
   handle(Channels.backgroundsHasKey, hasPexelsKey)
   handle(Channels.backgroundsSetKey, (key: string) => savePexelsKey(key))
   handle(Channels.backgroundsSearch, (args: BackgroundSearch) => searchBackgrounds(args))
-  handle(Channels.backgroundsHome, (args?: { shuffle?: boolean }) =>
-    homeBackground(!!args?.shuffle)
-  )
 
   // clean
   handle(Channels.cleanRun, () => runCleanEdit(requireProject()))

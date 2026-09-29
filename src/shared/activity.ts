@@ -34,8 +34,10 @@ export function friendlyTarget(path: unknown, titleOf?: TitleOf): string {
   if (/(^|\/)compositions\/[^/]+\.html$/.test(p))
     return `the “${titleOf?.(stem) ?? titleCase(stem)}” scene`
   if (/(^|\/)LOOK\.md$/.test(p)) return 'your Look'
+  if (/(^|\/)EDIT\.md$/.test(p)) return 'the edit plan'
   if (/(^|\/)remocn\/[^/]+\.tsx?$/.test(p)) return `the ${titleCase(stem)} animation`
   if (/(^|\/)(CLAUDE|AGENTS)\.md$/.test(p)) return 'the project notes'
+  if (/(^|\/)media\/broll\//.test(p)) return 'the B-roll'
   if (/(^|\/)media\//.test(p)) return 'your footage'
   if (/(^|\/)transcript(\.original)?\.json$/.test(p)) return 'the transcript'
   if (/(^|\/)edl\.json$/.test(p)) return 'the cut list'
@@ -228,14 +230,18 @@ export function describeActivity(
         ? act('search', `Finding components for “${q}”`, `Searched components for “${q}”`)
         : act('search', 'Browsing the component library', 'Browsed the component library')
     }
-    case 'mcp__luca__background_search': {
+    case 'mcp__luca__transcribe':
+      return act('media', 'Listening to the video', 'Listened to the video')
+    case 'mcp__luca__clean_edit':
+      return act('edit', 'Cutting ums and pauses', 'Cut ums and pauses')
+    case 'mcp__luca__broll_search': {
       const q = String(input.query ?? '').trim()
       return q
-        ? act('search', `Finding backgrounds for “${q}”`, `Searched backgrounds for “${q}”`)
-        : act('search', 'Finding a background', 'Looked for a background')
+        ? act('search', `Finding B-roll for “${q}”`, `Searched B-roll for “${q}”`)
+        : act('search', 'Finding B-roll', 'Looked for B-roll')
     }
-    case 'mcp__luca__background_add':
-      return act('media', 'Adding the background', 'Added the background')
+    case 'mcp__luca__broll_add':
+      return act('media', 'Adding B-roll', 'Added B-roll')
     case 'mcp__luca__video_generate':
       if (input.extend)
         return act('media', 'Continuing the clip with Gemini', 'Continued the clip with Gemini')

@@ -1,12 +1,25 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { extname, join, relative, sep } from 'node:path'
+import { placeWords } from '../shared/captions'
 import type { CleanResult, CleanStatus, Cut, Edl, Project, Transcript } from '../shared/types'
 import { activeAgent, agentFor } from './agent'
-import { refreshCaptions } from './captions'
+import { hasTranscript, refreshCaptions } from './captions'
+import { speechClips } from './captions-html'
 import { ffmpegProgress, probeMedia } from './env'
-import { closingOffset, findTags, replaceTag, setAttrs, type TagMatch } from './html'
+import { AUDIO_EXT } from './footage'
+import {
+  closingOffset,
+  findTagById,
+  findTags,
+  insertIntoRoot,
+  nextTrackIndex,
+  replaceTag,
+  setAttrs,
+  type TagMatch
+} from './html'
 import { Channels, broadcast } from './ipc'
+import { hasSecret } from './secrets'
 import { getSettings } from './settings'
 import { extractAudio, isFiller, transcribe } from './transcribe'
 import { checkpoint } from './versions'
@@ -16,6 +29,8 @@ const KEEP_PAUSE = 0.25
 const PAD = 0.02
 const MIN_KEPT = 0.1
 const JOIN_FADE = 0.01
+/** A clean master in the project, as clips on the timeline name it. */
+const CLEAN_FILE = /^media\/clean-[0-9a-f]+\.mp4$/
 
 let status: CleanStatus = { stage: 'idle' }
 let task: CleanStatus['task'] = 'clean'
@@ -97,12 +112,13 @@ export function cutCandidates(t: Transcript, duration: number): Cut[] {
   return mergeCuts(cuts)
 }
 
-function mergeCuts(cuts: Cut[]): Cut[] {
+/** Overlapping cuts as one; with `gap`, also cuts that would leave less than that between them. */
+function mergeCuts(cuts: Cut[], gap = 0): Cut[] {
   const sorted = [...cuts].sort((a, b) => a.start - b.start)
   const out: Cut[] = []
   for (const c of sorted) {
     const last = out[out.length - 1]
-    if (last && c.start <= last.end) {
+    if (last && (c.start <= last.end || c.start - last.end < gap)) {
       last.end = Math.max(last.end, c.end)
       if (last.reason !== c.reason) last.reason = last.reason === 'pause' ? c.reason : last.reason
       last.text = last.text === c.text ? last.text : `${last.text} ${c.text}`.trim()
@@ -141,26 +157,34 @@ function keptSegments(cuts: Cut[], duration: number): { start: number; end: numb
 
 const probe = probeMedia
 
-/** ffmpeg: trim kept segments, 10 ms audio fades at every join, concat, VideoToolbox H.264 + AAC. */
+/**
+ * ffmpeg: trim kept segments, 10 ms audio fades at every join, concat, VideoToolbox H.264 + AAC.
+ * A voiceover (no picture) becomes an audio-only MP4, found and relinked like any clean master.
+ */
 async function renderClean(
   source: string,
   segs: { start: number; end: number }[],
   bitrate: number,
   out: string,
-  onProgress: (p: number) => void
+  onProgress: (p: number) => void,
+  audioOnly = false
 ): Promise<void> {
   const parts: string[] = []
   const labels: string[] = []
   segs.forEach((s, i) => {
     const len = s.end - s.start
-    parts.push(`[0:v]trim=start=${s.start}:end=${s.end},setpts=PTS-STARTPTS[v${i}]`)
+    if (!audioOnly) parts.push(`[0:v]trim=start=${s.start}:end=${s.end},setpts=PTS-STARTPTS[v${i}]`)
     parts.push(
       `[0:a]atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS,` +
         `afade=t=in:st=0:d=${JOIN_FADE},afade=t=out:st=${Math.max(0, len - JOIN_FADE)}:d=${JOIN_FADE}[a${i}]`
     )
-    labels.push(`[v${i}][a${i}]`)
+    labels.push(audioOnly ? `[a${i}]` : `[v${i}][a${i}]`)
   })
-  parts.push(`${labels.join('')}concat=n=${segs.length}:v=1:a=1[v][a]`)
+  parts.push(
+    audioOnly
+      ? `${labels.join('')}concat=n=${segs.length}:v=0:a=1[a]`
+      : `${labels.join('')}concat=n=${segs.length}:v=1:a=1[v][a]`
+  )
   const kbps = bitrate > 0 ? Math.max(1000, Math.round(bitrate / 1000)) : 8000
   const args = [
     '-y',
@@ -170,16 +194,10 @@ async function renderClean(
     source,
     '-filter_complex',
     parts.join(';'),
-    '-map',
-    '[v]',
+    ...(audioOnly ? [] : ['-map', '[v]']),
     '-map',
     '[a]',
-    '-c:v',
-    'h264_videotoolbox',
-    '-b:v',
-    `${kbps}k`,
-    '-pix_fmt',
-    'yuv420p',
+    ...(audioOnly ? [] : ['-c:v', 'h264_videotoolbox', '-b:v', `${kbps}k`, '-pix_fmt', 'yuv420p']),
     '-c:a',
     'aac',
     '-b:a',
@@ -281,7 +299,6 @@ function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): vo
     !holders.some((h) => t.start >= h.from && t.start < h.to)
 
   const sourceRels = new Set([p.source, `media/${p.source}`])
-  const prevClean = /^media\/clean-[0-9a-f]+\.mp4$/
   type Piece = {
     tag: TagMatch
     start: number
@@ -297,7 +314,7 @@ function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): vo
     if ((tag.name !== 'video' && tag.name !== 'audio') || !topLevel(tag)) continue
     const src = tag.attrs.src ?? ''
     const isSource = sourceRels.has(src)
-    if (!isSource && !prevClean.test(src)) continue
+    if (!isSource && !CLEAN_FILE.test(src)) continue
     const before = isSource ? [] : cutsOf(p, src)
     const start = num(tag.attrs['data-start'], 0)
     const mediaStart = num(tag.attrs['data-media-start'], 0)
@@ -371,13 +388,65 @@ function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): vo
   writeFileSync(indexFile, html)
 }
 
-/** Steps 7–10 of the spec: validate, ffmpeg apply (cached by hash), remap captions, relink. */
-export async function applyEdl(p: Project, edl: Edl): Promise<CleanResult> {
+const readIndex = (dir: string): string => readFileSync(join(dir, 'index.html'), 'utf8')
+
+/** A voiceover has no picture: its clean master is sound only. */
+const isAudioOnly = (source: string): boolean => AUDIO_EXT.has(extname(source).toLowerCase())
+
+/** The clean master the timeline plays, or null before a clean edit (or after it was undone). */
+function cleanOnTimeline(html: string): string | null {
+  const clip = [...findTags(html, 'video'), ...findTags(html, 'audio')].find((t) =>
+    CLEAN_FILE.test(t.attrs.src ?? '')
+  )
+  return clip?.attrs.src ?? null
+}
+
+/**
+ * A voiceover project starts with the recording next to an empty timeline (init leaves no clip for
+ * it): put it on at 0 s, so its words, cuts and captions have somewhere to play, and make the
+ * video at least as long. Does nothing for footage, or once any clip plays the recording.
+ * Returns whether it was placed.
+ */
+export async function placeVoiceover(p: Project): Promise<boolean> {
+  const source = sourcePath(p)
+  if (!source || !isAudioOnly(source)) return false
+  const indexFile = join(p.dir, 'index.html')
+  const html = readFileSync(indexFile, 'utf8')
+  if (speechClips(html, p.source).length) return false
+  const duration = r3((await probe(source)).duration)
+  if (!(duration > 0)) return false
+  const id = findTagById(html, 'voiceover') ? 'luca-voiceover' : 'voiceover'
+  const src = relative(p.dir, source).split(sep).join('/')
+  const tag = `<audio id="${id}" src="${src}" data-start="0" data-duration="${duration}" data-track-index="${nextTrackIndex(html)}" data-volume="1"></audio>`
+  let out = insertIntoRoot(html, `      ${tag}\n`)
+  if (!out) return false
+  const root = findTags(out).find((t) => t.attrs['data-composition-id'] !== undefined)
+  if (root && num(root.attrs['data-duration'], 0) < duration)
+    out = replaceTag(out, root, setAttrs(root, { 'data-duration': String(duration) }))
+  writeFileSync(indexFile, out)
+  return true
+}
+
+const OFF_TIMELINE = 'The original clip is no longer on the timeline, so there is nothing to cut.'
+
+/**
+ * Steps 7–10 of the spec: validate, ffmpeg apply (cached by hash), remap captions, relink.
+ * `checkpoint: false` leaves the version to the caller, e.g. Luca's turn, which is saved as one
+ * version when it ends; once `signal` stops that turn, the render is kept but nothing changes.
+ */
+export async function applyEdl(
+  p: Project,
+  edl: Edl,
+  opts: { checkpoint?: boolean; signal?: AbortSignal } = {}
+): Promise<CleanResult> {
   const source = sourcePath(p)
   if (!source) throw new Error(`Source ${p.source} not found`)
   const { duration, bitrate } = await probe(source)
   const err = validateEdl(edl, duration)
   if (err) throw new Error(`Invalid edl.json: ${err}`)
+  // relinking needs a clip playing the recording; without one the cut would change nothing
+  await placeVoiceover(p)
+  if (!speechClips(readIndex(p.dir), p.source).length) throw new Error(OFF_TIMELINE)
   const cuts = mergeCuts(edl.cuts)
   const cleanRel = cleanFileFor(cuts, p.source)
   const out = join(p.dir, cleanRel)
@@ -386,10 +455,16 @@ export async function applyEdl(p: Project, edl: Edl): Promise<CleanResult> {
   if (!existsSync(out) || statSync(out).size === 0) {
     const segs = keptSegments(cuts, duration)
     if (!segs.length) throw new Error('The EDL cuts the whole clip')
-    await renderClean(source, segs, bitrate, out, (progress) =>
-      setStatus({ stage: 'applying', message: `${cuts.length} cuts`, progress })
+    await renderClean(
+      source,
+      segs,
+      bitrate,
+      out,
+      (progress) => setStatus({ stage: 'applying', message: `${cuts.length} cuts`, progress }),
+      isAudioOnly(source)
     )
   }
+  if (opts.signal?.aborted) throw new Error('Stopped')
   const original =
     (existsSync(join(p.dir, '.luca', 'transcript.original.json'))
       ? (JSON.parse(
@@ -409,7 +484,7 @@ export async function applyEdl(p: Project, edl: Edl): Promise<CleanResult> {
   } catch (err) {
     console.warn('[clean] re-timing captions failed', err)
   }
-  await checkpoint(p.dir, `Clean edit: ${cuts.length} cuts`)
+  if (opts.checkpoint !== false) await checkpoint(p.dir, `Clean edit: ${cuts.length} cuts`)
   setStatus({ stage: 'done', message: `${cuts.length} cuts · ${cleanRel}` })
   return { cuts: cuts.length, cleanFile: cleanRel }
 }
@@ -497,6 +572,193 @@ export async function runTranscribeOnly(p: Project): Promise<void> {
     setStatus({ stage: 'error', message: err instanceof Error ? err.message : String(err) })
     throw err
   }
+}
+
+// ------------------------------------------------------------------ from Luca's own turn
+
+type RefusedReason = 'no-source' | 'no-key' | 'no-speech' | 'busy' | 'already-cut' | 'off-timeline'
+
+const REFUSED: Record<RefusedReason, string> = {
+  'no-source': 'This project has no video or audio to transcribe',
+  'no-key': 'AssemblyAI key missing. Add it in the Transcript tab first.',
+  'no-speech': 'No speech was heard in this recording',
+  busy: 'A clean edit or transcription is already running',
+  'already-cut': 'A clean edit is already on the timeline',
+  'off-timeline': OFF_TIMELINE
+}
+
+/** Why Luca's transcribe or clean_edit didn't run; its tool tells Luca what to say about it. */
+export class EditRefused extends Error {
+  constructor(readonly reason: RefusedReason) {
+    super(REFUSED[reason])
+  }
+}
+
+/** A line of what is said: a sentence, or the words between two pauses. */
+export type Phrase = { start: number; end: number; text: string }
+
+/** What Luca hears: the words where they play now, as phrases. */
+export type Heard = {
+  words: number
+  /** Length of the recording as it plays (the clean master once cut), s. */
+  seconds: number
+  phrases: Phrase[]
+  /** False when no clip plays the recording: the times are then the recording's own. */
+  onTimeline: boolean
+  /** A clean edit is on the timeline: the times follow the cut video. */
+  cut: boolean
+  /** Before a clean edit, the recording is trimmed or moved on the timeline: its own times differ. */
+  shifted: boolean
+  /** The voiceover was put on the timeline just now. */
+  placed: boolean
+  /** The project started from several videos, and only the first one has words. */
+  firstClipOnly: boolean
+}
+
+const PHRASE_PAUSE = 0.4
+const PHRASE_WORDS = 18
+
+/** Words as lines: a new one after a sentence ends, at a pause, or after a long run of words. */
+function phrasesOf(words: { text: string; start: number; end: number }[]): Phrase[] {
+  const out: Phrase[] = []
+  let cur: typeof words = []
+  words.forEach((w, i) => {
+    cur.push(w)
+    const next = words[i + 1]
+    if (
+      next &&
+      !/[.!?…]["”’)]*$/.test(w.text) &&
+      next.start - w.end < PHRASE_PAUSE &&
+      cur.length < PHRASE_WORDS
+    )
+      return
+    out.push({ start: cur[0].start, end: w.end, text: cur.map((x) => x.text).join(' ') })
+    cur = []
+  })
+  return out
+}
+
+/** transcript.json as it is now (the clean master's times once cut). */
+function currentWords(dir: string): Transcript['words'] {
+  try {
+    const raw = JSON.parse(readFileSync(join(dir, 'transcript.json'), 'utf8')) as
+      Transcript | Transcript['words']
+    return (Array.isArray(raw) ? raw : raw.words) ?? []
+  } catch {
+    return []
+  }
+}
+
+async function heard(p: Project, placed: boolean): Promise<Heard> {
+  const html = readIndex(p.dir)
+  const clips = speechClips(html, p.source)
+  const all = currentWords(p.dir)
+  const words = clips.length ? placeWords(all, clips) : all
+  const cut = cleanOnTimeline(html)
+  const playing = cut ? join(p.dir, cut) : sourcePath(p)
+  return {
+    words: words.length,
+    seconds: playing ? r3((await probe(playing)).duration) : 0,
+    phrases: phrasesOf(words),
+    onTimeline: clips.length > 0,
+    cut: !!cut,
+    shifted:
+      !cut && clips.some((c) => Math.abs(c.start - c.mediaStart) > 0.01 || (c.rate ?? 1) !== 1),
+    placed,
+    // init's a-roll plays the first video; the others the person started from follow it
+    firstClipOnly: findTags(html).some((t) => /^a-roll-\d+$/.test(t.attrs.id ?? ''))
+  }
+}
+
+/**
+ * Wait out a transcription the Transcript tab is running. A clean edit there can't be waited for:
+ * it needs a turn of Luca's, and Luca's turn is waiting on this.
+ */
+async function whenFree(): Promise<void> {
+  const until = Date.now() + 30 * 60_000
+  while (busy() && task === 'transcribe' && Date.now() < until)
+    await new Promise((r) => setTimeout(r, 500))
+  if (busy()) throw new EditRefused('busy')
+}
+
+/**
+ * Luca's transcribe: the words of the recording (a video or a voiceover) where they play on the
+ * timeline, transcribing it first when there is no transcript yet (or with `force`), with the
+ * same progress in the Transcript tab as its own Transcribe. Makes no version of its own: Luca's
+ * turn is saved as one when it ends.
+ */
+export async function transcribeInTurn(p: Project, opts: { force?: boolean } = {}): Promise<Heard> {
+  const source = sourcePath(p)
+  if (!source) throw new EditRefused('no-source')
+  const placed = await placeVoiceover(p)
+  const cut = cleanOnTimeline(readIndex(p.dir))
+  // once cut, the words heard again are moved onto the cut video by the cuts that made it
+  const cuts = cut ? cutsOf(p, cut) : []
+  if (cuts && (opts.force || !hasTranscript(p.dir))) {
+    if (!hasSecret('assemblyai')) throw new EditRefused('no-key')
+    await whenFree()
+    // the tab may have just transcribed it
+    if (opts.force || !hasTranscript(p.dir)) {
+      task = 'transcribe'
+      try {
+        const t = await transcribeSource(p, source)
+        if (cuts.length)
+          writeFileSync(join(p.dir, 'transcript.json'), JSON.stringify(remap(t, cuts), null, 2))
+        setStatus({ stage: 'done', message: `${t.words.length} words transcribed` })
+      } catch (err) {
+        setStatus({ stage: 'error', message: err instanceof Error ? err.message : String(err) })
+        throw err
+      }
+    }
+  }
+  if (!hasTranscript(p.dir)) throw new EditRefused('no-speech')
+  return heard(p, placed)
+}
+
+/**
+ * Luca's clean_edit, without a turn of its own (it runs inside Luca's): transcribe if needed,
+ * cut every filler and long pause plus the retakes Luca found (`extra`, source seconds), and
+ * apply it like the Transcript tab's clean edit. Makes no version of its own, and changes
+ * nothing once `signal` stops Luca's turn. Returns the cuts made, the recording's length before,
+ * and the words re-timed to the cut video.
+ */
+export async function cleanEditInTurn(
+  p: Project,
+  extra: Cut[],
+  signal?: AbortSignal
+): Promise<Heard & { cuts: Cut[]; removed: number; before: number }> {
+  const source = sourcePath(p)
+  if (!source) throw new EditRefused('no-source')
+  if (cleanOnTimeline(readIndex(p.dir))) throw new EditRefused('already-cut')
+  const placed = await placeVoiceover(p)
+  if (!speechClips(readIndex(p.dir), p.source).length) throw new EditRefused('off-timeline')
+  if (!readTranscript(p.dir)?.words.length && !hasSecret('assemblyai'))
+    throw new EditRefused('no-key')
+  await whenFree()
+  task = 'clean'
+  let cuts: Cut[] = []
+  let before = 0
+  try {
+    let t = readTranscript(p.dir)
+    if (!t?.words.length) t = await transcribeSource(p, source)
+    if (!t.words.length) throw new EditRefused('no-speech')
+    if (signal?.aborted) throw new Error('Stopped')
+    setStatus({ stage: 'candidates' })
+    before = r3((await probe(source)).duration)
+    const inside = [...cutCandidates(t, before), ...extra]
+      .map((c) => ({ ...c, start: r3(Math.max(0, c.start)), end: r3(Math.min(before, c.end)) }))
+      .filter((c) => c.end - c.start > 0.01)
+    // overlaps and slivers too short to keep become one cut, so the list is always valid
+    cuts = mergeCuts(inside, MIN_KEPT)
+    if (cuts.length)
+      await applyEdl(p, { version: 1, source: p.source, cuts }, { checkpoint: false, signal })
+    else setStatus({ stage: 'done', message: 'Nothing to cut' })
+  } catch (err) {
+    setStatus({ stage: 'error', message: err instanceof Error ? err.message : String(err) })
+    throw err
+  }
+  const removed = r3(cuts.reduce((n, c) => n + (c.end - c.start), 0))
+  return { ...(await heard(p, placed)), cuts, removed, before }
 }
 
 function readLookKeyterms(p: Project): string[] | null {

@@ -88,8 +88,7 @@ const api: LucaApi = {
   backgrounds: {
     hasKey: () => invoke(C.backgroundsHasKey),
     setKey: (key) => invoke(C.backgroundsSetKey, key),
-    search: (args) => invoke(C.backgroundsSearch, args),
-    home: (args) => invoke(C.backgroundsHome, args)
+    search: (args) => invoke(C.backgroundsSearch, args)
   },
   gemini: {
     hasKey: () => invoke(C.geminiHasKey),

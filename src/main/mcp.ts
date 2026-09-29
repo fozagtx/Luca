@@ -11,7 +11,7 @@ import {
 } from '../shared/captions'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
 import { BUNDLED_LUTS } from '../shared/luts'
-import type { CaptionConfig } from '../shared/types'
+import type { CaptionConfig, Cut, CutReason } from '../shared/types'
 import { applyColor, removeColor } from './color'
 import {
   addFontByName,
@@ -21,6 +21,14 @@ import {
   hasTranscript,
   knownFont
 } from './captions'
+import {
+  cleanEditInTurn,
+  EditRefused,
+  placeVoiceover,
+  transcribeInTurn,
+  type Heard,
+  type Phrase
+} from './clean'
 import { library } from './library'
 import { HYPERFRAMES } from './env'
 import {
@@ -33,7 +41,7 @@ import {
   type MadeVideo,
   type VideoResolution
 } from './gemini'
-import { addBackground, hasPexelsKey, searchBackgrounds } from './pexels'
+import { addBroll, hasPexelsKey, searchBackgrounds } from './pexels'
 import { readProject } from './projects'
 import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
 
@@ -43,11 +51,15 @@ const text = (data: unknown): { content: { type: 'text'; text: string }[] } => (
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 
-/** How many background_search results come with a preview Luca can look at. */
+/** How many broll_search results come with a preview Luca can look at. */
 const PREVIEWS = 8
 
 const NO_PEXELS =
-  'Stock backgrounds are not connected yet (no Pexels key). If the user asked for a photo or video background, tell them in one short sentence to connect Pexels in the Backgrounds panel; otherwise build the background another way and do not mention this.'
+  'B-roll is not connected yet (no Pexels key). If the user asked for B-roll or a stock picture or clip, tell them in one short sentence to connect Pexels in the B-roll panel; otherwise show it another way (a title, a callout, a graphic from catalog_search) and do not mention this.'
+
+/** Where B-roll goes: over the footage while it keeps playing, never behind it. */
+const BROLL_PLACE =
+  'on a track above the footage where the thing is mentioned: full frame (object-fit: cover) for 1.5–4 s as a cutaway, in and out with a quick cut or a ~0.2 s fade, while the voice keeps playing. When the speaker should stay visible, show it as a card or picture-in-picture instead (rounded corners, a soft shadow, clear of the face). Never put it behind the footage.'
 
 /** A small still as an image block, or null when it can't be fetched quickly. */
 async function preview(url: string): Promise<Content | null> {
@@ -101,11 +113,89 @@ const animationIds = CAPTION_ANIMATIONS.map((a) => a.id) as [CaptionAnim, ...Cap
 const cssColor = z.string().describe('a CSS color, e.g. "#FFE14D" or "rgba(0,0,0,0.6)"')
 
 const NO_TRANSCRIPT =
-  'This video has no transcript yet, so there are no words to caption. Ask the user, in one short sentence, to open the Transcript tab and click Transcribe (it needs their AssemblyAI key), then ask you again. Do not transcribe it yourself and do not write captions by hand.'
+  'This video has no transcript yet, so there are no words to caption. Call transcribe first, then captions_apply again. Do not write captions by hand.'
 const NO_SPEECH =
   'This project has no video or audio with speech, so there is nothing to caption. Offer animated titles or text instead.'
 const OFF_TIMELINE =
   'The video the transcript belongs to is no longer on the timeline, so there are no words to caption. Tell the user in one short sentence.'
+
+// ------------------------------------------------------------------ words and cuts
+
+/** What Luca says (or does) when transcribe or clean_edit can't run. */
+const REFUSALS: Record<EditRefused['reason'], string> = {
+  'no-key':
+    'Luca can’t hear the words yet (no AssemblyAI key). Tell the user in one short sentence that they can connect AssemblyAI in the Transcript tab to get them. Do not write captions or guess what is said.',
+  'no-source':
+    'This project has no video or voiceover with speech, so there are no words to hear or cut. Say so in one short sentence if it matters for what they asked; do not guess what is said.',
+  'no-speech':
+    'No speech was heard in this video, so there are no words to caption or cut. Say so in one short sentence if it matters for what they asked; do not guess what is said.',
+  busy: 'The Transcript tab is cleaning this video right now. If it asked you to review its cut list, write edl.json as it asked; otherwise tell the user in one short sentence to let it finish, then ask again.',
+  'already-cut':
+    'The ums and pauses are already cut: a clean edit is on the timeline, and it runs once. Call transcribe for the words as they play now. If the user wants more cut, tell them in one short sentence they can change the cuts in the Transcript tab.',
+  'off-timeline':
+    'The original recording is no longer on the timeline, so there is nothing to cut. Tell the user in one short sentence.'
+}
+
+const refusal = (err: unknown): string =>
+  err instanceof EditRefused ? REFUSALS[err.reason] : message(err)
+
+/** About as much of the words as goes back to Luca at once; the rest stays in transcript.json. */
+const MAX_WORDS_TEXT = 12_000
+
+const at = (n: number): string => n.toFixed(2)
+
+/** One line per phrase, `[12.30–15.80] and that's why it works`. */
+function phraseLines(phrases: Phrase[]): string {
+  const out: string[] = []
+  let size = 0
+  for (let i = 0; i < phrases.length; i++) {
+    const p = phrases[i]
+    const line = `[${at(p.start)}–${at(p.end)}] ${p.text}`
+    if (out.length && size + line.length > MAX_WORDS_TEXT) {
+      const last = phrases[phrases.length - 1]
+      out.push(
+        `…${phrases.length - i} more lines, to ${at(last.end)} s, left out here: the rest of the words are in transcript.json (times in the recording).`
+      )
+      break
+    }
+    out.push(line)
+    size += line.length + 1
+  }
+  return out.join('\n')
+}
+
+/** The summary on its first line, then what is said as timed lines. */
+function heardResult(summary: Record<string, unknown>, h: Heard): { content: Content[] } {
+  const notes = [
+    h.placed
+      ? `The voiceover wasn’t on the timeline, so it is now: an audio clip from 0 to ${at(h.seconds)} s, and the video is at least that long. Build the visuals over it.`
+      : '',
+    h.onTimeline
+      ? ''
+      : 'No clip on the timeline plays this recording, so these are times in the recording itself.',
+    h.cut ? 'A clean edit is on: the times follow the cut video.' : '',
+    h.shifted
+      ? 'The recording is trimmed or moved on the timeline, so these times differ from its own: clean_edit takes the recording’s own times, which are in transcript.json.'
+      : '',
+    h.firstClipOnly
+      ? 'Only the first clip the user started from is transcribed: the clips after it have no words here, so captions and cuts cover the first clip only.'
+      : ''
+  ].filter(Boolean)
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({ ...summary, ...(notes.length ? { note: notes.join(' ') } : {}) })
+      },
+      {
+        type: 'text',
+        text: h.phrases.length
+          ? `What is said, as [start–end] seconds ${h.onTimeline ? 'on the timeline' : 'in the recording'}:\n${phraseLines(h.phrases)}`
+          : 'No words play on the timeline now.'
+      }
+    ]
+  }
+}
 
 const SIZES: Record<CaptionConfig['size'], string> = { sm: 'small', md: 'medium', lg: 'large' }
 
@@ -169,8 +259,8 @@ function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown>
 }
 
 /**
- * Luca's in-process MCP server: catalog search, backgrounds, captions and fonts, plus the remocn
- * tools described in the spec.
+ * Luca's in-process MCP server: the words and the clean edit, catalog search, B-roll, captions and
+ * fonts, plus the remocn tools described in the spec.
  */
 export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMcpServer> {
   return createSdkMcpServer({
@@ -184,9 +274,13 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'Install with remocn_install, read the returned docs URL, write remocn/<clipId>.tsx in the ' +
       'project (default export rendering the component with props, plus `export const durationInFrames`), ' +
       'then call remocn_place. Re-run remocn_place with the same clipId after editing the wrapper. ' +
-      'background_search finds free stock photos and short videos (Pexels) for backgrounds and shows ' +
-      'previews of the best ones; background_add downloads the chosen one into media/backgrounds, ' +
-      'sized for this video, and returns the path to use. ' +
+      'transcribe returns what is said in the footage or voiceover as timed lines (transcribing it ' +
+      'the first time); clean_edit cuts the ums, pauses and retakes out of it and returns the words ' +
+      're-timed to the cut video. ' +
+      'broll_search finds free stock photos and short clips (Pexels) of things that are mentioned, ' +
+      'to show as B-roll, with previews of the best ones; broll_add downloads the chosen one into ' +
+      'media/broll, sized for this video, and returns the path to use and how to place it (over ' +
+      'the footage, never behind it). ' +
       'captions_apply puts captions of what is said on the video (from the transcript) and changes ' +
       'their look; Luca keeps them in sync with every cut, so never write or edit them by hand. ' +
       'font_add adds a font that comes with Luca, or downloads a Google Fonts font, into the project ' +
@@ -195,6 +289,85 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'video_generate makes a new video clip with Gemini Omni, or edits or continues a clip in the ' +
       'project, and saves it in media/generated.',
     tools: [
+      tool(
+        'transcribe',
+        'Hear what is said in the footage or voiceover. Transcribes it the first time (a minute or two for a long video; the user sees the progress in the Transcript tab), then returns the word count, the length and the words as timed lines, [start–end] in seconds on the timeline, broken at sentence ends and pauses; after a clean edit they follow the cut video. Call it before anything that depends on the words (cuts, a hook title, B-roll of what is mentioned, a name title, captions) and never guess what is said.',
+        {
+          force: z
+            .boolean()
+            .optional()
+            .describe(
+              'transcribe it again even if it was; only when the user says the words are wrong'
+            )
+        },
+        async ({ force }) => {
+          const p = readProject(projectDir)
+          if (!p) return text({ ok: false, error: 'No project is open.' })
+          try {
+            const h = await transcribeInTurn(p, { force })
+            return heardResult({ ok: true, words: h.words, seconds: h.seconds }, h)
+          } catch (err) {
+            return text({ ok: false, error: refusal(err) })
+          }
+        }
+      ),
+      tool(
+        'clean_edit',
+        [
+          'Cut the ums, uhs, long pauses, retakes and false starts out of the footage or voiceover, in one go. It transcribes first if needed, finds every filler and long pause by itself, adds the cuts you pass, renders a clean version and puts it on the timeline in place of the original (captions and everything after each cut follow).',
+          'Read what is said with transcribe first and pass the retakes and false starts you find: when a line is said again, cut the earlier attempt and keep the last good take. Never cut what changes the meaning.',
+          'It runs once per video, before anything else is added. Returns the cuts made, the seconds removed, the new length and the words re-timed to the cut video: place titles, zooms and B-roll with those times.'
+        ].join('\n'),
+        {
+          cuts: z
+            .array(
+              z.object({
+                start: z.number().min(0),
+                end: z.number().min(0),
+                reason: z.enum(['retake', 'false_start', 'manual']),
+                text: z.string().optional().describe('the words cut, e.g. "so the first thing"')
+              })
+            )
+            .max(300)
+            .optional()
+            .describe(
+              'retakes and false starts to cut besides the fillers and pauses it finds itself; times in seconds as transcribe listed them before any cut (word-exact times are in transcript.json)'
+            )
+        },
+        async ({ cuts }, extra) => {
+          const p = readProject(projectDir)
+          if (!p) return text({ ok: false, error: 'No project is open.' })
+          const signal = (extra as { signal?: AbortSignal } | undefined)?.signal
+          try {
+            const own: Cut[] = (cuts ?? []).map((c) => ({ ...c, text: c.text ?? '' }))
+            const r = await cleanEditInTurn(p, own, signal)
+            const kinds: Partial<Record<CutReason, number>> = {}
+            for (const c of r.cuts) kinds[c.reason] = (kinds[c.reason] ?? 0) + 1
+            return heardResult(
+              r.cuts.length
+                ? {
+                    ok: true,
+                    cuts: r.cuts.length,
+                    kinds,
+                    removed: r.removed,
+                    secondsBefore: r.before,
+                    seconds: r.seconds,
+                    words: r.words
+                  }
+                : {
+                    ok: true,
+                    cuts: 0,
+                    seconds: r.seconds,
+                    words: r.words,
+                    tell: 'There was nothing to cut: no ums, long pauses or retakes.'
+                  },
+              r
+            )
+          } catch (err) {
+            return text({ ok: false, error: refusal(err) })
+          }
+        }
+      ),
       tool(
         'catalog_search',
         'Search every ready-made HyperFrames block/component and Remocn component by what it looks like or does. Returns the best matches with what each is for and how to add it.',
@@ -228,18 +401,18 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         }
       ),
       tool(
-        'background_search',
-        'Search free stock photos and short videos (Pexels) to use as the background of the video or a scene. Returns the best matches with their ids, plus small previews of the first ones so you can see them. Pick what fits the video’s subject and mood, then add it with background_add.',
+        'broll_search',
+        'Search free stock photos and short clips (Pexels) of something that is mentioned, to show as B-roll: a product, a place, a company or its logo, an object, an animal, an idea made visual. Returns the best matches with their ids, plus small previews of the first ones so you can see them. Pick the one that shows exactly what is said, then add it with broll_add. Never use it for a background.',
         {
           query: z
             .string()
             .describe(
-              'what the background should show, in plain words: "soft abstract light", "modern office", "city at night", "ocean waves", "coffee beans"'
+              'what the picture should show, in plain words: "electric car charging", "tokyo street at night", "stock market chart", "coffee beans", "person typing on a laptop"'
             ),
           media: z
             .enum(['any', 'photo', 'video'])
             .optional()
-            .describe('default any; videos are short clips that keep moving behind everything'),
+            .describe('default any; videos are short clips, shown muted for a few seconds'),
           limit: z.number().int().min(1).max(24).optional().describe('default 12')
         },
         async ({ query, media, limit }) => {
@@ -283,17 +456,15 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         }
       ),
       tool(
-        'background_add',
-        'Download a background found with background_search (or picked by the user) into the project, sized for this video. Returns the project path to use and how to place it.',
+        'broll_add',
+        'Download B-roll found with broll_search (or picked by the user) into the project, sized for this video. Returns the project path to use and how to place it.',
         {
-          id: z
-            .string()
-            .describe('the id from background_search or the user’s pick, e.g. "video:123"')
+          id: z.string().describe('the id from broll_search or the user’s pick, e.g. "video:123"')
         },
         async ({ id }) => {
           if (!hasPexelsKey()) return text({ ok: false, error: NO_PEXELS })
           try {
-            const added = await addBackground(
+            const added = await addBroll(
               projectDir,
               id,
               readProject(projectDir)?.aspect ?? 'landscape'
@@ -303,8 +474,8 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
               ...added,
               place:
                 added.media === 'video'
-                  ? 'Put it behind everything as a full-frame, muted video clip on the lowest track (object-fit: cover) across the scenes it belongs to. If a scene runs longer than the clip, loop or repeat it. Keep text readable over it with a soft dark or light overlay.'
-                  : 'Put it behind everything as a full-frame image on the lowest track (object-fit: cover) across the scenes it belongs to; a slow push-in or drift keeps it alive. Keep text readable over it with a soft dark or light overlay.'
+                  ? `Show it as a muted video clip ${BROLL_PLACE}`
+                  : `Show it with a slow push-in ${BROLL_PLACE}`
             })
           } catch (err) {
             return text({ ok: false, error: message(err) })
@@ -422,6 +593,8 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         async (args) => {
           const p = readProject(projectDir)
           if (!p) return text({ ok: false, error: 'No project is open.' })
+          // a voiceover's words play once it is on the timeline
+          await placeVoiceover(p).catch(() => false)
           const state = captionState(p)
           if (!state.words)
             return text({
@@ -537,9 +710,9 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         [
           'Make a video clip with Gemini Omni (it comes with sound), or change or continue a clip in the project. It spends the user’s Gemini credits and takes a few minutes, so use it only when they ask for a generated or edited clip, and make one clip per request unless they ask for more.',
           `- New footage: a prompt. ${MIN_SECONDS}–${MAX_SECONDS} s per clip.`,
-          '- From pictures: firstFrame starts the clip on a picture; add lastFrame to end on another one (the same picture for both makes a loop). To restyle a still (a photo background, a picture the user attached) and bring it to life, pass it in images and describe the new look and the motion.',
+          '- From pictures: firstFrame starts the clip on a picture; add lastFrame to end on another one (the same picture for both makes a loop). To restyle a still (a picture the user attached) and bring it to life, pass it in images and describe the new look and the motion.',
           '- People, products, a look or a motion to use from pictures or clips: images / videoRefs, referred to in the prompt as <IMAGE_REF_0>, <IMAGE_REF_1>… and <VIDEO_REF_0>… in the order given.',
-          `- Change a clip (restyle it, relight it, add or remove something, change the weather or season): video. Omni reads up to ${MAX_SECONDS} s of it, from start. Keep edit prompts short and end them with "Keep everything else the same." To restyle a stock background, add it with background_add first and pass its file.`,
+          `- Change a clip (restyle it, relight it, add or remove something, change the weather or season): video. Omni reads up to ${MAX_SECONDS} s of it, from start. Keep edit prompts short and end them with "Keep everything else the same."`,
           `- Continue a clip: extend. Adds up to ${MAX_SECONDS} s each time, up to ${MAX_EXTENDED_SECONDS} s in all.`,
           'Clips made here are edited and continued from Gemini’s own copy, so pass their media/generated file as it is.',
           'Prompting: describe subject, action, setting, camera, light and sound like a director. Omni cuts between several shots unless you say "a single continuous shot, no cuts". Say what the sound should be (music, ambience, "no dialogue"). Timing works in words ("after 3 s…") or as "[0-3s] … [3-6s] …". Text on screen is rendered as written.',
@@ -550,7 +723,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
           video: z
             .string()
             .optional()
-            .describe('a clip in the project to change (project path, e.g. media/backgrounds/…)'),
+            .describe('a clip in the project to change (project path, e.g. media/generated/…)'),
           extend: z.string().optional().describe('a clip in the project to continue'),
           start: z
             .number()
