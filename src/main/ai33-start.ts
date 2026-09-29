@@ -2,7 +2,15 @@
  * Starting a video from a script: record it as the voiceover before any project exists, then
  * write down that its words are exact once the project has been made.
  */
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { join } from 'node:path'
 import {
   formatCredits,
@@ -16,9 +24,9 @@ import {
 import type { CreateProgress, StartArgs } from '../shared/types'
 import { hasAi33Key, patchAi33Settings } from './ai33-account'
 import { askViaWindow } from './ai33-ask'
-import { getCredits } from './ai33-client'
-import { makeSpeech, pickVoice, wordsFromScript } from './ai33-speech'
-import { gateSpend, makeStartCtx, settleSpend } from './ai33-spend'
+import { Ai33Error, getCredits, plainError } from './ai33-client'
+import { makeSpeech, pickVoice, SpeechPartError, wordsFromScript } from './ai33-speech'
+import { gateSpend, makeStartCtx, settleSpend, voiceLabel } from './ai33-spend'
 import { patchProjectAi33, writeScriptMeta } from './ai33-store'
 import { probeMedia } from './env'
 import { getSettings } from './settings'
@@ -26,10 +34,11 @@ import { getSettings } from './settings'
 /** The silence after a paragraph, as everywhere a script is recorded. */
 const PARAGRAPH_PAUSE = 0.35
 
-const STOPPED =
-  'Stopped before the voiceover was ready. If ai33 still finishes it, it is saved and won’t be paid for twice.'
-const NOT_ALL =
-  'Stopped before the whole voiceover was recorded. The first part is saved, so trying again only pays for the rest.'
+/** Every failure of a start ends like this: the card keeps the script. */
+const KEPT = 'Your script is still here.'
+// the words the card knows as "Cancel was pressed", so it shows a quiet note, not a red box
+const STOPPED = `Stopped. ${KEPT}`
+const NOT_ALL = `Stopped before the whole voiceover was recorded. The first part is saved, so trying again only pays for the rest. ${KEPT}`
 
 let current = new AbortController()
 
@@ -55,6 +64,9 @@ export function throwIfStopped(signal: AbortSignal): void {
 
 const r3 = (n: number): number => Math.round(n * 1000) / 1000
 
+/** A staging folder this old was left by a crash: no start takes a day. */
+const STALE_STAGING_MS = 24 * 3600_000
+
 /**
  * Record `args.script` into `<staging>/voiceover.mp3` (parts cached, two at a time) with its
  * words and times; reports the progress of the recording. Nothing is left behind when it fails
@@ -73,6 +85,7 @@ export async function scriptToAudio(
       'Connect ai33 first: Luca needs it to record your script. Your script is still here.'
     )
 
+  sweepStaging()
   const language = languageFor(script.language)?.id ?? 'en'
   const speed = script.speed ?? 1
   const say = (script.say ?? []).filter((s) => s.word.trim() && s.as.trim())
@@ -81,7 +94,10 @@ export async function scriptToAudio(
   // asks (the price of the rest of a long script) go to the start card: no chat exists yet
   const ctx = makeStartCtx((ask) => askViaWindow(ask, signal), signal)
   // set by confirmRest (a closure, so read through an object: TypeScript can't see it change)
-  const state: { grant: Grant | null; refusal: 'declined' | { left: number } | null } = {
+  const state: {
+    grant: Grant | null
+    refusal: 'declined' | { left: number; need: number } | null
+  } = {
     grant: null,
     refusal: null
   }
@@ -126,7 +142,9 @@ export async function scriptToAudio(
           }
           const left = await getCredits().catch(() => null)
           state.refusal =
-            left !== null && credits !== null && left < credits ? { left } : 'declined'
+            left !== null && credits !== null && left < credits
+              ? { left, need: credits }
+              : 'declined'
           return false
         },
         ask: ctx.ask,
@@ -144,11 +162,75 @@ export async function scriptToAudio(
     throwIfStopped(signal)
     if (typeof state.refusal === 'object' && state.refusal)
       throw new Error(
-        `You’re out of ai33 credits (${formatCredits(state.refusal.left)} left). Add credits with ai33, then press Record again. Your script is still here.`
+        `The rest needs about ${formatCredits(state.refusal.need)} credits and you have ${formatCredits(state.refusal.left)}. Add credits with ai33 or shorten the script, then press Record and edit again. ${KEPT}`
       )
     // makeSpeech ends with its own error when the rest is declined: the plain one is this
     if (state.refusal) throw new Error(NOT_ALL)
-    throw err
+    throw new Error(await startFailure(err))
+  }
+}
+
+/** Words meant for Luca ("Tell the user…", "Do not…"), never for the start card. */
+const FOR_LUCA = /Tell the user|Do not|Say so in one short sentence/
+
+/**
+ * Why a start failed, in plain words for the person, ending with what is kept. The client's own
+ * texts are written for Luca to relay, so the card gets its own for each kind of failure.
+ */
+async function startFailure(err: unknown): Promise<string> {
+  const part = err instanceof SpeechPartError ? err : null
+  const cause = part?.cause instanceof Ai33Error ? part.cause : plainError(err, 'voiceover')
+  let why: string
+  switch (cause.kind) {
+    case 'stopped':
+      return STOPPED
+    case 'credits': {
+      const left = await getCredits().catch(() => null)
+      why = `There aren’t enough ai33 credits for this${left === null ? '' : ` (${formatCredits(left)} left)`}. Add credits with ai33, then press Record and edit again.`
+      break
+    }
+    case 'network':
+      why = 'Couldn’t reach ai33. Check your internet connection, then press Record and edit again.'
+      break
+    case 'rate':
+    case 'server':
+      why = 'ai33 is busy right now. Try again in a few minutes.'
+      break
+    case 'deadline':
+      why =
+        'ai33 is taking a long time to record this. Try again in a few minutes; if it finishes meanwhile, it is saved and won’t be paid for twice.'
+      break
+    case 'auth':
+      why = 'ai33 didn’t accept your key. Check it under Connections (⌘,).'
+      break
+    default:
+      // ai33's own words about a failed job, or ours; never what was written for Luca
+      why = FOR_LUCA.test(cause.userMessage)
+        ? 'ai33 couldn’t record the voiceover.'
+        : cause.userMessage
+  }
+  // a part that failed after the ones before it were saved says so
+  const saved =
+    part && part.part > 1
+      ? ` Part ${part.part} of ${part.parts} didn’t record. ${part.part === 2 ? 'Part 1 is' : `Parts 1 to ${part.part - 1} are`} saved, so trying again only pays for the rest.`
+      : ''
+  return why.endsWith(KEPT) ? why : `${why}${saved} ${KEPT}`
+}
+
+/** A crash leaves its staging folder behind: the next start clears the ones more than a day old. */
+function sweepStaging(): void {
+  try {
+    const projects = getSettings().projectsDir
+    const now = Date.now()
+    for (const name of readdirSync(projects)) {
+      // the six random characters mkdtemp adds: never a folder somebody named themselves
+      if (!/^\.script-[A-Za-z0-9]{6}$/.test(name)) continue
+      const folder = join(projects, name)
+      if (now - statSync(folder).mtimeMs > STALE_STAGING_MS)
+        rmSync(folder, { recursive: true, force: true })
+    }
+  } catch {
+    // no projects folder yet, or one that can't be read: nothing to clear
   }
 }
 
@@ -270,7 +352,7 @@ function scriptMarkdown(p: PreparedScript): string {
   const name = languageFor(p.language)?.name ?? p.language
   const out = [
     '# The script',
-    `The voiceover was recorded from this text, word for word, in ${p.voice.name}’s voice (${name}). Its words and times are in transcript.json.`,
+    `The voiceover was recorded from this text, word for word, in ${voiceLabel(p.voice.name)}’s voice (${name}). Its words and times are in transcript.json.`,
     ''
   ]
   if (p.say.length)

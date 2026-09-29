@@ -1,5 +1,6 @@
 import { existsSync, statSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { closingOffset, findTags } from './html'
 import { unescapeAttr } from './timeline-read'
 
@@ -67,12 +68,23 @@ function mask(html: string): string {
     .replace(/<template\b[\s\S]*?<\/template\s*>/gi, blank)
 }
 
+// file: is not here: it names a file on this Mac, which localFile turns into a path
 const REMOTE_OR_INLINE = /^(https?:|data:|blob:|\/\/|#)/i
 const PLACEHOLDER = /^__[A-Z_]+__$|<<[^<>]+>>|\{\{[^{}]+\}\}|\$\{[^{}]+\}/
 
 /** The file an `<audio src>` means, the way the renderer resolves it; null when it isn't there. */
 function localFile(dir: string, src: string): string | null {
-  const clean = src.trim().split(/[?#]/, 1)[0] ?? ''
+  // the tag parser hands back what is written ("Q&amp;A.mp3" is the file "Q&A.mp3"); entities first,
+  // since "&#39;" holds the character that starts a fragment
+  const written = unescapeAttr(src.trim())
+  let clean = written.split(/[?#]/, 1)[0] ?? ''
+  if (/^file:/i.test(clean)) {
+    try {
+      clean = fileURLToPath(new URL(written.split(/[?#]/, 1)[0]))
+    } catch {
+      return null
+    }
+  }
   const variants = [clean]
   try {
     const decoded = decodeURIComponent(clean)
@@ -170,6 +182,9 @@ export async function checkAudio(
     const file = t.attrs.src?.trim()
     if (!t.attrs.id || !file) return false
     if (REMOTE_OR_INLINE.test(file) || PLACEHOLDER.test(file)) return false
+    // a clip with no length never plays (the engine skips its window), so its file is not needed
+    const length = t.attrs['data-duration']?.trim()
+    if (length && Number.isFinite(Number(length)) && Number(length) <= 0) return false
     return !hidden.some((h) => t.start >= h.from && t.start < h.to)
   })
 
@@ -195,21 +210,29 @@ export async function checkAudio(
     : { ok: false, error: unreadableSound([...new Set(bad)]), warnings }
 }
 
+/** Failures of the machine, not of a sound: whatever clip they name, the file is not what went wrong. */
+const NOT_THE_SOUND =
+  /ENOSPC|No space left|ENOMEM|out of memory|Cannot allocate|SIGKILL|SIGSEGV|SIGABRT|was killed|EACCES|EPERM|Permission denied|spawn \S*ffmpeg|ffmpeg (?:is )?not (?:found|installed)|timed out/i
+
 /**
  * The renderer's own words for a failed export, in the person's: when it stopped on a sound it
  * says `audio_processing_failed` and names the element, and that becomes the same sentence the
- * check before the render gives. Anything else is passed through.
+ * check before the render gives. Anything else is passed through, including a failure that names
+ * no sound Luca made (footage, or a mix that broke) and one that is the machine's (a full disk,
+ * ffmpeg killed): telling those to make a sound again would send people the wrong way.
  */
 export function plainExportError(text: string, html: string | null): string {
   if (!/audio_processing_failed|Audio (?:mix|processing) failed/i.test(text)) return text
+  if (NOT_THE_SOUND.test(text)) return text
   const titles: string[] = []
   const sounds = findTags(html === null ? '' : mask(html), 'audio')
   for (const m of text.matchAll(/\belement\s+(\w[\w.-]*)/gi)) {
     const id = m[1].replace(/[.-]+$/, '')
     const tag = sounds.find((t) => t.attrs.id === id)
-    if (!tag) continue
+    // only a sound Luca made has a name people know; the footage's own sound is not "made again"
+    if (!tag || !(tag.attrs['data-luca-title'] || tag.attrs['data-luca-role'])) continue
     const title = unescapeAttr(tag.attrs['data-luca-title'] ?? '').trim() || humanize(id)
     if (!titles.includes(title)) titles.push(title)
   }
-  return unreadableSound(titles)
+  return titles.length ? unreadableSound(titles) : text
 }

@@ -1,7 +1,7 @@
 /**
  * The two small files ai33 keeps in a project, and the only code that writes them (so a choice
  * saved here is never lost to another writer): `.luca/ai33.json` (the voice, the words to say a
- * certain way, what the first turn may make without asking) and `.luca/script.json` (this
+ * certain way, a record of what the first turn may make without asking) and `.luca/script.json` (this
  * project's words come from a script, so they are exact). Plain files, versioned with the
  * project, so undo puts them back with everything else. Pure fs: nothing here imports Electron.
  */

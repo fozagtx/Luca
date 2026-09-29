@@ -4,21 +4,21 @@ import type { Grant, SfxReq } from '../../shared/ai33'
 import type { Ai33Ctx, Ai33Tool } from '../ai33-ctx'
 import {
   costClause,
-  isGrant,
   lowNote,
   makeSfx,
   planSfx,
   SFX_LEAD,
   secs,
+  settleFailure,
   sfxCredits,
-  spentOnFailure,
+  sfxLostRecently,
   videoLength,
   type SfxOutcome
 } from '../ai33-sound'
-import { settleSpend } from '../ai33-spend'
+import { gateSpendWith, settleSpend } from '../ai33-spend'
 import { SFX_VOLUME } from '../place'
 import { readProject } from '../projects'
-import { fail, guarded, okJson, spend, STILL_WORKING } from './common'
+import { fail, guarded, okJson, STILL_WORKING } from './common'
 
 /** sfx_generate, for the ai33 MCP server (mcp-ai33.ts). */
 export function sfxTools(ctx: Ai33Ctx, projectDir: string): Ai33Tool[] {
@@ -80,24 +80,28 @@ export function sfxTools(ctx: Ai33Ctx, projectDir: string): Ai33Tool[] {
           const paid = jobs.filter((j) => !j.reuse)
           let grant: Grant | null = null
           if (paid.length) {
-            const gate = await spend(ctx, {
-              kind: 'sfx',
-              units: paid.length,
-              summary: (paid.length === 1
-                ? `Sound effect: ${paid[0].what}`
-                : `${paid.length} sound effects: ${paid.map((j) => j.what).join(', ')}`
-              ).slice(0, 80),
-              // the price is exact: 50 credits a second, whole seconds
-              estimate: {
-                credits: paid.reduce((n, j) => n + sfxCredits(j.seconds), 0),
-                exact: true,
-                basis: 'formula'
+            const gate = await gateSpendWith(
+              ctx,
+              {
+                kind: 'sfx',
+                units: paid.length,
+                summary: (paid.length === 1
+                  ? `Sound effect: ${paid[0].what}`
+                  : `${paid.length} sound effects: ${paid.map((j) => j.what).join(', ')}`
+                ).slice(0, 80),
+                // the price is exact: 50 credits a second, whole seconds
+                estimate: {
+                  credits: paid.reduce((n, j) => n + sfxCredits(j.seconds), 0),
+                  exact: true,
+                  basis: 'formula'
+                },
+                batch: paid.length,
+                thing: paid.length === 1 ? 'a sound effect' : `${paid.length} sound effects`
               },
-              batch: paid.length,
-              thing: paid.length === 1 ? 'a sound effect' : `${paid.length} sound effects`
-            })
-            if (!isGrant(gate)) return gate
-            grant = gate
+              { again: sfxLostRecently(paid) }
+            )
+            if (!gate.go) return gate.result
+            grant = gate.grant
           }
 
           let made: SfxOutcome
@@ -113,7 +117,7 @@ export function sfxTools(ctx: Ai33Ctx, projectDir: string): Ai33Tool[] {
               { approved: grant !== null }
             )
           } catch (err) {
-            if (grant) settleSpend(ctx, grant, spentOnFailure(err, grant))
+            if (grant) settleFailure(ctx, grant, err)
             throw err
           }
 

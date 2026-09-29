@@ -9,8 +9,8 @@
  */
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import {
   formatCredits,
   type Ai33Ask,
@@ -21,9 +21,10 @@ import {
   type Grant,
   type SpendReq
 } from '../shared/ai33'
-import { dataDir, getCredits, getHealth } from './ai33-client'
+import { Ai33Error, dataDir, getCredits, getHealth } from './ai33-client'
 import type { Ai33Turn, SpendCtx } from './ai33-ctx'
-import { patchProjectAi33, readProjectAi33 } from './ai33-store'
+import { list } from './ai33-jobs'
+import { patchProjectAi33 } from './ai33-store'
 
 /** Asked first when a job (or a batch) is estimated at this many credits or more. */
 export const ASK_ABOVE = 1500
@@ -74,8 +75,10 @@ const NO_CREDITS =
 const NO_BALANCE =
   'Luca couldn’t check how many ai33 credits are left, so it didn’t start this. Nothing was charged. Tell the user in one short sentence to check their internet connection and try again. Do not make it another way.'
 
-const BUSY_LINE =
-  'The voice service is busy right now, so this may take longer or fail. ai33 returns credits for a job that fails.'
+const BUSY_LINE = 'The voice service is busy right now, so this may take longer or fail.'
+
+const LOST_LINE =
+  'An earlier try of this got no answer from ai33, so it may already have used credits.'
 
 // ---- results
 
@@ -261,40 +264,49 @@ const reservations = new Map<string, Reservation>()
 
 // ---- preapproval (music only)
 
-/** The turn that first spent in a project; a preapproval belongs to that turn and lapses after it. */
-const firstTurn = new Map<string, number>()
+/**
+ * What the Music start chip allows, by project. Kept here and never read back from the project:
+ * the model can write files in the project, so a file can't say what the person agreed to. `turn`
+ * is the first turn that reached the gate; the agent ends the preapproval when the project's
+ * first turn ends, whether or not that turn spent anything.
+ */
+const preapprovals = new Map<string, { turn: Ai33Turn | null }>()
 
-function dropPreapproval(dir: string): void {
-  firstTurn.delete(dir)
+/** A record of the chip in the project file, for people reading it; the gate never looks at it. */
+function mirrorPreapproval(dir: string, on: boolean): void {
   try {
-    const left = (readProjectAi33(dir).preapproved ?? []).filter((k) => k !== 'music')
-    patchProjectAi33(dir, { preapproved: left.length ? left : undefined })
+    // a project folder that is gone (closed, trashed) is not made again for a record
+    if (!on && !existsSync(join(dir, '.luca'))) return
+    patchProjectAi33(dir, { preapproved: on ? ['music'] : undefined })
   } catch {
-    // an unwritable project file can't be told apart from a spent preapproval; nothing to undo
+    // an unwritable project file changes nothing the gate relies on
   }
+}
+
+/** The preapproval is over: used, or the turn it was for has ended. */
+export function endPreapproval(projectDir: string): void {
+  if (preapprovals.delete(resolve(projectDir))) mirrorPreapproval(projectDir, false)
 }
 
 /**
  * Whether the project's Music start chip still covers music in this turn: it was switched on, no
- * music was made on it yet, and this is the first turn to spend in the project.
+ * music was made on it yet, and this is the first turn to spend in the project. A turn is told
+ * apart by the object, not its number: numbers start again with every agent.
  */
 function preapprovalHolds(dir: string | null, turn: Ai33Turn): boolean {
-  if (!dir || !readProjectAi33(dir).preapproved?.includes('music')) return false
-  const first = firstTurn.get(dir)
-  if (first === undefined) firstTurn.set(dir, turn.id)
-  else if (first !== turn.id) {
-    dropPreapproval(dir)
-    return false
-  }
-  return true
+  const held = dir ? preapprovals.get(resolve(dir)) : undefined
+  if (!dir || !held) return false
+  held.turn ??= turn
+  if (held.turn === turn) return true
+  endPreapproval(dir)
+  return false
 }
 
 /** Let the first turn make these without asking (in practice only 'music'), for this project. */
 export function grantPreapproval(projectDir: string, kinds: Ai33Kind[]): void {
   if (!kinds.includes('music')) return
-  const kept = readProjectAi33(projectDir).preapproved ?? []
-  patchProjectAi33(projectDir, { preapproved: [...new Set<Ai33Kind>([...kept, 'music'])] })
-  firstTurn.delete(projectDir)
+  preapprovals.set(resolve(projectDir), { turn: null })
+  mirrorPreapproval(projectDir, true)
 }
 
 // ---- the card
@@ -307,7 +319,7 @@ function askFor(
   req: SpendReq,
   est: Ai33Estimate,
   balance: number,
-  o: { start: boolean; busy: boolean }
+  o: { start: boolean; busy: boolean; again: boolean }
 ): Ai33Ask {
   const speech = req.kind === 'speech' || req.kind === 'dialogue'
   const left = formatCredits(balance)
@@ -334,7 +346,7 @@ function askFor(
       title = `Make ${req.thing ?? (req.units === 1 ? 'a sound effect' : `${req.units} sound effects`)}?`
     else {
       const what = req.thing ?? (req.kind === 'dialogue' ? 'the conversation' : 'the voiceover')
-      title = `Record ${what}${req.voice ? ` in ${req.voice.name}’s voice` : ''}?`
+      title = `Record ${what}${req.voice ? ` in ${voiceLabel(req.voice.name)}’s voice` : ''}?`
     }
     if (credits === null) {
       detail.push(`You have ${left} credits.`)
@@ -353,6 +365,7 @@ function askFor(
   if (credits !== null && credits > balance * BIG_SHARE)
     warn.push('That’s more than half of what’s left.')
   if (o.busy) warn.push(BUSY_LINE)
+  if (o.again) warn.push(LOST_LINE)
 
   return {
     kind: 'spend',
@@ -361,7 +374,7 @@ function askFor(
     credits,
     exact: est.exact,
     balance,
-    voice: speech ? (req.voice ?? null) : null,
+    voice: speech && req.voice ? { ...req.voice, name: voiceLabel(req.voice.name) } : null,
     ...(warn.length ? { warn: warn.join(' ') } : {}),
     ...(o.start && speech ? { labels: { allow: 'Go ahead', deny: 'Stop' } } : {})
   }
@@ -393,6 +406,58 @@ async function balanceNow(): Promise<number | null> {
   }
 }
 
+type Screened = {
+  go: true
+  turn: Ai33Turn
+  bucket: Bucket
+  units: number
+  health: string
+  balance: number
+  est: Ai33Estimate
+}
+
+/**
+ * What is refused without a card: a cap, a busy service, an unreadable balance, too few credits.
+ * Stop is checked after each read, so a card is never raised for a turn that was stopped meanwhile.
+ */
+async function screen(
+  ctx: SpendCtx,
+  req: SpendReq
+): Promise<Screened | { go: false; result: CallToolResult }> {
+  const turn = ctx.turn()
+  const bucket = bucketOf(req.kind)
+  const units = capUnits(req)
+
+  const capped = overCap(turn, bucket, units)
+  if (capped) return refuse(capped)
+
+  const health = await healthOf(serviceFor(req))
+  if (turn.stop.aborted) return declined()
+  if (health === 'overloaded') return refuse(OVERLOADED)
+
+  const balance = await balanceNow()
+  if (turn.stop.aborted) return declined()
+  if (balance === null) return refuse(NO_BALANCE)
+
+  const est = req.estimate ?? quoteFor(req)
+  const credits = est.credits
+  if (credits === null ? balance <= 0 : credits > balance)
+    return refuse(credits === null ? NO_CREDITS : NOT_ENOUGH(balance, credits))
+  return { go: true, turn, bucket, units, health, balance, est }
+}
+
+/**
+ * The refusals of `gateSpend` without a card or a reservation, for a step that is paid for before
+ * its price can be asked about (the first part of a long voiceover).
+ */
+export async function precheckSpend(
+  ctx: SpendCtx,
+  req: SpendReq
+): Promise<{ go: true } | { go: false; result: CallToolResult }> {
+  const s = await screen(ctx, req)
+  return s.go ? { go: true } : s
+}
+
 /**
  * Before a paid call: a Grant that reserves the estimate (the tool settles it after the job), or
  * the result to return instead. Refused without a card: caps, an unreadable balance, not enough
@@ -400,28 +465,25 @@ async function balanceNow(): Promise<number | null> {
  * guessed price on music or a long text, a batch of effects, a turn that would pass 6,000, more
  * than half of what is left. Only music may be preapproved (the Music start chip).
  */
-export async function gateSpend(
+export function gateSpend(
   ctx: SpendCtx,
   req: SpendReq
 ): Promise<{ go: true; grant: Grant } | { go: false; result: CallToolResult }> {
-  const turn = ctx.turn()
-  const bucket = bucketOf(req.kind)
-  const units = capUnits(req)
-  const preapprovable = preapprovalHolds(ctx.projectDir, turn) && req.kind === 'music'
+  return gateSpendWith(ctx, req, {})
+}
 
-  const capped = overCap(turn, bucket, units)
-  if (capped) return refuse(capped)
+/** `gateSpend`; `again` asks first whatever the price (an identical request that may already have been charged). */
+export async function gateSpendWith(
+  ctx: SpendCtx,
+  req: SpendReq,
+  o: { again?: boolean }
+): Promise<{ go: true; grant: Grant } | { go: false; result: CallToolResult }> {
+  const preapprovable = preapprovalHolds(ctx.projectDir, ctx.turn()) && req.kind === 'music'
 
-  const health = await healthOf(serviceFor(req))
-  if (health === 'overloaded') return refuse(OVERLOADED)
-
-  const balance = await balanceNow()
-  if (balance === null) return refuse(NO_BALANCE)
-
-  const est = req.estimate ?? quoteFor(req)
+  const s = await screen(ctx, req)
+  if (!s.go) return s
+  const { turn, bucket, units, health, balance, est } = s
   const credits = est.credits
-  if (credits === null ? balance <= 0 : credits > balance)
-    return refuse(credits === null ? NO_CREDITS : NOT_ENOUGH(balance, credits))
 
   const overTurn = turn.spent.credits + (credits ?? 0) > TURN_CAP
   const guessed =
@@ -437,16 +499,22 @@ export async function gateSpend(
     (credits !== null && credits > balance * BIG_SHARE)
 
   // The chip covers music whose price it can bound (a seed or a learned price, within what it
-  // allows), but never a turn that would spend past its cap.
+  // allows), but never a turn that would spend past its cap, nor a repeat of a try that may
+  // already have been charged.
   const covered =
     preapprovable &&
+    o.again !== true &&
     credits !== null &&
     credits <= PREAPPROVE_MAX &&
     balance >= credits &&
     !overTurn
-  if (mustAsk && !covered) {
+  if ((mustAsk || o.again === true) && !covered) {
     const answer = await ctx.ask(
-      askFor(req, est, balance, { start: startTurns.has(turn), busy: health === 'degraded' })
+      askFor(req, est, balance, {
+        start: startTurns.has(turn),
+        busy: health === 'degraded',
+        again: o.again === true
+      })
     )
     if (answer !== 'allow' || turn.stop.aborted) return declined()
   }
@@ -526,7 +594,55 @@ export function settleSpend(ctx: SpendCtx, grant: Grant, actualCredits: number):
     if (r.reserved > 0 && Math.abs(actual - r.reserved) > r.reserved * DRIFT)
       console.warn(`[ai33] ${r.kind} cost ${actual} credits, estimated ${r.reserved}`)
   }
-  if (r.preapproved && ctx.projectDir) dropPreapproval(ctx.projectDir)
+  if (r.preapproved && ctx.projectDir) endPreapproval(ctx.projectDir)
+}
+
+/**
+ * After a job whose cost isn't known yet (still running at ai33, or a submit that may have been
+ * charged): its estimate and its place in the turn's caps stay as they are, nothing is learned
+ * from it, and a preapproval is used up. Never frees a cap slot, which settling at 0 would.
+ */
+export function holdSpend(ctx: SpendCtx, grant: Grant): void {
+  const r = reservations.get(grant.id)
+  if (!r) return
+  reservations.delete(grant.id)
+  if (r.preapproved && ctx.projectDir) endPreapproval(ctx.projectDir)
+}
+
+/** How long after a submit that got no answer the same request is asked about again. */
+const LOST_ASK_MS = 10 * 60_000
+
+/**
+ * A submit of this request got no answer a moment ago, so ai33 may have charged it: asking again
+ * raises the cost card instead of paying quietly a second time.
+ */
+export function lostRecently(requestHash: string): boolean {
+  const now = Date.now()
+  return list().some(
+    (e) => e.requestHash === requestHash && e.state === 'lost' && now - e.submittedAt < LOST_ASK_MS
+  )
+}
+
+/**
+ * A failure that may have cost credits nobody counted: the job may exist at ai33 (a submit that
+ * got no answer, a finished job whose file was no good). Not a stop, a failed task or a refusal.
+ */
+export function mayHaveBeenCharged(err: unknown): boolean {
+  return (
+    err instanceof Ai33Error &&
+    err.kind !== 'stopped' &&
+    err.kind !== 'task' &&
+    err.charged !== false
+  )
+}
+
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g
+
+/** A voice's name as a card or the brief shows it: one line, no control characters, at most 40 characters. */
+export function voiceLabel(name: string): string {
+  const flat = name.replace(CONTROL, ' ').replace(/\s+/g, ' ').trim()
+  return flat.length > 40 ? `${flat.slice(0, 39).trimEnd()}…` : flat
 }
 
 /** A spend context for work that starts before any project or chat exists (a script start). */

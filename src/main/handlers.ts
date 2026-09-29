@@ -132,8 +132,13 @@ const openDialog = (
   win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts)
 
 export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
-  // ai33 gets its key and data folder, and its notices reach windows opened later
-  initAi33()
+  // ai33 gets its key and data folder, and its notices reach windows opened later. It is optional:
+  // a data folder that can't be made must not stop every other handler and the window
+  try {
+    initAi33()
+  } catch (err) {
+    console.warn('[luca] ai33 could not start', err)
+  }
   handle(Channels.serverBaseUrl, () => server.baseUrl)
 
   // env
@@ -180,12 +185,12 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   onTurnEnd(async (p, e) => {
     // a stopped turn's edits are kept, so they get a checkpoint too (undo takes back just them)
     if (e.isError && !e.stopped) return
+    // named before the first await: a message sent meanwhile must not rename this turn's version
+    const label = 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72)
     await followBeds(p)
     followCaptions(p)
     followFonts(p)
-    checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72)).catch(
-      warnCheckpoint
-    )
+    checkpoint(p.dir, label).catch(warnCheckpoint)
     // projects without a source video take their thumbnail from the composition itself
     schedulePosterRefresh(p)
   })

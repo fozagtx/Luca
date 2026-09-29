@@ -30,8 +30,9 @@ import {
   toInt,
   type Ai33ErrorKind
 } from './ai33-client'
-import type { MakeCtx, ProgressFn } from './ai33-ctx'
+import type { MakeCtx, ProgressFn, SpendCtx } from './ai33-ctx'
 import { find, inflight } from './ai33-jobs'
+import { holdSpend, lostRecently, mayHaveBeenCharged, settleSpend } from './ai33-spend'
 import { findTags } from './html'
 import {
   findSaved,
@@ -157,20 +158,21 @@ function carry(err: unknown, credits: number, thing?: string): SoundError {
 export const isGrant = (r: Grant | CallToolResult): r is Grant => 'reserved' in r
 
 /**
- * What a failed call cost, to settle its spend with: what the error itself says, nothing when
+ * What a failed call cost, to settle its spend with: what the error itself counted, nothing when
  * the job never started or ai33 refunds it (a failed task, a stop), and the estimate when it may
- * have been charged (a submit that got no answer).
+ * have been charged (a submit that got no answer). A SoundError is looked through: it only wraps
+ * the failure, so it must not hand back the place a possibly-charged call took in the turn's caps.
  */
 export function spentOnFailure(err: unknown, grant: Grant): number {
-  if (err instanceof SoundError) return err.credits
-  if (
-    err instanceof Ai33Error &&
-    err.kind !== 'stopped' &&
-    err.kind !== 'task' &&
-    err.charged !== false
-  )
-    return grant.reserved
-  return 0
+  if (err instanceof SoundError && err.credits > 0) return err.credits
+  return mayHaveBeenCharged(err) ? grant.reserved : 0
+}
+
+/** Settle a failed call's spend: what it cost, or held as it is when that can't be known. */
+export function settleFailure(ctx: SpendCtx, grant: Grant, err: unknown): void {
+  const spent = spentOnFailure(err, grant)
+  if (spent === 0 && mayHaveBeenCharged(err)) holdSpend(ctx, grant)
+  else settleSpend(ctx, grant, spent)
 }
 
 /** What Luca is told to say about the cost of a job (credits, never dollars), as a clause. */
@@ -353,6 +355,10 @@ export function musicAlongside(dir: string, placed: Placed): string[] {
     return []
   }
 }
+
+/** This music was asked for a moment ago and ai33 never answered: asking again is asked about first. */
+export const musicLostRecently = (req: MusicReq): boolean =>
+  lostRecently(musicHash(cleanMood(req.mood), req.instrumental))
 
 /** Asking for this music again costs nothing: it is saved here, or ai33 already has the job. */
 export async function musicIsFree(req: MusicReq, p: Project): Promise<boolean> {
@@ -578,6 +584,10 @@ export function planSfx(req: SfxReq, p: Project): { items: SfxItem[]; jobs: SfxJ
   return { items, jobs: [...jobs.values()] }
 }
 
+/** One of these effects was asked for a moment ago and ai33 never answered: asking again is asked about first. */
+export const sfxLostRecently = (jobs: SfxJob[]): boolean =>
+  jobs.some((j) => !j.reuse && lostRecently(j.requestHash))
+
 type Made = {
   file?: Saved
   /** What the job really cost (0 when reused or refunded, or when it failed). */
@@ -779,8 +789,10 @@ export async function makeSfx(
     }
   }
 
-  // nothing came of it at all: say why, with whatever it cost
-  const first = [...made.values()].find((m) => m.err)?.err
+  // nothing came of it at all: say why, with whatever it cost (an effect that may have been
+  // charged is the one that speaks, so the tool keeps its place in the caps)
+  const errors = [...made.values()].flatMap((m) => (m.err ? [m.err] : []))
+  const first = errors.find(mayHaveBeenCharged) ?? errors[0]
   if (!files.length && !working.length && first) throw carry(first, credits, 'sound effect')
 
   const known = [...made.values()].reduce<number | null>(
