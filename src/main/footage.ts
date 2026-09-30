@@ -9,7 +9,8 @@ import {
 } from 'node:fs'
 import { copyFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
-import type { Aspect, Chip, FootageInfo, MediaInput, MediaKind } from '../shared/types'
+import { bestFit } from '../shared/aspect'
+import type { Chip, FootageInfo, MediaInput, MediaKind } from '../shared/types'
 import { childEnv, ffmpegProgress, probeMedia, run, which } from './env'
 
 export const VIDEO_EXT = new Set(['.mp4', '.mov', '.m4v', '.webm'])
@@ -160,14 +161,6 @@ export async function probeVideo(file: string): Promise<VideoProbe | null> {
   }
 }
 
-/** The project shape footage fits best: mostly vertical, near square, or wide. */
-export function aspectOf(width: number, height: number): Aspect {
-  const r = width / height
-  if (r <= 0.76) return 'portrait'
-  if (r >= 1.32) return 'landscape'
-  return 'square'
-}
-
 /** A video's shape and length for the start card, or null when it can't be read. */
 export async function footageInfo(file: string): Promise<FootageInfo | null> {
   const p = await probeVideo(file).catch(() => null)
@@ -176,7 +169,7 @@ export async function footageInfo(file: string): Promise<FootageInfo | null> {
     width: p.width,
     height: p.height,
     duration: p.duration,
-    aspect: aspectOf(p.width, p.height)
+    aspect: bestFit(p.width, p.height)
   }
 }
 

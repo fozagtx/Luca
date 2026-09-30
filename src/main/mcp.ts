@@ -12,6 +12,7 @@ import {
   type CaptionAnim
 } from '../shared/captions'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
+import { DEFAULT_ASPECT } from '../shared/aspect'
 import { REFERENCE_STUDY } from '../shared/motion'
 import { BUNDLED_LUTS } from '../shared/luts'
 import type { CaptionConfig, Cut, CutReason } from '../shared/types'
@@ -414,7 +415,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
             const res = await searchBroll({
               query,
               media: media === 'photo' || media === 'video' ? media : 'all',
-              orientation: readProject(projectDir)?.aspect ?? 'landscape'
+              orientation: readProject(projectDir)?.aspect ?? DEFAULT_ASPECT
             })
             const hits = res.items.slice(0, limit ?? 12)
             const content: Content[] = [
@@ -460,7 +461,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
             const added = await addBroll(
               projectDir,
               id,
-              readProject(projectDir)?.aspect ?? 'landscape'
+              readProject(projectDir)?.aspect ?? DEFAULT_ASPECT
             )
             const where = hasFootage(projectDir) ? BROLL_PLACE : BROLL_SCENE
             return text({

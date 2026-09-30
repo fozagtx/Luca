@@ -1,3 +1,4 @@
+import { isPortrait } from '@shared/aspect'
 import type { CaptionConfig, CaptionOverrides, CaptionState, CleanStatus } from '@shared/types'
 import {
   AudioLines,
@@ -104,7 +105,7 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [link, setLink] = useState('')
   const [customOpen, setCustomOpen] = useState<boolean | null>(null)
-  const portrait = project.aspect === 'portrait'
+  const portrait = isPortrait(project.aspect)
   const poster = recent.find((r) => r.dir === project.dir)?.thumb ?? null
 
   useEffect(() => {

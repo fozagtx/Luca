@@ -1,3 +1,4 @@
+import { DEFAULT_ASPECT } from '@shared/aspect'
 import type { Aspect, BrollItem, BrollMedia, Chip } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
@@ -91,7 +92,7 @@ export const useBroll = create<BrollStore>((set, get) => ({
 
 /** B-roll comes in the open project's shape, so it fills the frame as a cutaway. */
 export function useBrollOrientation(): Aspect {
-  return useProject((s) => s.project?.aspect ?? 'landscape')
+  return useProject((s) => s.project?.aspect ?? DEFAULT_ASPECT)
 }
 
 export function brollChip(b: BrollItem): Extract<Chip, { kind: 'broll' }> {

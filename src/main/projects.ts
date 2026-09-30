@@ -10,6 +10,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { basename, extname, join, relative } from 'node:path'
+import { bestFit, DEFAULT_ASPECT, normalizeAspect, orientationOf, sizeOf } from '../shared/aspect'
 import { editGuide, videoType } from '../shared/edits'
 import { BRIEF_ONLY, MOTION_GUIDE, REFERENCE_STUDY } from '../shared/motion'
 import type {
@@ -22,8 +23,8 @@ import type {
   StartKind
 } from '../shared/types'
 import { childEnv, HYPERFRAMES, probeMedia, run, runHyperframes, which } from './env'
+import { fitComposition } from './composition-size'
 import {
-  aspectOf,
   AUDIO_EXT,
   convertImage,
   copyMedia,
@@ -77,7 +78,10 @@ export function readProject(dir: string): Project | null {
   const f = join(dir, '.luca', 'project.json')
   if (!existsSync(f)) return null
   try {
-    return JSON.parse(readFileSync(f, 'utf8')) as Project
+    const p = JSON.parse(readFileSync(f, 'utf8')) as Project
+    // old projects saved an orientation ('landscape'…) as the aspect
+    p.aspect = normalizeAspect(p.aspect)
+    return p
   } catch {
     return null
   }
@@ -122,19 +126,6 @@ function uniqueDir(root: string, slug: string): { dir: string; id: string } {
   // made now (init takes an empty folder), so a second start at the same time can't pick it too
   mkdirSync(join(root, id))
   return { dir: join(root, id), id }
-}
-
-const RESOLUTION: Record<Aspect, string> = {
-  landscape: 'landscape',
-  portrait: 'portrait',
-  square: 'square'
-}
-
-/** Composition pixels for each aspect ratio. */
-export const SIZE: Record<Aspect, [number, number]> = {
-  landscape: [1920, 1080],
-  portrait: [1080, 1920],
-  square: [1080, 1080]
 }
 
 /** Footage (one video or more), a voiceover, or only the brief (no video or audio file). */
@@ -209,7 +200,7 @@ export async function startProject(
           id,
           '--non-interactive',
           '--resolution',
-          RESOLUTION[args.aspect],
+          orientationOf(args.aspect),
           '--example',
           'blank'
         ],
@@ -220,6 +211,7 @@ export async function startProject(
           `Couldn't set up the project (${res.code}): ${(res.stderr || res.stdout).trim().slice(-800)}`
         )
       }
+      fitComposition(dir, args.aspect)
       writeProjectNotes(dir)
       source = ''
       brief = BRIEF_ONLY
@@ -233,7 +225,7 @@ export async function startProject(
         kind === 'video' ? [...images, ...(audio && !voiceover ? [audio] : [])] : images
       const ready = await prepareAll(videos, probes, staging, report)
       const initFile = await safelyNamed(kind === 'video' ? ready[0] : main!, staging)
-      const initArgs = ['init', id, '--non-interactive', '--resolution', RESOLUTION[args.aspect]]
+      const initArgs = ['init', id, '--non-interactive', '--resolution', orientationOf(args.aspect)]
       if (kind === 'video') initArgs.push('--video', initFile, '--skip-transcribe')
       else initArgs.push('--audio', initFile, '--skip-transcribe')
       report({
@@ -262,6 +254,7 @@ export async function startProject(
           `Couldn't set up the project (${res.code}): ${(res.stderr || res.stdout).trim().slice(-800)}`
         )
       }
+      fitComposition(dir, args.aspect)
       writeProjectNotes(dir)
 
       // the file as it is in the project: init renames the footage it converts
@@ -511,9 +504,9 @@ async function importVoiceover(dir: string, file: string, report: Report): Promi
  * whether it has sound, and the voiceover that is its voice when it has none.
  */
 function videoBrief(clips: PlacedClip[], aspect: Aspect, voice: Voice | null): string {
-  const [w, h] = SIZE[aspect]
-  const shape = (c: PlacedClip): string => `${aspectOf(c.width, c.height)} ${c.width}×${c.height}`
-  const cropped = clips.some((c) => aspectOf(c.width, c.height) !== aspect)
+  const [w, h] = sizeOf(aspect)
+  const shape = (c: PlacedClip): string => `${bestFit(c.width, c.height)} ${c.width}×${c.height}`
+  const cropped = clips.some((c) => bestFit(c.width, c.height) !== aspect)
     ? ` Clips shaped differently from the ${w}×${h} frame fill it and are cropped at the edges.`
     : ''
   const last = clips[clips.length - 1]
@@ -523,7 +516,7 @@ function videoBrief(clips: PlacedClip[], aspect: Aspect, voice: Voice | null): s
     : ''
   if (clips.length === 1) {
     const c = clips[0]
-    return `This project starts from the user's video (the a-roll clip, ${c.src}): ${c.duration}s, ${shape(c)}, ${c.audio ? 'with its own sound' : 'with no sound'}, in a ${w}×${h} ${aspect} video.${cropped}${voiced} Edit it as planned below.`
+    return `This project starts from the user's video (the a-roll clip, ${c.src}): ${c.duration}s, ${shape(c)}, ${c.audio ? 'with its own sound' : 'with no sound'}, in a ${w}×${h} (${aspect}, ${orientationOf(aspect)}) video.${cropped}${voiced} Edit it as planned below.`
   }
   const list = clips
     .map(
@@ -533,13 +526,13 @@ function videoBrief(clips: PlacedClip[], aspect: Aspect, voice: Voice | null): s
     .join('\n')
   return (
     `This project starts from ${clips.length} videos the user added, played back to back in the order they added them; each is a clip, with its own audio clip (#<id>-audio) when it has sound:\n${list}\n` +
-    `The whole video is ${total}s, ${w}×${h} (${aspect}).${cropped}${voiced || ' Transcripts, clean edits and captions follow the first clip only.'} Edit them as planned below.`
+    `The whole video is ${total}s, ${w}×${h} (${aspect}, ${orientationOf(aspect)}).${cropped}${voiced || ' Transcripts, clean edits and captions follow the first clip only.'} Edit them as planned below.`
   )
 }
 
 /** What Luca is told about a voiceover: nothing is on screen yet, so every visual is Luca's. */
 async function voiceoverBrief(dir: string, source: string, aspect: Aspect): Promise<string> {
-  const [w, h] = SIZE[aspect]
+  const [w, h] = sizeOf(aspect)
   // the composition is a placeholder until the voiceover goes on the timeline: ask the file
   const file = [join(dir, 'media', source), join(dir, source)].find((f) => existsSync(f))
   const length = file
@@ -548,7 +541,7 @@ async function voiceoverBrief(dir: string, source: string, aspect: Aspect): Prom
         () => 0
       )
     : 0
-  return `This project starts from the user's voiceover (${source}${length > 0 ? `, ${r2(length)}s` : ''}, in the timeline as audio) and nothing on screen yet, in a ${w}×${h} ${aspect} video. Every visual is yours to make, following what is said. Edit it as planned below.`
+  return `This project starts from the user's voiceover (${source}${length > 0 ? `, ${r2(length)}s` : ''}, in the timeline as audio) and nothing on screen yet, in a ${w}×${h} (${aspect}, ${orientationOf(aspect)}) video. Every visual is yours to make, following what is said. Edit it as planned below.`
 }
 
 /** Images, and a soundtrack next to footage: into media/, in the order they were added. */
@@ -741,10 +734,9 @@ function detectAspect(dir: string): Aspect {
     const html = readFileSync(join(dir, 'index.html'), 'utf8')
     const w = Number(/data-width="(\d+)"/.exec(html)?.[1] ?? 1920)
     const h = Number(/data-height="(\d+)"/.exec(html)?.[1] ?? 1080)
-    if (w === h) return 'square'
-    return w > h ? 'landscape' : 'portrait'
+    return bestFit(w, h)
   } catch {
-    return 'landscape'
+    return DEFAULT_ASPECT
   }
 }
 
@@ -810,6 +802,8 @@ export function recentProjects(): RecentProject[] {
   }
   return alive.map((r) => ({
     ...r,
+    // saved before the ratios: 'landscape'… → a concrete aspect
+    aspect: normalizeAspect(r.aspect),
     thumb: thumbFor(r.dir),
     duration: r.duration ?? durationFor(r.dir)
   }))

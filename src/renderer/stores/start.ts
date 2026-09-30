@@ -1,6 +1,6 @@
+import { resolveAspect, type AspectChoice } from '@shared/aspect'
 import { editRequest, editStep, videoType } from '@shared/edits'
 import type {
-  Aspect,
   CreateProgress,
   EditStepId,
   FootageInfo,
@@ -67,10 +67,10 @@ type StartStore = {
   previews: Record<string, string | null>
   /** Each video's shape and length, as it is read (kept, so a file added again is known). */
   footage: Record<string, FootageInfo>
-  aspect: Aspect
-  /** The video the aspect was read from (the first one); whether the person then picked one. */
+  /** 'auto' resolves to the first video's best-fit ratio (16:9 with no video). */
+  aspect: AspectChoice
+  /** The video the auto aspect is read from (the first one). */
   aspectFrom: string | null
-  aspectPicked: boolean
   /** What kind of video it is, how Luca builds it, what Luca does to it and the brief. */
   edit: StartEdit
   /** The person picked the type; until then it follows the files (a voiceover alone: concept). */
@@ -90,7 +90,7 @@ type StartStore = {
    * them on the card. The open project closes first (asking if Luca is mid-reply).
    */
   startFrom: (paths: string[]) => Promise<void>
-  setAspect: (a: Aspect) => void
+  setAspect: (a: AspectChoice) => void
   /** Switching type turns on its own steps for the picked style. */
   setType: (type: VideoTypeId) => void
   /** Switching style turns on the type's steps for that style. */
@@ -113,22 +113,13 @@ let bound = false
 /** Videos being read, so each is read once. */
 const reading = new Set<string>()
 
-/** The first video decides the project's shape (phone footage: portrait) until the person picks. */
-function followFirstVideo(): void {
-  const s = useStart.getState()
-  const info = s.aspectFrom ? s.footage[s.aspectFrom] : undefined
-  if (info && !s.aspectPicked && s.aspect !== info.aspect)
-    useStart.setState({ aspect: info.aspect })
-}
-
 /** After the files change: read new videos, follow the first one's shape and the type's default. */
 function filesChanged(): void {
   const { files, aspectFrom, typePicked, edit } = useStart.getState()
   const first = files.find((f) => f.kind === 'video')?.path ?? null
-  // a shape the person picked stays until they start over with no video at all
+  // no video left to resolve 'auto' against: back to 'auto' (16:9 until one is picked)
   if (first !== aspectFrom)
-    useStart.setState({ aspectFrom: first, ...(first ? {} : { aspectPicked: false }) })
-  followFirstVideo()
+    useStart.setState({ aspectFrom: first, ...(first ? {} : { aspect: 'auto' }) })
   const type = defaultType(kindOf(files))
   if (!typePicked && edit.type !== type)
     useStart.setState({ edit: editOf(type, edit.style, edit.notes) })
@@ -139,7 +130,6 @@ function filesChanged(): void {
       .probeVideo(f.path)
       .then((info) => {
         if (info) useStart.setState((s) => ({ footage: { ...s.footage, [f.path]: info } }))
-        followFirstVideo()
       })
       .catch(() => undefined)
       .finally(() => reading.delete(f.path))
@@ -150,9 +140,8 @@ export const useStart = create<StartStore>((set, get) => ({
   files: [],
   previews: {},
   footage: {},
-  aspect: 'landscape',
+  aspect: 'auto',
   aspectFrom: null,
-  aspectPicked: false,
   edit: editOf('launch', 'motion'),
   typePicked: false,
   reference: null,
@@ -206,7 +195,7 @@ export const useStart = create<StartStore>((set, get) => ({
     }
     get().addFiles(paths)
   },
-  setAspect: (aspect) => set({ aspect, aspectPicked: true }),
+  setAspect: (aspect) => set({ aspect }),
   setType: (type) =>
     set((s) => ({ edit: editOf(type, s.edit.style, s.edit.notes), typePicked: true })),
   setStyle: (style) => set((s) => ({ edit: editOf(s.edit.type, style, s.edit.notes) })),
@@ -241,7 +230,7 @@ export const useStart = create<StartStore>((set, get) => ({
         }))
       )
     }
-    const { files, aspect, edit, footage, reference } = get()
+    const { files, aspect, aspectFrom, edit, footage, reference } = get()
     const kind = kindOf(files)
     const notes = edit.notes?.trim()
     if (kind === 'brief' && (notes?.length ?? 0) < 12) {
@@ -267,9 +256,11 @@ export const useStart = create<StartStore>((set, get) => ({
     set({ busy: true, error: null, progress: { stage: 'preparing' }, seen: ['preparing'] })
     useProject.setState({ loading: true })
     try {
+      // 'auto' resolves against the first video's own ratio (16:9 when there is none)
+      const chosen = resolveAspect(aspect, aspectFrom ? (footage[aspectFrom] ?? null) : null)
       const res = await luca.project.start({
         ...(lead ? { name: lead.name.replace(/\.[^.]+$/, '') } : {}),
-        aspect,
+        aspect: chosen,
         files: files.map((f) => f.path),
         edit: picked
       })
@@ -277,8 +268,8 @@ export const useStart = create<StartStore>((set, get) => ({
       set({
         files: [],
         previews: {},
+        aspect: 'auto',
         aspectFrom: null,
-        aspectPicked: false,
         edit: editOf('launch', 'motion'),
         typePicked: false,
         reference: null

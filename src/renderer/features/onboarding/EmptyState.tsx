@@ -1,9 +1,18 @@
 import { Menu } from '@base-ui/react/menu'
+import {
+  ASPECTS,
+  aspectInfo,
+  resolveAspect,
+  sizeOf,
+  type Aspect,
+  type AspectChoice
+} from '@shared/aspect'
 import { editStep, STYLES, VIDEO_TYPES, videoType } from '@shared/edits'
-import type { Aspect, StyleId, VideoTypeId } from '@shared/types'
+import type { FootageInfo, StyleId, VideoTypeId } from '@shared/types'
 import {
   AudioLines,
   Check,
+  ChevronDown,
   Clapperboard,
   Film,
   FolderOpen,
@@ -45,12 +54,6 @@ import { attachmentOf, kindOf, useStart, type Attachment } from '../../stores/st
 import { AssemblyAiKeyCard } from './AssemblyAiKeyCard'
 import { CreateProgressList } from './CreateProgress'
 import { HomeGradient } from './HomeGradient'
-
-const ASPECTS: SegmentedItem<Aspect>[] = [
-  { id: 'landscape', label: '16:9' },
-  { id: 'portrait', label: '9:16' },
-  { id: 'square', label: '1:1' }
-]
 
 const STYLE_ITEMS: SegmentedItem<StyleId>[] = STYLES.map((s) => ({
   id: s.id,
@@ -458,18 +461,16 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
 
       <div className="sticky bottom-0 z-10 -mx-px flex flex-wrap items-center gap-2 rounded-b-[18px] border-t border-border bg-input px-4 py-3">
         <span className="text-[12px] font-medium text-text-2">Format</span>
-        {/* it starts out matching the first video's shape: pick 9:16 to make a short of it */}
-        <Segmented
-          items={ASPECTS}
+        {/* 'auto' follows the first video's shape; a concrete ratio crops it to fit */}
+        <FormatMenu
           value={aspect}
+          footage={aspectFrom ? footage[aspectFrom] : undefined}
           onChange={setAspect}
-          ariaLabel="Format"
-          className="h-8"
         />
-        {shape && shape !== aspect ? (
-          <span className="fade-in text-[11px] text-text-3">
-            Cropped from {ASPECTS.find((a) => a.id === shape)?.label}
-          </span>
+        {aspect !== 'auto' && shape && shape !== aspect ? (
+          <span className="fade-in text-[11px] text-text-3">Cropped from {shape}</span>
+        ) : aspect === 'auto' && shape ? (
+          <span className="fade-in text-[11px] text-text-3">From your video</span>
         ) : null}
         <GenerateButton
           className="ml-auto"
@@ -481,6 +482,68 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
         />
       </div>
     </div>
+  )
+}
+
+/** A tiny frame at the ratio's shape, its long side 14 px. */
+function FrameGlyph({ aspect, className }: { aspect: Aspect; className?: string }): ReactElement {
+  const [w, h] = sizeOf(aspect)
+  const k = 14 / Math.max(w, h)
+  return (
+    <span
+      aria-hidden
+      className={cn('block shrink-0 rounded-[2px] border border-current', className)}
+      style={{ width: Math.round(w * k), height: Math.round(h * k) }}
+    />
+  )
+}
+
+/** The format dropdown: Auto (the first video's best fit), or a concrete ratio that crops it. */
+function FormatMenu({
+  value,
+  footage,
+  onChange
+}: {
+  value: AspectChoice
+  /** The first video's shape, once read; what 'auto' resolves to. */
+  footage?: FootageInfo
+  onChange: (a: AspectChoice) => void
+}): ReactElement {
+  const resolved = resolveAspect(value, footage ?? null)
+  const item =
+    'flex h-8 w-full cursor-default items-center gap-2 rounded-[7px] px-2 text-[12.5px] text-text outline-none data-[highlighted]:bg-hover'
+  return (
+    <Menu.Root>
+      <Menu.Trigger className="chip h-8 px-3 text-[12px]">
+        <FrameGlyph aspect={resolved} />
+        {value === 'auto'
+          ? footage
+            ? `Auto · ${resolved}`
+            : 'Auto · Best fit'
+          : `${aspectInfo(value).name} · ${value}`}
+        <ChevronDown size={12} className="text-text-3" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner side="bottom" align="start" sideOffset={4} className="z-50">
+          <Menu.Popup className="tip-popup min-w-[220px] rounded-[10px] border border-border bg-bg p-1 shadow-popover outline-none">
+            <Menu.Item className={item} onClick={() => onChange('auto')}>
+              <FrameGlyph aspect={resolved} className="text-text-3" />
+              Auto
+              {value === 'auto' ? <Check size={12} strokeWidth={2.4} /> : null}
+              <span className="ml-auto text-text-3">Best fit</span>
+            </Menu.Item>
+            {ASPECTS.map((a) => (
+              <Menu.Item key={a.id} className={item} onClick={() => onChange(a.id)}>
+                <FrameGlyph aspect={a.id} className="text-text-3" />
+                {a.name}
+                {value === a.id ? <Check size={12} strokeWidth={2.4} /> : null}
+                <span className="ml-auto text-text-3">{a.id}</span>
+              </Menu.Item>
+            ))}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   )
 }
 

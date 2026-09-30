@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode
+} from 'react'
 import { cn } from '../../lib/cn'
 
 type State = 'loading' | 'loaded' | 'error'
@@ -15,6 +22,7 @@ export function Thumb({
   fallback,
   className,
   imgClassName,
+  style,
   lazy = true,
   children
 }: {
@@ -22,6 +30,7 @@ export function Thumb({
   fallback?: ReactNode
   className?: string
   imgClassName?: string
+  style?: CSSProperties
   lazy?: boolean
   children?: ReactNode
 }): ReactElement {
@@ -43,7 +52,7 @@ export function Thumb({
   }, [src])
 
   return (
-    <div className={cn('relative overflow-hidden bg-bg-muted', className)}>
+    <div className={cn('relative overflow-hidden bg-bg-muted', className)} style={style}>
       {state === 'loading' ? <div className="skeleton absolute inset-0 rounded-none" /> : null}
       {state === 'error' ? fallback : null}
       {src && state !== 'error' ? (

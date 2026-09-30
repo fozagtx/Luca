@@ -1,6 +1,7 @@
 import type { Activity } from './activity'
+import type { Aspect } from './aspect'
 
-export type Aspect = 'landscape' | 'portrait' | 'square'
+export type { Aspect }
 
 export type Project = {
   id: string

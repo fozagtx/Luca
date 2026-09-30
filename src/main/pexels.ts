@@ -11,8 +11,8 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
+import { DEFAULT_ASPECT, orientationOf, sizeOf, type Orientation } from '../shared/aspect'
 import type { AddedBroll, Aspect, BrollItem, BrollResults, BrollSearch } from '../shared/types'
-import { SIZE } from './projects'
 import { getSecret, setSecret } from './secrets'
 
 const API = 'https://api.pexels.com'
@@ -141,7 +141,7 @@ function sized(src: string, w: number, h: number): string {
   }
 }
 
-const THUMB: Record<Aspect, [number, number]> = {
+const THUMB: Record<Orientation, [number, number]> = {
   landscape: [480, 270],
   portrait: [270, 480],
   square: [360, 360]
@@ -165,7 +165,7 @@ function pickFile(files: PexelsVideoFile[], minShort: number): PexelsVideoFile |
   return mp4.find((f) => short(f) >= minShort) ?? mp4[mp4.length - 1] ?? null
 }
 
-function fromPhoto(p: PexelsPhoto, orientation: Aspect): BrollItem {
+function fromPhoto(p: PexelsPhoto, orientation: Orientation): BrollItem {
   const [tw, th] = THUMB[orientation]
   return {
     id: `photo:${p.id}`,
@@ -178,7 +178,7 @@ function fromPhoto(p: PexelsPhoto, orientation: Aspect): BrollItem {
   }
 }
 
-function fromVideo(v: PexelsVideo, orientation: Aspect): BrollItem {
+function fromVideo(v: PexelsVideo, orientation: Orientation): BrollItem {
   const [tw, th] = THUMB[orientation]
   return {
     id: `video:${v.id}`,
@@ -213,7 +213,7 @@ export async function searchBroll(s: BrollSearch): Promise<BrollResults> {
   const page = Math.max(1, Math.floor(s.page ?? 1))
   const query = s.query.trim()
   if (!query) throw new Error('Say what the B-roll should show.')
-  const orientation = s.orientation ?? 'landscape'
+  const orientation = orientationOf(s.orientation ?? DEFAULT_ASPECT)
   const per = media === 'all' ? 12 : 24
   const [photos, videos] = await Promise.all([
     media === 'video'
@@ -282,7 +282,7 @@ function credit(folder: string, line: string): void {
  */
 export async function addBroll(dir: string, id: string, aspect: Aspect): Promise<AddedBroll> {
   const { photo, video } = await lookup(id)
-  const [w, h] = SIZE[aspect]
+  const [w, h] = sizeOf(aspect)
   const folder = join(dir, 'media', 'broll')
   mkdirSync(folder, { recursive: true })
   if (photo) {

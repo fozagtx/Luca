@@ -1,6 +1,7 @@
-import type { Aspect, BrollItem, BrollMedia } from '@shared/types'
+import { sizeOf, type Aspect } from '@shared/aspect'
+import type { BrollItem, BrollMedia } from '@shared/types'
 import { Check, Film, Plus, Search, X } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 import { Button } from '../../components/ui/button'
 import { Segmented, type SegmentedItem } from '../../components/ui/segmented'
 import { Thumb } from '../../components/ui/thumb'
@@ -16,10 +17,10 @@ const FILTERS: SegmentedItem<BrollMedia>[] = [
   { id: 'video', label: 'Videos' }
 ]
 
-const SHAPE: Record<Aspect, string> = {
-  landscape: 'aspect-video',
-  portrait: 'aspect-[9/16]',
-  square: 'aspect-square'
+/** Grid thumbs shaped like the project's frame, whatever its ratio. */
+function frameOf(aspect: Aspect): CSSProperties {
+  const [w, h] = sizeOf(aspect)
+  return { aspectRatio: `${w} / ${h}` }
 }
 
 /**
@@ -53,7 +54,7 @@ export function BrollBrowser({
     listRef.current?.scrollTo({ top: 0 })
   }, [query, media, orientation])
 
-  if (hasKey === null) return <SkeletonGrid shape={SHAPE[orientation]} />
+  if (hasKey === null) return <SkeletonGrid frame={frameOf(orientation)} />
   if (!hasKey)
     return (
       <div className="scroll min-h-0 flex-1 p-3">
@@ -130,7 +131,7 @@ export function BrollBrowser({
           }
         />
       ) : !items ? (
-        <SkeletonGrid shape={SHAPE[orientation]} />
+        <SkeletonGrid frame={frameOf(orientation)} />
       ) : items.length === 0 ? (
         <EmptyPane
           title={`Nothing matches “${query}”`}
@@ -143,7 +144,7 @@ export function BrollBrowser({
               <Card
                 key={b.id}
                 item={b}
-                shape={SHAPE[orientation]}
+                frame={frameOf(orientation)}
                 picked={b.id === pickedId}
                 onPick={onPick}
               />
@@ -204,12 +205,12 @@ function HoverVideo({ src }: { src: string }): ReactElement {
 
 function Card({
   item,
-  shape,
+  frame,
   picked,
   onPick
 }: {
   item: BrollItem
-  shape: string
+  frame: CSSProperties
   picked: boolean
   onPick: (b: BrollItem) => void
 }): ReactElement {
@@ -230,7 +231,7 @@ function Card({
           'border-accent shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_35%,transparent)]'
       )}
     >
-      <Thumb src={item.thumb} className={cn(shape, 'rounded-[6px]')}>
+      <Thumb src={item.thumb} className="rounded-[6px]" style={frame}>
         {hover && windowActive && item.preview ? <HoverVideo src={item.preview} /> : null}
         {item.media === 'video' ? (
           <span className="absolute top-1 left-1 inline-flex items-center gap-0.5 rounded-[4px] bg-black/55 px-1 py-px font-mono text-[9.5px] text-white tabular-nums backdrop-blur-sm">
@@ -257,13 +258,13 @@ function Card({
   )
 }
 
-function SkeletonGrid({ shape }: { shape: string }): ReactElement {
+function SkeletonGrid({ frame }: { frame: CSSProperties }): ReactElement {
   return (
     <div className="min-h-0 flex-1 overflow-hidden px-3 pt-1">
       <div className="grid grid-cols-2 gap-2.5">
         {Array.from({ length: 8 }, (_, i) => (
           <div key={i} className="card p-1.5">
-            <div className={cn('skeleton rounded-[6px]', shape)} />
+            <div className="skeleton rounded-[6px]" style={frame} />
             <div className="skeleton mt-2 mb-0.5 h-2.5 w-3/4 rounded-[3px]" />
           </div>
         ))}
