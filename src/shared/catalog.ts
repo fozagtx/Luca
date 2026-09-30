@@ -1,11 +1,11 @@
 import type { CatalogItem, RemocnItem } from './types'
 
 /**
- * One searchable library over the HyperFrames catalog (blocks + components) and Remocn's
- * Remotion components, for the agent's catalog_search tool.
+ * One searchable library over the HyperFrames catalog (blocks + components), Remocn's
+ * Remotion components and Luca's own footage treatments, for the agent's catalog_search tool.
  */
 
-export type LibrarySource = 'hyperframes' | 'remocn'
+export type LibrarySource = 'hyperframes' | 'remocn' | 'luca'
 
 export type LibraryCategory =
   | 'text'

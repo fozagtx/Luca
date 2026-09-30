@@ -223,6 +223,20 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     words: 'long'
   },
   {
+    id: 'quiet-serif',
+    name: 'Quiet serif',
+    blurb: 'Small upright serif, lowercase, two or three words at a time. Says less.',
+    font: 'EB Garamond',
+    weight: 400,
+    size: 40,
+    uppercase: false,
+    color: '#FFFFFF',
+    accent: '#FFFFFF',
+    shadow: '0 2px 10px rgba(0,0,0,0.55)',
+    anim: 'fade',
+    words: 'short'
+  },
+  {
     id: 'slam',
     name: 'Slam',
     blurb: 'Tall condensed caps that slam in word by word.',

@@ -12,7 +12,7 @@ import {
   type CaptionAnim
 } from '../shared/captions'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
-import { DEFAULT_ASPECT } from '../shared/aspect'
+import { DEFAULT_ASPECT, sizeOf } from '../shared/aspect'
 import { REFERENCE_STUDY } from '../shared/motion'
 import { BUNDLED_LUTS } from '../shared/luts'
 import type { CaptionConfig, Cut, CutReason } from '../shared/types'
@@ -42,6 +42,7 @@ import { addBroll, hasPexelsKey, searchBroll } from './pexels'
 import { readProject, safeJoin } from './projects'
 import { studyReference } from './reference'
 import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
+import { addTreatment } from './treatments'
 
 const text = (data: unknown): { content: { type: 'text'; text: string }[] } => ({
   content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data) }]
@@ -236,6 +237,7 @@ function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown>
       ...(i.duration ? { durationSeconds: Math.round(i.duration * 10) / 10 } : {}),
       add: `npx ${HYPERFRAMES} add ${i.name} --json`
     }
+  if (i.source === 'luca') return { ...base, add: `treatment_add {"name":"${i.name}"}` }
   return {
     ...base,
     useFor: i.remocn?.useFor,
@@ -278,7 +280,9 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'their look; Luca keeps them in sync with every cut, so never write or edit them by hand. ' +
       'font_add adds a font that comes with Luca, or downloads a Google Fonts font, into the project ' +
       'so any text can use it offline. ' +
-      'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it.',
+      'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it. ' +
+      'treatment_add installs one of Luca’s own footage treatments (mosaic-reveal) into the project ' +
+      'and returns the snippet to place it over the footage.',
     tools: [
       tool(
         'transcribe',
@@ -368,7 +372,10 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
           query: z
             .string()
             .describe('plain words, e.g. "lower third", "kinetic text", "logo intro"'),
-          source: z.enum(['all', 'hyperframes', 'remocn']).optional().describe('default all'),
+          source: z
+            .enum(['all', 'hyperframes', 'remocn', 'luca'])
+            .optional()
+            .describe('default all'),
           category: z
             .enum(categoryIds)
             .optional()
@@ -382,7 +389,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
           // without the studio, Remocn items can't be placed yet: list usable ones first
           if (!remocnReady && (source ?? 'all') === 'all')
             hits = [
-              ...hits.filter((i) => i.source === 'hyperframes'),
+              ...hits.filter((i) => i.source !== 'remocn'),
               ...hits.filter((i) => i.source === 'remocn')
             ]
           return text({
@@ -391,6 +398,25 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
             ...(remocnReady ? {} : { remocnReady: false }),
             results: hits.slice(0, limit ?? 12).map((i) => describe(i, remocnReady))
           })
+        }
+      ),
+      tool(
+        'treatment_add',
+        'Add one of Luca’s footage treatments to the project and get the snippet to place it. mosaic-reveal shows the footage through a grid of cells — some intact, some black, some a displaced crop of the same frame — with hairline gridlines and scanlines; a face or product stays intact in the focus region. Use it for a hook, a cold open or one punch moment on the a-roll, never the whole video.',
+        {
+          name: z.enum(['mosaic-reveal']).describe('the treatment to add')
+        },
+        async ({ name }) => {
+          const p = readProject(projectDir)
+          try {
+            const snippet = addTreatment(projectDir, name, {
+              size: sizeOf(p?.aspect ?? DEFAULT_ASPECT),
+              source: p?.source || null
+            })
+            return text({ ok: true, snippet })
+          } catch (err) {
+            return text({ ok: false, error: refusal(err) })
+          }
         }
       ),
       tool(
