@@ -19,6 +19,10 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="canonical" href="https://fozagtx.github.io/Luca/" />
     <link rel="stylesheet" href="style.css" />
+    <!-- before first paint, so the tour never flashes its no-script layout -->
+    <script>
+      document.documentElement.classList.add('js')
+    </script>
   </head>
   <body>
     <nav class="nav">
@@ -60,15 +64,80 @@
         </span>
         Runs on Claude Code · Codex soon · macOS 13+
       </div>
-      <div class="frame anim">
-        <img
-          src="assets/hero.png"
-          alt="Luca editing an explainer: live preview, timeline and chat"
-          width="3026"
-          height="1694"
-          style="display: block; width: 100%; height: auto"
-        />
-      </div>
     </main>
+
+    <!-- The tour: the dashboard stays pinned while you scroll, and each step zooms into the
+         part of Luca it describes. data-rect is x y width height as fractions of hero.png. -->
+    <section class="tour" aria-label="How Luca works">
+      <div class="stage">
+        <div class="frame anim">
+          <div class="shot">
+            <img
+              src="assets/hero.png"
+              alt="Luca editing an explainer: live preview, timeline and chat"
+              width="3026"
+              height="1694"
+            />
+            <div class="spot" aria-hidden="true"></div>
+          </div>
+        </div>
+        <div class="tabs" role="group" aria-label="Tour steps" hidden></div>
+        <ol class="steps">
+          <li class="step is-active" data-label="Overview">
+            <h2>This is Luca.</h2>
+            <p>
+              A live preview, a real timeline and a chat where you tell Luca what you want. Scroll
+              to see how it works.
+            </p>
+          </li>
+          <li class="step" data-label="Ask" data-rect=".742 .755 .25 .232">
+            <h2>Tell Luca what you want.</h2>
+            <p>
+              Type or talk in plain words: “make the captions yellow”, “zoom in when I say the
+              price”. Drop in a voiceover, footage or screenshots and Luca uses them.
+            </p>
+          </li>
+          <li class="step" data-label="Watch" data-rect=".741 .07 .252 .66">
+            <h2>Watch it work.</h2>
+            <p>
+              Luca plans the beats, builds every visual and mixes the sound, and tells you what it
+              did in plain words. It asks before anything unusual.
+            </p>
+          </li>
+          <li class="step" data-label="Preview" data-rect=".0075 .0625 .728 .66">
+            <h2>See every change live.</h2>
+            <p>
+              The preview plays exactly what will export and updates within a second of every edit.
+              Press G to grab anything in it and say what should change right there.
+            </p>
+          </li>
+          <li class="step" data-label="Timeline" data-rect=".0075 .732 .728 .264">
+            <h2>A real editor underneath.</h2>
+            <p>
+              Tracks, clips and your voiceover’s waveform. Trim, split and snap by hand whenever you
+              like, or select a clip and ask Luca.
+            </p>
+          </li>
+          <li class="step" data-label="Export" data-rect=".697 .0125 .294 .036">
+            <h2>Export when it’s right.</h2>
+            <p>
+              Captions, Color and History are in the toolbar, and every change is a version you can
+              restore. ⌘E renders an MP4 in the background.
+            </p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="outro">
+      <h2>Describe it. <span class="muted">Luca makes it.</span></h2>
+      <a class="cta" href="https://github.com/fozagtx/Luca/releases">Download for macOS</a>
+      <p class="fine">
+        Free and MIT-licensed · Apple silicon, macOS 13+ ·
+        <a href="https://github.com/fozagtx/Luca">GitHub</a>
+      </p>
+    </section>
+
+    <script src="tour.js"></script>
   </body>
 </html>

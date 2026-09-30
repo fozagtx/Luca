@@ -126,7 +126,7 @@ npm run dist       # unsigned .dmg + .zip in dist/
 
 **Releases.** Every push to `main` (except docs-only changes) builds the app on GitHub Actions and publishes it as the latest release, `v0.1.<run number>`: the dmg, the zip and `latest-mac.json` (the zip’s version, size and SHA-512), which is what running copies update from. A `v*` tag releases that exact version instead. Bump `major.minor` in `package.json` to start a new series; the patch number is the build’s. Updates only reach an installed app: `npm run dev` never updates itself.
 
-**Website.** The landing page is the static `site/` folder (plain HTML and CSS, no build). Every push to `main` that touches it deploys to [fozagtx.github.io/Luca](https://fozagtx.github.io/Luca/) through GitHub Pages (`.github/workflows/pages.yml`); preview it locally with `python3 -m http.server -d site 4173`. One-time setup: in the repository’s Settings → Pages, set Source to **GitHub Actions**.
+**Website.** The landing page is the static `site/` folder (plain HTML, CSS and one small script for the scrolling tour of the app, no build). Every push to `main` that touches it deploys to [fozagtx.github.io/Luca](https://fozagtx.github.io/Luca/) through GitHub Pages (`.github/workflows/pages.yml`); preview it locally with `python3 -m http.server -d site 4173`. One-time setup: in the repository’s Settings → Pages, set Source to **GitHub Actions**.
 
 <details>
 <summary><b>How it works</b> (for developers)</summary>
