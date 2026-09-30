@@ -8,7 +8,8 @@ import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
 import { Composer } from './Composer'
 import { AssistantMessage, UserMessage } from './Message'
-import { LucaAvatar, LucaProfile, Suggestions } from './Profile'
+import { LucaProfile, Suggestions } from './Profile'
+import { ConnectTiles } from './ConnectTiles'
 import { QueueTray } from './Queue'
 import { VoiceStage } from './VoiceRecorder'
 
@@ -180,16 +181,21 @@ function Onboarding({ state, detail }: { state: string; detail?: string }): Reac
   return (
     <div className="glow-card msg-in mb-1">
       <div className="rounded-[11px] bg-bg p-3.5">
-        <div className="flex items-center gap-2.5">
-          <LucaAvatar size={28} />
-          <div className="text-[13px] font-semibold text-text">
-            {missing ? 'One quick install' : 'Connect your Claude account'}
-          </div>
+        <ConnectTiles size={38} />
+        <div className="mt-3 text-[14px] leading-[1.3] font-semibold tracking-[-0.01em] text-text">
+          {missing ? (
+            'One quick install'
+          ) : (
+            <>
+              Luca connects to Claude Code.{' '}
+              <span className="font-medium text-text-3">Codex soon.</span>
+            </>
+          )}
         </div>
         <p className="mt-2 text-[12px] leading-[1.5] text-text-2">
           {missing
             ? 'Luca edits with Claude Code. Install it once with the command below (paste it into Terminal), then come back.'
-            : 'Luca works with your own Claude subscription. Sign in once in the window that opens; Luca never sees your password.'}
+            : 'Sign in once with your own Claude subscription in the window that opens; Luca never sees your password.'}
         </p>
         {missing ? (
           <div className="mt-2.5 flex items-center gap-1.5 rounded-[8px] bg-bg-muted py-1 pr-1 pl-2.5">

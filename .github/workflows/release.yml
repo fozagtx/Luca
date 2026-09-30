@@ -7,7 +7,7 @@ on:
     branches: [main]
     tags: ['v*']
     # only docs changed: nothing to ship (tag pushes build regardless)
-    paths-ignore: ['**.md', 'docs/**']
+    paths-ignore: ['**.md', 'docs/**', 'site/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:

@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/fozagtx/Luca/releases"><img src="https://img.shields.io/badge/version-0.1.0-7C5CFF" alt="Version 0.1.0" /></a>
+  <a href="https://fozagtx.github.io/Luca/"><img src="https://img.shields.io/badge/website-fozagtx.github.io%2FLuca-111111" alt="Website" /></a>
   <img src="https://img.shields.io/badge/macOS-13%2B%20%C2%B7%20Apple%20silicon-000000?logo=apple&logoColor=white" alt="macOS 13+ on Apple silicon" />
   <a href="https://claude.com/claude-code"><img src="https://img.shields.io/badge/runs%20on-Claude%20Code-D97757?logo=claude&logoColor=white" alt="Runs on Claude Code" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license" />
@@ -124,6 +125,8 @@ npm run dist       # unsigned .dmg + .zip in dist/
 ```
 
 **Releases.** Every push to `main` (except docs-only changes) builds the app on GitHub Actions and publishes it as the latest release, `v0.1.<run number>`: the dmg, the zip and `latest-mac.json` (the zip’s version, size and SHA-512), which is what running copies update from. A `v*` tag releases that exact version instead. Bump `major.minor` in `package.json` to start a new series; the patch number is the build’s. Updates only reach an installed app: `npm run dev` never updates itself.
+
+**Website.** The landing page is the static `site/` folder (plain HTML and CSS, no build). Every push to `main` that touches it deploys to [fozagtx.github.io/Luca](https://fozagtx.github.io/Luca/) through GitHub Pages (`.github/workflows/pages.yml`); preview it locally with `python3 -m http.server -d site 4173`. One-time setup: in the repository’s Settings → Pages, set Source to **GitHub Actions**.
 
 <details>
 <summary><b>How it works</b> (for developers)</summary>
