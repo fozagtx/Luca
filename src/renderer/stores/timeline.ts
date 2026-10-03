@@ -15,6 +15,8 @@ type TimelineStore = {
   /** Frames and waveform peaks per media file (a clip's src), loaded as clips appear. */
   thumbs: Record<string, Thumbs>
   peaks: Record<string, Peaks>
+  /** Video files whose frames couldn't be made last time: no "still loading" veil for them. */
+  noThumbs: Record<string, true>
   load: () => Promise<void>
   /** Load frames for `video` files and peaks for `audio` files that aren't loaded yet. */
   loadMedia: (need: { video: string[]; audio: string[] }) => Promise<void>
@@ -51,6 +53,7 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   zoom: 80,
   thumbs: {},
   peaks: {},
+  noThumbs: {},
   drag: null,
   setDrag: (drag) => set({ drag }),
   locked: [],
@@ -87,8 +90,17 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
     await Promise.all([
       ...fresh('video', video).map(async (src) => {
         const t = await luca.timeline.thumbs(src).catch(() => null)
-        if (!t?.count) retry('video', src)
-        else if (seq === mediaSeq) set((s) => ({ thumbs: { ...s.thumbs, [src]: t } }))
+        if (seq !== mediaSeq) return
+        if (!t?.count) {
+          retry('video', src)
+          set((s) => ({ noThumbs: { ...s.noThumbs, [src]: true } }))
+        } else {
+          set((s) => {
+            const noThumbs = { ...s.noThumbs }
+            delete noThumbs[src]
+            return { thumbs: { ...s.thumbs, [src]: t }, noThumbs }
+          })
+        }
       }),
       ...fresh('audio', audio).map(async (src) => {
         const p = await luca.timeline.peaks(src).catch(() => null)
@@ -101,7 +113,15 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
     loadSeq++
     mediaSeq++
     requested.clear()
-    set({ timeline: null, thumbs: {}, peaks: {}, selected: null, error: null, locked: [] })
+    set({
+      timeline: null,
+      thumbs: {},
+      peaks: {},
+      noThumbs: {},
+      selected: null,
+      error: null,
+      locked: []
+    })
   },
   select: (selected) => set({ selected }),
   setZoom: (zoom) => set({ zoom: Math.min(600, Math.max(10, zoom)) }),

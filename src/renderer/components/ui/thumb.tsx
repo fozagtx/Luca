@@ -14,8 +14,9 @@ type State = 'loading' | 'loaded' | 'error'
 const decoded = new Set<string>()
 
 /**
- * An image that never shows a broken or half-loaded state: a shimmering skeleton while it
- * loads, a fade-in once decoded, and `fallback` if there is no image or it fails.
+ * An image that never shows a broken or half-loaded state: a frosted, grained veil while it
+ * loads, the picture sharpening up through it once decoded, and `fallback` if there is no image
+ * or it fails.
  */
 export function Thumb({
   src,
@@ -53,7 +54,6 @@ export function Thumb({
 
   return (
     <div className={cn('relative overflow-hidden bg-bg-muted', className)} style={style}>
-      {state === 'loading' ? <div className="skeleton absolute inset-0 rounded-none" /> : null}
       {state === 'error' ? fallback : null}
       {src && state !== 'error' ? (
         <img
@@ -68,12 +68,12 @@ export function Thumb({
             setLoadedSrc(src)
           }}
           onError={() => setFailedSrc(src)}
-          className={cn(
-            'absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-out',
-            state === 'loaded' ? 'opacity-100' : 'opacity-0',
-            imgClassName
-          )}
+          data-loaded={state === 'loaded' || undefined}
+          className={cn('media-reveal absolute inset-0 h-full w-full object-cover', imgClassName)}
         />
+      ) : null}
+      {state !== 'error' ? (
+        <div className="media-pending" data-done={state === 'loaded' || undefined} />
       ) : null}
       {children}
     </div>

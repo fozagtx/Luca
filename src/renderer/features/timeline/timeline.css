@@ -40,7 +40,10 @@
   border-radius: 4px;
 }
 
-/* Playhead: 1px red line with a triangle head in the ruler. */
+/*
+ * Playhead: a 1px red line with a grab handle in the ruler, its point where the tracks begin.
+ * The whole ruler scrubs (Timeline.tsx), so the handle only has to be easy to see and to catch.
+ */
 .timeline-editor-cursor {
   border-left: 1px solid var(--color-playhead);
   border-right: 1px solid var(--color-playhead);
@@ -48,22 +51,29 @@
   z-index: 5;
 }
 .timeline-editor-cursor-top {
-  top: 22px !important;
-  width: 0 !important;
-  height: 0 !important;
+  top: -16px !important;
+  width: 11px;
+  height: 16px;
+  cursor: ew-resize;
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.25));
 }
-.timeline-editor-cursor-top svg {
-  display: none;
+.timeline-editor-cursor-top path {
+  fill: var(--color-playhead);
 }
-.timeline-editor-cursor-top::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translateX(-50%) scaleX(0.5);
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 7px solid var(--color-playhead);
+/* the line's grab area: 10px wide on screen (the cursor is drawn at half width) */
+.timeline-editor-cursor-area {
+  width: 20px;
+}
+.timeline-editor-time-area-interact {
+  cursor: ew-resize;
+}
+.timeline-editor-time-area {
+  touch-action: none;
+}
+.luca-scrubbing,
+.luca-scrubbing * {
+  cursor: ew-resize !important;
+  user-select: none;
 }
 .timeline-editor-drag-line {
   border-left: 1px dashed var(--color-accent);

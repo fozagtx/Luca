@@ -118,8 +118,8 @@ function Pill({ making }: { making: Making }): ReactElement {
   return (
     <div className="pointer-events-auto flex max-w-full min-w-0 items-center gap-2 rounded-full bg-black/65 py-1 pr-1 pl-3 text-[11.5px] text-white shadow-[0_6px_20px_rgba(0,0,0,0.25)] ring-1 ring-white/10 backdrop-blur-md">
       <span className="relative flex size-2 shrink-0">
-        <span className="absolute inset-0 animate-ping rounded-full bg-[#8f7bff]/60 [animation-duration:1.6s]" />
-        <span className="relative size-2 rounded-full bg-[#8f7bff]" />
+        <span className="absolute inset-0 animate-ping rounded-full bg-[var(--luca-orange)]/60 [animation-duration:1.6s]" />
+        <span className="relative size-2 rounded-full bg-[var(--luca-orange)]" />
       </span>
       {/* in a narrow frame the status gives way first, then the time */}
       <span className="min-w-0 shrink-[100] truncate">{status}</span>

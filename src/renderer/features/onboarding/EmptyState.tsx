@@ -663,7 +663,7 @@ function Recent(): ReactElement | null {
                 src={r.thumb}
                 lazy={false}
                 className="aspect-video w-full rounded-[6px]"
-                imgClassName="transition-[opacity,transform] duration-300 group-hover:scale-[1.03]"
+                imgClassName="transition-[opacity,filter,transform] duration-300 group-hover:scale-[1.03]"
                 fallback={
                   <div className="flex h-full w-full items-center justify-center text-text-3">
                     <Film size={18} strokeWidth={1.5} />

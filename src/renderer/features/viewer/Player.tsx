@@ -1,5 +1,6 @@
 import '@hyperframes/player'
 import type { HyperframesPlayer } from '@hyperframes/player'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { Button } from '../../components/ui/button'
 import { usePlayer } from '../../stores/player'
@@ -38,6 +39,7 @@ export function Player(): ReactElement | null {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const restore = useRef<{ time: number; playing: boolean } | null>(null)
   const loadError = usePlayer((s) => s.loadError)
+  const ready = usePlayer((s) => s.ready)
   const [el, setEl] = useState<HyperframesPlayer | null>(null)
   const { setHandle, setReady, setLoadError, setPlaying, setTime, setDuration } =
     usePlayer.getState()
@@ -155,8 +157,21 @@ export function Player(): ReactElement | null {
           id="luca-player"
           disable-click-to-play="true"
           assets-loading-ui="none"
-          className="block rounded-[4px] bg-black shadow-[0_0_0_1px_rgba(0,122,255,0.55),0_8px_24px_rgba(0,0,0,0.08)]"
+          className="block rounded-[4px] bg-black shadow-[0_0_0_1px_rgba(255,74,36,0.55),0_8px_24px_rgba(0,0,0,0.08)]"
         />
+        {/* a version still loading: frosted over the last frame, not a blank or half-drawn one
+            (after a beat, so a quick reload doesn't flicker) */}
+        <AnimatePresence>
+          {!ready && !loadError ? (
+            <motion.div
+              key="pending"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { delay: 0.25, duration: 0.3 } }}
+              exit={{ opacity: 0, transition: { duration: 0.45 } }}
+              className="media-pending media-pending-glass z-20 rounded-[4px]"
+            />
+          ) : null}
+        </AnimatePresence>
         <TransformOverlay player={el} />
         <GrabOverlay player={el} />
         <MakingOverlay />

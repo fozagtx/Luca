@@ -52,6 +52,10 @@ import { Waveform } from './Waveform'
 
 const LABEL_WIDTH = 132
 const START_LEFT = 8
+/** What a press scrubs from: the ruler and the playhead (its head and line). */
+const SCRUB_FROM = '.timeline-editor-time-area, .timeline-editor-cursor'
+/** Px from either edge of the tracks where a held scrub scrolls the timeline. */
+const SCRUB_EDGE = 16
 
 const KIND_LABEL: Record<RowMeta['kind'], string> = {
   strip: '',
@@ -290,7 +294,8 @@ function TimelineHead(): ReactElement {
         </div>
       ) : (
         <span className="truncate text-[11px] text-text-3">
-          Click a clip to select it · drag its edges to trim · right-click for more
+          Drag along the ruler to scrub · click a clip to select it · drag its edges to trim ·
+          right-click for more
         </span>
       )}
     </div>
@@ -306,10 +311,10 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   const setDrag = useTimeline((s) => s.setDrag)
   const locked = useTimeline((s) => s.locked)
   const thumbs = useTimeline((s) => s.thumbs)
+  const noThumbs = useTimeline((s) => s.noThumbs)
   const peaks = useTimeline((s) => s.peaks)
   const playerDuration = usePlayer((s) => s.duration)
   const fps = usePlayer((s) => s.fps)
-  const seek = usePlayer((s) => s.seek)
   const ref = useRef<TimelineState>(null)
   const dragging = useRef(false)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -339,6 +344,98 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
     return usePlayer.subscribe((s, prev) => {
       if (s.currentTime !== prev.currentTime) follow(s.currentTime)
     })
+  }, [])
+
+  // Scrubbing. Press anywhere on the ruler, or on the playhead, and the playhead jumps there and
+  // follows the pointer frame by frame until you let go; held past either edge, the timeline
+  // scrolls along. The editor itself only moved it on a click in the ruler or a drag that caught
+  // its few-pixel line, so it took many tries to grab. Capture phase: before the editor's handlers.
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+    let stop: (() => void) | null = null
+
+    const onDown = (e: PointerEvent): void => {
+      if (e.button !== 0 || !(e.target as Element).closest(SCRUB_FROM)) return
+      e.preventDefault()
+      e.stopPropagation()
+      stop?.()
+      const grid = el.querySelector<HTMLElement>(
+        '.timeline-editor-edit-area .ReactVirtualized__Grid'
+      )
+      const maxScroll = grid ? Math.max(0, grid.scrollWidth - grid.clientWidth) : 0
+      let scroll = grid?.scrollLeft ?? 0
+      let x = e.clientX
+      let last = -1
+      let raf = 0
+      const player = usePlayer.getState()
+      const resume = player.playing
+      if (resume) player.handle?.pause()
+      dragging.current = true
+      el.classList.add('luca-scrubbing')
+      el.setPointerCapture(e.pointerId)
+
+      const place = (): void => {
+        const { zoom, timeline } = useTimeline.getState()
+        const { fps, duration } = usePlayer.getState()
+        const length = Math.max(timeline?.duration ?? 0, duration, 1)
+        const raw = (x - el.getBoundingClientRect().left + scroll - START_LEFT) / zoom
+        const t = Math.max(0, Math.min(length, Math.round(raw * fps) / fps))
+        if (t === last) return
+        last = t
+        ref.current?.setTime(t)
+        usePlayer.getState().seek(t)
+      }
+      const edgeScroll = (): void => {
+        const r = el.getBoundingClientRect()
+        const over =
+          x < r.left + SCRUB_EDGE
+            ? x - r.left - SCRUB_EDGE
+            : x > r.right - SCRUB_EDGE
+              ? x - r.right + SCRUB_EDGE
+              : 0
+        const next = Math.max(
+          0,
+          Math.min(maxScroll, scroll + Math.max(-24, Math.min(24, over / 4)))
+        )
+        if (next !== scroll) {
+          scroll = next
+          ref.current?.setScrollLeft(next)
+          place()
+        }
+        raf = requestAnimationFrame(edgeScroll)
+      }
+      const onMove = (ev: PointerEvent): void => {
+        x = ev.clientX
+        place()
+      }
+      const end = (): void => {
+        stop = null
+        cancelAnimationFrame(raf)
+        el.removeEventListener('pointermove', onMove)
+        el.removeEventListener('pointerup', end)
+        el.removeEventListener('pointercancel', end)
+        el.removeEventListener('lostpointercapture', end)
+        el.classList.remove('luca-scrubbing')
+        dragging.current = false
+        // the player has the last word (it clamps to its own length)
+        ref.current?.setTime(usePlayer.getState().currentTime)
+        if (resume) usePlayer.getState().handle?.play()
+      }
+      el.addEventListener('pointermove', onMove)
+      el.addEventListener('pointerup', end)
+      el.addEventListener('pointercancel', end)
+      el.addEventListener('lostpointercapture', end)
+      stop = end
+      place()
+      raf = requestAnimationFrame(edgeScroll)
+    }
+
+    el.addEventListener('pointerdown', onDown, true)
+    return () => {
+      el.removeEventListener('pointerdown', onDown, true)
+      stop?.()
+    }
   }, [])
 
   const snapPoints = useMemo(() => {
@@ -391,7 +488,15 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   const renderAction = (action: TimelineAction, row: TimelineRow): ReactElement => {
     const m = meta.get(row.id)
     if (action.id === STRIP_ROW)
-      return <Strip projectId={projectId} clips={stripClips} thumbs={thumbs} zoom={zoom} />
+      return (
+        <Strip
+          projectId={projectId}
+          clips={stripClips}
+          thumbs={thumbs}
+          noThumbs={noThumbs}
+          zoom={zoom}
+        />
+      )
     const clip = clips.get(action.id)
     if (!clip || !m) return <div />
     return (
@@ -440,16 +545,8 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
           style={{ width: '100%', height: '100%' }}
           getActionRender={renderAction}
           getScaleRender={(s) => <ScaleLabel seconds={s} fps={fps} />}
-          onClickTimeArea={(t) => {
-            seek(Math.max(0, Math.min(duration, t)))
-            return true
-          }}
-          onCursorDragStart={() => (dragging.current = true)}
-          onCursorDrag={(t) => seek(Math.max(0, Math.min(duration, t)))}
-          onCursorDragEnd={(t) => {
-            dragging.current = false
-            seek(Math.max(0, Math.min(duration, t)))
-          }}
+          // scrubbing (above) already moved the playhead on the press
+          onClickTimeArea={() => false}
           onClickAction={(_, { action }) => {
             if (action.id !== STRIP_ROW) select(action.id)
           }}
@@ -598,23 +695,39 @@ function mediaNeeds(t: TimelineData): { video: string[]; audio: string[] } {
 
 /**
  * One <img> per second of each footage clip, laid out where the clip sits and starting where it
- * starts in its file; memoized so it only re-renders when zoom, clips or thumbs change.
+ * starts in its file; memoized so it only re-renders when zoom, clips or thumbs change. Until a
+ * clip's frames are made it shows the frosted pending veil, and each frame sharpens in as it
+ * loads.
  */
 const Strip = memo(function Strip({
   projectId,
   clips,
   thumbs,
+  noThumbs,
   zoom
 }: {
   projectId: string
   clips: Clip[]
   thumbs: Record<string, Thumbs>
+  noThumbs: Record<string, true>
   zoom: number
 }): ReactElement {
   const pieces: ReactElement[] = []
   for (const c of clips) {
     const t = c.src ? thumbs[c.src] : undefined
-    if (!t || t.count === 0) continue
+    if (!t || t.count === 0) {
+      if (c.src && noThumbs[c.src]) continue
+      pieces.push(
+        <div
+          key={c.ref}
+          className="absolute inset-y-0 overflow-hidden rounded-[6px]"
+          style={{ left: c.start * zoom, width: (c.end - c.start) * zoom }}
+        >
+          <div className="media-pending" />
+        </div>
+      )
+      continue
+    }
     const from = c.mediaStart ?? 0
     const first = Math.floor(from / t.interval)
     const last = Math.min(t.count, Math.ceil((from + c.end - c.start) / t.interval))
@@ -626,7 +739,9 @@ const Strip = memo(function Strip({
           key={i}
           src={`/p/${encodeURIComponent(projectId)}/${t.dir}/${String(i + 1).padStart(4, '0')}.jpg`}
           style={{ width: w, height: STRIP_HEIGHT }}
-          className="block shrink-0 object-cover"
+          className="media-reveal block shrink-0 object-cover"
+          // straight on the element: the strip doesn't re-render for every frame that lands
+          onLoad={(e) => (e.currentTarget.dataset.loaded = '')}
           draggable={false}
           alt=""
         />
