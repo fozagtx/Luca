@@ -116,6 +116,12 @@ const PLAIN_ERRORS: Record<string, string> = {
   ended: 'Luca stopped unexpectedly before finishing this.'
 }
 
+/**
+ * What Claude Code says when the conversation a project saved is gone: it cleans up old ones,
+ * and a project copied from another Mac never had its conversation here.
+ */
+const LOST_SESSION = /No conversation found/i
+
 type ToolPart = Extract<ChatContentPart, { type: 'tool' }>
 
 function summarize(name: string, input: Record<string, unknown>): string {
@@ -211,6 +217,10 @@ export class ProjectAgent {
   private interrupted = false
   private starting: Promise<void> | null = null
   private abort = new AbortController()
+  /** The message the turn being answered sent, to ask a new session when the saved one is gone. */
+  private asked: SDKUserMessage | null = null
+  /** The session ended because the conversation it was to resume is gone. */
+  private lostSession = false
 
   constructor(readonly project: Project) {
     mkdirSync(lucaDir(project.dir), { recursive: true })
@@ -349,8 +359,9 @@ export class ProjectAgent {
       }
     }
     try {
-      this.q = query({ prompt: this.stream(), options })
-      void this.consume(this.q)
+      const q = query({ prompt: this.stream(), options })
+      this.q = q
+      void this.consume(q, !!options.resume)
     } catch (err) {
       this.setState('error', String(err))
     }
@@ -530,6 +541,12 @@ export class ProjectAgent {
       parent_tool_use_id: null,
       session_id: this.sessionId ?? ''
     } as SDKUserMessage
+    this.asked = msg
+    this.deliver(msg)
+  }
+
+  /** Hand a message to the session's input stream. */
+  private deliver(msg: SDKUserMessage): void {
     const w = this.waiters.shift()
     if (w) w(msg)
     else this.inbox.push(msg)
@@ -663,7 +680,7 @@ export class ProjectAgent {
   }
 
   // ---------------------------------------------------------------- event mapping
-  private async consume(q: Query): Promise<void> {
+  private async consume(q: Query, resumed: boolean): Promise<void> {
     let failure: string | null = null
     try {
       for await (const m of q) {
@@ -678,6 +695,12 @@ export class ProjectAgent {
     this.q = null
     for (const w of this.waiters.splice(0)) w(null)
     this.inbox.length = 0
+    const lost = this.lostSession || (failure !== null && LOST_SESSION.test(failure))
+    this.lostSession = false
+    if (resumed && lost) {
+      void this.startOver()
+      return
+    }
     if (failure !== null) {
       if (/not logged in|\/login|invalid api key|authentication/i.test(failure)) {
         this.setState('needs-login', failure)
@@ -687,6 +710,20 @@ export class ProjectAgent {
     }
     if (this.working) this.finishTurn(true, 'ended')
     if (this.state === 'working' || this.state === 'ready') this.setState('idle')
+  }
+
+  /**
+   * The conversation this project saved is gone, so resuming it can never work: forget it and
+   * start a new session, which is asked what the lost one never read. The video and the plan in
+   * .luca/ are all there; only the earlier chat is new to Luca.
+   */
+  private async startOver(): Promise<void> {
+    this.sessionId = null
+    this.saveSession()
+    await this.start()
+    if (!this.working) return
+    if (this.q && this.asked) this.deliver({ ...this.asked, session_id: '' })
+    else this.finishTurn(true, 'ended')
   }
 
   private onMessage(m: SDKMessage): void {
@@ -800,6 +837,16 @@ export class ProjectAgent {
         return
       }
       case 'result': {
+        // the saved conversation couldn't be resumed: the session ends now, and consume() starts
+        // a new one for this turn
+        if (
+          m.subtype === 'error_during_execution' &&
+          m.num_turns === 0 &&
+          m.errors?.some((e) => LOST_SESSION.test(e))
+        ) {
+          this.lostSession = true
+          return
+        }
         this.sessionId = m.session_id
         this.saveSession()
         const isError = m.is_error
