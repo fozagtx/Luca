@@ -3,6 +3,19 @@
  * Speaks a tiny message protocol with export.ts over process.parentPort.
  */
 import type { RenderJob } from '@hyperframes/producer'
+import { constants, setPriority } from 'node:os'
+import { serveGsapToFetch } from './vendor-gsap'
+
+// compositions load GSAP from a CDN: render with Luca's copy, so exports work offline too
+serveGsapToFetch()
+
+// below the app's priority, before any browser worker or ffmpeg starts (they inherit it): the
+// preview keeps playing smoothly while the render takes what the Mac has spare
+try {
+  setPriority(constants.priority.PRIORITY_BELOW_NORMAL)
+} catch {
+  // not allowed here: render at the usual priority
+}
 
 export type WorkerIn =
   | {

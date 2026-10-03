@@ -1,30 +1,66 @@
 import { randomBytes } from 'node:crypto'
-import { createReadStream, readFileSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync, type ReadStream } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
-import { extname, join, normalize, resolve, sep } from 'node:path'
+import { basename, dirname, extname, join, normalize, resolve, sep } from 'node:path'
+import { findTags, setAttrs } from './html'
+import { patchRuntime, PREVIEW_SYNC_SCRIPT } from './preview-sync'
+import { GSAP_ROUTE, gsapDir, localGsap } from './vendor-gsap'
 
 const RUNTIME_PATH = '/hf/runtime.js'
 let runtimeFile: string | null = null
+/**
+ * The preview runtime that plays the footage, its sound and the animations on one clock. The
+ * package's exports map hides dist/ (resolving the file itself throws), but its package.json is
+ * exported, so the file is found beside it. Without it the player only moves the animations: the
+ * footage stands still and nothing is heard.
+ */
 function hyperframesRuntime(): string | null {
   if (runtimeFile) return runtimeFile
   try {
-    runtimeFile = require.resolve('@hyperframes/core/dist/hyperframe.runtime.iife.js')
+    const pkg = require.resolve('@hyperframes/core/package.json')
+    const file = join(dirname(pkg), 'dist', 'hyperframe.runtime.iife.js')
+    runtimeFile = existsSync(file) ? file : null
   } catch {
     runtimeFile = null
   }
+  if (!runtimeFile) console.warn('[luca] the preview runtime is missing: footage will not play')
   return runtimeFile
 }
 
+let runtimeSource: string | null = null
+/** The runtime as the preview gets it: with its volume probe's way out (preview-sync.ts). */
+function runtimeScript(): string | null {
+  if (runtimeSource) return runtimeSource
+  const file = hyperframesRuntime()
+  if (!file) return null
+  const raw = readFileSync(file, 'utf8')
+  runtimeSource = patchRuntime(raw)
+  if (runtimeSource === raw)
+    console.warn('[luca] the preview runtime changed: its volume probe runs on every load')
+  return runtimeSource
+}
+
 /** Mirror what HyperFrames Studio does for preview: make sure the runtime and the
- *  `window.__timelines` registry exist before the composition's own scripts run. */
-export function prepareCompositionHtml(html: string): string {
-  let out = html
-  if (!/hyperframe\.runtime|hyperframes-preview-runtime/.test(out)) {
-    const tag = `<script data-hyperframes-preview-runtime="1" src="${RUNTIME_PATH}"></script>`
+ *  `window.__timelines` registry exist before the composition's own scripts run. Luca's
+ *  footage-in-step guard (preview-sync.ts) goes in right after the runtime, GSAP comes from Luca
+ *  (vendor-gsap.ts), and `swap` may point a `<video>` or `<audio>` at an edit-friendly copy of its
+ *  file (preview-media.ts). */
+export function prepareCompositionHtml(
+  html: string,
+  swap?: (src: string) => string | null
+): string {
+  let out = rewriteSrcs(html, swap)
+  const head = (tag: string): void => {
     out = /<head\b[^>]*>/i.test(out)
       ? out.replace(/<head\b[^>]*>/i, (m) => `${m}\n${tag}`)
       : `${tag}\n${out}`
+  }
+  if (!out.includes('data-luca-preview-sync')) {
+    head(`<script data-luca-preview-sync="1">${PREVIEW_SYNC_SCRIPT}</script>`)
+  }
+  if (!/hyperframe\.runtime|hyperframes-preview-runtime/.test(out)) {
+    head(`<script data-hyperframes-preview-runtime="1" src="${RUNTIME_PATH}"></script>`)
   }
   const init = '<script>window.__timelines=window.__timelines||{};</script>'
   out = /<body\b[^>]*>/i.test(out)
@@ -32,6 +68,39 @@ export function prepareCompositionHtml(html: string): string {
     : `${init}\n${out}`
   return out
 }
+
+/**
+ * The page with GSAP CDN scripts pointed at Luca's copy (an integrity hash for another version
+ * would refuse it) and each `<video>`/`<audio>` src that `swap` answers for replaced.
+ */
+function rewriteSrcs(html: string, swap?: (src: string) => string | null): string {
+  let out = ''
+  let at = 0
+  for (const tag of findTags(html)) {
+    const src = tag.attrs.src
+    if (!src) continue
+    let raw: string | null = null
+    if (tag.name === 'script') {
+      const gsap = localGsap(src)
+      if (gsap)
+        raw = setAttrs(tag, {
+          src: `${GSAP_ROUTE}${basename(gsap)}`,
+          integrity: null,
+          crossorigin: null
+        })
+    } else if ((tag.name === 'video' || tag.name === 'audio') && swap) {
+      const to = swap(src)
+      if (to) raw = setAttrs(tag, { src: to })
+    }
+    if (raw === null) continue
+    out += html.slice(at, tag.start) + raw
+    at = tag.end
+  }
+  return at === 0 ? html : out + html.slice(at)
+}
+
+/** Where a project page's media can play from instead (see preview-media.ts). */
+export type PreviewMedia = (projectDir: string, htmlRel: string, src: string) => string | null
 
 export const DEV_PORT = Number(process.env.LUCA_DEV_PORT ?? 41733)
 
@@ -78,7 +147,9 @@ export class LucaServer {
     /** The fonts that come with Luca, for previews outside a project. */
     private fontsDir: string | null = null,
     /** The LUTs that come with Luca, for previews outside a project. */
-    private lutsDir: string | null = null
+    private lutsDir: string | null = null,
+    /** Edit-friendly copies of the footage the preview plays instead (never the export). */
+    private previewMedia: PreviewMedia | null = null
   ) {}
 
   get baseUrl(): string {
@@ -145,12 +216,27 @@ export class LucaServer {
     }
 
     if (url.pathname === RUNTIME_PATH) {
-      const file = hyperframesRuntime()
-      if (!file) {
+      const script = runtimeScript()
+      if (!script) {
         res.writeHead(404).end('Preview engine not found')
         return
       }
-      this.sendFile(req, res, resolve(file, '..'), 'hyperframe.runtime.iife.js', {})
+      res.writeHead(200, {
+        'content-type': MIME['.js'],
+        'cache-control': 'no-cache',
+        'content-length': String(Buffer.byteLength(script))
+      })
+      res.end(req.method === 'HEAD' ? undefined : script)
+      return
+    }
+
+    if (url.pathname.startsWith(GSAP_ROUTE)) {
+      const dir = gsapDir()
+      if (!dir) {
+        res.writeHead(404).end('Not found')
+        return
+      }
+      this.sendFile(req, res, dir, basename(url.pathname), {})
       return
     }
 
@@ -206,7 +292,8 @@ export class LucaServer {
       res.writeHead(404).end('Not found')
       return
     }
-    const body = prepareCompositionHtml(html)
+    const media = this.previewMedia
+    const body = prepareCompositionHtml(html, media ? (src) => media(root, rel, src) : undefined)
     res.writeHead(200, {
       'content-type': MIME['.html'],
       'cache-control': 'no-store',
@@ -287,7 +374,7 @@ export class LucaServer {
         res.end()
         return
       }
-      createReadStream(abs, { start, end }).pipe(res)
+      stream(createReadStream(abs, { start, end }), res)
       return
     }
 
@@ -297,6 +384,19 @@ export class LucaServer {
       res.end()
       return
     }
-    createReadStream(abs).pipe(res)
+    stream(createReadStream(abs), res)
   }
+}
+
+/**
+ * Send a file's bytes. A file replaced or removed between the stat and the read (the agent
+ * rewriting it, a clean edit swapping the master) fails the read: that ends this response instead
+ * of throwing in the main process.
+ */
+function stream(file: ReadStream, res: ServerResponse): void {
+  file.on('error', () => {
+    if (res.headersSent) res.destroy()
+    else res.writeHead(404).end('Not found')
+  })
+  file.pipe(res)
 }

@@ -19,6 +19,8 @@ type PlayerStore = {
   volume: number
   grab: boolean
   loadError: string | null
+  /** Playing when the playhead drag started: it plays on from where the drag ends. */
+  scrubResume: boolean
   setHandle: (h: PlayerHandle | null) => void
   setReady: (ready: boolean) => void
   setLoadError: (e: string | null) => void
@@ -29,7 +31,11 @@ type PlayerStore = {
   toggleGrab: (on?: boolean) => void
   // transport commands
   togglePlay: () => void
+  /** Move the playhead; playback carries on from there when it was playing. */
   seek: (t: number) => void
+  /** Dragging the playhead: it holds still while dragged, then plays on if it was playing. */
+  scrubStart: () => void
+  scrubEnd: (t: number) => void
   step: (frames: number) => void
   nudge: (seconds: number) => void
   toggleMute: () => void
@@ -47,6 +53,7 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
   volume: 1,
   grab: false,
   loadError: null,
+  scrubResume: false,
   setHandle: (handle) => set({ handle }),
   setReady: (ready) => set({ ready }),
   setLoadError: (loadError) => set({ loadError }),
@@ -66,10 +73,24 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
     }
   },
   seek: (t) => {
-    const { handle, duration } = get()
+    const { handle, duration, playing } = get()
     const clamped = Math.min(Math.max(0, t), duration || t)
     set({ currentTime: clamped })
-    handle?.seek(clamped)
+    if (!handle) return
+    // the player pauses on a seek without saying so: play on, or the button would say playing
+    handle.seek(clamped)
+    if (playing && clamped < duration) handle.play()
+  },
+  scrubStart: () => {
+    const { handle, playing } = get()
+    set({ scrubResume: playing })
+    if (playing) handle?.pause()
+  },
+  scrubEnd: (t) => {
+    const resume = get().scrubResume
+    set({ scrubResume: false })
+    get().seek(t)
+    if (resume) get().handle?.play()
   },
   step: (frames) => {
     const { currentTime, fps, handle } = get()

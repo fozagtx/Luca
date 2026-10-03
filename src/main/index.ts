@@ -5,6 +5,7 @@ import { bundledFontsDir, bundledLutsDir } from './resources'
 import { registerHandlers } from './handlers'
 import { Channels, broadcast } from './ipc'
 import { buildAppMenu } from './menu'
+import { previewMediaSrc } from './preview-media'
 import { AUDIO_EXT, VIDEO_EXT } from './projects'
 import { DEV_PORT, LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
@@ -21,7 +22,8 @@ export const server = new LucaServer(
     return p && p.id === id ? p.dir : null
   },
   bundledFontsDir(),
-  bundledLutsDir()
+  bundledLutsDir(),
+  previewMediaSrc
 )
 
 let mainWindow: BrowserWindow | null = null

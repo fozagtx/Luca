@@ -47,6 +47,7 @@ import { Channels, broadcast, handle, listen } from './ipc'
 import { applyLook, listLooks, lookName, removeLook, saveLook, updateLook } from './looks'
 import { buildAppMenu, popupClipMenu, popupLookMenu } from './menu'
 import { hasPexelsKey, savePexelsKey, searchBroll } from './pexels'
+import { ensurePreviewCopies, stopPreviewCopies } from './preview-media'
 import {
   checkForUpdates,
   installUpdate,
@@ -75,11 +76,16 @@ import { currentProject, requireProject, setCurrentProject } from './state'
 import { applyEdit, applyTransform, editLabel, peaks, thumbnails } from './media'
 import { checkpoint, ensureRepo, history, restore, undo } from './versions'
 import { cancelVoice, micAccess, pushVoiceAudio, startVoice, stopVoice } from './voice'
-import { stopWatching, watchProject } from './watcher'
+import { onProjectChanged, refreshPreview, stopWatching, watchProject } from './watcher'
 
 type WinGetter = () => BrowserWindow | null
 
 const warnCheckpoint = (err: unknown): void => console.warn('[luca] checkpoint failed', err)
+
+/** Edit-friendly copies of the project's footage for the preview, made in the background. */
+function previewCopies(p: Project): void {
+  ensurePreviewCopies(p.dir, (rel) => refreshPreview(`.luca/cache/preview/${rel}`))
+}
 
 /**
  * Captions on the timeline follow the speech under them once it moved (a no-op otherwise); the
@@ -149,11 +155,17 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     await ensureRepo(p.dir).catch(warnCheckpoint)
     setCurrentProject(p)
     watchProject(p.dir)
+    previewCopies(p)
     broadcast(Channels.projectOpened, p)
     app.addRecentDocument(p.dir)
     void agentFor(p).start()
     return p
   }
+  // footage that arrives later (another clip, B-roll, a clean master) gets its copy too
+  onProjectChanged((e) => {
+    const p = currentProject()
+    if (p && e.composition && e.paths.some((path) => !path.startsWith('.luca'))) previewCopies(p)
+  })
   onTurnEnd((p, e) => {
     // a stopped turn's edits are kept, so they get a checkpoint too (undo takes back just them)
     if (e.isError && !e.stopped) return
@@ -223,6 +235,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     cancelPosterRefresh(dir)
     if (currentProject()?.dir === dir) {
       stopWatching()
+      stopPreviewCopies()
       await closeAgent()
       setCurrentProject(null)
       broadcast(Channels.projectOpened, null)
@@ -234,6 +247,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.projectOpen, (dir: string) => activate(dir))
   handle(Channels.projectClose, async () => {
     stopWatching()
+    stopPreviewCopies()
     await closeAgent()
     setCurrentProject(null)
     broadcast(Channels.projectOpened, null)
