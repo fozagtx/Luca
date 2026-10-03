@@ -94,6 +94,7 @@ type Stream = {
   color_primaries?: string
   color_space?: string
   avg_frame_rate?: string
+  r_frame_rate?: string
   duration?: string
   disposition?: { attached_pic?: number }
   tags?: { rotate?: string }
@@ -106,7 +107,11 @@ export type VideoProbe = {
   width: number
   height: number
   duration: number
+  /** Frames there per second on average. */
   fps: number
+  /** The rate the stream is timed at (`r_frame_rate`, e.g. "60/1"), above `fps` when frames were
+   *  dropped. */
+  rate: string
   /** Overall bit/s, 0 when unknown. */
   bitrate: number
   codec: string
@@ -146,11 +151,13 @@ export async function probeVideo(file: string): Promise<VideoProbe | null> {
   const w = sn > 0 && sd > 0 ? Math.round((v.width * sn) / sd) : v.width
   const turned = Math.abs(Math.round(rotation)) % 180 === 90
   const [fn, fd] = (v.avg_frame_rate ?? '').split('/').map(Number)
+  const fps = fn > 0 && fd > 0 ? fn / fd : 30
   return {
     width: turned ? v.height : w,
     height: turned ? w : v.height,
     duration: Number(v.duration) || Number(j.format?.duration) || 0,
-    fps: fn > 0 && fd > 0 ? fn / fd : 30,
+    fps,
+    rate: v.r_frame_rate && ratio(v.r_frame_rate) > 0 ? v.r_frame_rate : String(fps),
     bitrate: Number(j.format?.bit_rate) || 0,
     codec: v.codec_name ?? '',
     pixFmt: v.pix_fmt ?? '',
@@ -173,13 +180,38 @@ export async function footageInfo(file: string): Promise<FootageInfo | null> {
   }
 }
 
+const ratio = (s?: string): number => {
+  const [n, d] = (s ?? '').split('/').map(Number)
+  return n > 0 && d > 0 ? n / d : 0
+}
+
+/**
+ * Phones drop frames as they record (a variable frame rate). The export pulls such footage onto
+ * its 30 fps grid with ffmpeg's `-r`, which shows frames up to one late (33 ms behind the sound on
+ * 60 fps phone footage, measured), while constant-rate footage goes through the fps filter and
+ * lands on the frame. So footage is made constant-rate when it comes in.
+ */
+export function variableRate(p: VideoProbe): boolean {
+  const r = ratio(p.rate)
+  return r > 0 && p.fps > 0 && Math.abs(r - p.fps) / r > 0.02
+}
+
+/** The constant rate for footage: the one it is timed at, or the usual rate nearest its average. */
+function steadyRate(p: VideoProbe): string {
+  const r = ratio(p.rate)
+  if (r >= 10 && r <= 121) return p.rate
+  return String(
+    [24, 25, 30, 50, 60].reduce((a, b) => (Math.abs(b - p.fps) < Math.abs(a - p.fps) ? b : a))
+  )
+}
+
 const videoPlays = (p: VideoProbe): boolean =>
   WEB_VIDEO.has(p.codec) && WEB_PIXELS.has(p.pixFmt) && !HDR.has(p.transfer)
 const audioPlays = (p: VideoProbe): boolean => !p.audio || WEB_AUDIO.has(p.audio)
 
-/** True when the preview and export can't use the video as it is. */
+/** True when the preview and export can't use the video as it is (or would show it out of time). */
 export function needsPreparing(p: VideoProbe): boolean {
-  return !videoPlays(p) || !audioPlays(p)
+  return !videoPlays(p) || !audioPlays(p) || variableRate(p)
 }
 
 let capsP: Promise<{ videotoolbox: boolean; tonemap: boolean }> | null = null
@@ -228,7 +260,8 @@ function targetKbps(p: VideoProbe): number {
 /**
  * Make a video play in the preview and the export. HEVC, ProRes, 10-bit or HDR footage (what
  * iPhones record) becomes 8-bit H.264 with AAC audio at `out`, HDR tone-mapped to normal range,
- * rotation applied. Returns `src` itself when it plays as it is.
+ * rotation applied, a variable frame rate made constant. Returns `src` itself when it plays as it
+ * is.
  */
 export async function prepareVideo(
   src: string,
@@ -241,8 +274,10 @@ export async function prepareVideo(
   if (!needsPreparing(info)) return src
   const caps = await ffmpegCaps()
   const hdr = HDR.has(info.transfer)
-  // video that plays is kept as it is; only its sound is converted
-  const copy = videoPlays(info)
+  // video that plays at a steady rate is kept as it is; only its sound is converted
+  const copy = videoPlays(info) && !variableRate(info)
+  // the fps filter shows each frame at the nearest moment of the steady rate (`-r` shifts them)
+  const steady = variableRate(info) ? `fps=${steadyRate(info)},` : ''
   const encoders: string[][] = copy
     ? [['-c:v', 'copy']]
     : [
@@ -254,9 +289,7 @@ export async function prepareVideo(
   // when tone mapping fails, plain 8-bit still plays (flatter colours beat no picture)
   const filters: (string | null)[] = copy
     ? [null]
-    : hdr && caps.tonemap
-      ? [toneMap(info), PLAIN]
-      : [PLAIN]
+    : (hdr && caps.tonemap ? [toneMap(info), PLAIN] : [PLAIN]).map((f) => steady + f)
   const sdr = hdr
     ? ['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709']
     : []
