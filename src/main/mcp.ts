@@ -1,6 +1,6 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { readFileSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { extname, isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import {
   BUILTIN_FONTS,
@@ -36,10 +36,11 @@ import {
 import { library } from './library'
 import { HYPERFRAMES } from './env'
 import { readTimeline } from './hyperframes'
+import { findTagById } from './html'
 import { applyEdit } from './media'
 import { soundClips, soundOf } from '../shared/sound'
 import { addBroll, hasPexelsKey, searchBroll } from './pexels'
-import { readProject, safeJoin } from './projects'
+import { readProject, safeJoin, VIDEO_EXT } from './projects'
 import { studyReference } from './reference'
 import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
 import { addTreatment } from './treatments'
@@ -409,9 +410,16 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         async ({ name }) => {
           const p = readProject(projectDir)
           try {
+            // the footage as the a-roll plays it now: the cut video once a clean edit is on (the
+            // file the project started from shows what was cut), never a voiceover's audio
+            const aRoll = findTagById(
+              readFileSync(join(projectDir, 'index.html'), 'utf8'),
+              'a-roll'
+            )
+            const footage = VIDEO_EXT.has(extname(p?.source ?? '').toLowerCase()) ? p?.source : null
             const snippet = addTreatment(projectDir, name, {
               size: sizeOf(p?.aspect ?? DEFAULT_ASPECT),
-              source: p?.source || null
+              source: (aRoll?.name === 'video' && aRoll.attrs.src) || footage || null
             })
             return text({ ok: true, snippet })
           } catch (err) {

@@ -223,7 +223,8 @@ function drain(): void {
   const { items, paused } = useQueue.getState()
   if (sending || paused) return
   const state = useChat.getState().state
-  if (state !== 'idle' && state !== 'ready') return
+  // after a failed session the next request starts Luca again, so it doesn't wait for one
+  if (state !== 'idle' && state !== 'ready' && state !== 'error') return
   const dir = currentDir()
   const next = items.find((i) => i.status === 'queued' && i.dir === dir)
   if (!next) return

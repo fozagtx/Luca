@@ -212,20 +212,24 @@ export function captionWords(p: Project): TimedWord[] {
 
 // ------------------------------------------------------------------ fonts in index.html
 
-function fontFaces(dir: string): string | null {
-  const files = readFontFiles(dir)
-  if (!files.length) return null
+/** One @font-face rule per font file, with paths from the project folder. */
+function faceRules(files: FontFile[]): string[] {
   const fmt: Record<string, string> = {
     '.woff2': 'woff2',
     '.woff': 'woff',
     '.ttf': 'truetype',
     '.otf': 'opentype'
   }
-  const faces = files.map(
+  return files.map(
     (f) =>
       `      @font-face { font-family: '${f.family}'; src: url('${f.file}') format('${fmt[extname(f.file).toLowerCase()] ?? 'truetype'}'); font-weight: ${f.weight}${f.weightMax ? ` ${f.weightMax}` : ''}; font-style: ${f.italic ? 'italic' : 'normal'}; font-display: block;${f.unicodeRange ? ` unicode-range: ${f.unicodeRange};` : ''} }`
   )
-  return `<style id="luca-fonts">\n${faces.join('\n')}\n    </style>`
+}
+
+function fontFaces(dir: string): string | null {
+  const files = readFontFiles(dir)
+  if (!files.length) return null
+  return `<style id="luca-fonts">\n${faceRules(files).join('\n')}\n    </style>`
 }
 
 function withFonts(html: string, dir: string, family: string): string {
@@ -545,11 +549,17 @@ function buildCaptions(
   const host = findTagById(html, HOST_ID)
   const start = placed.duration ? placed.start : Number(host?.attrs['data-start'] ?? 0) || 0
   const duration = round(placed.duration || Number(host?.attrs['data-duration'] ?? 0) || d.duration)
+  // the captions file declares its own fonts as well: HyperFrames checks each file on its own,
+  // and lint reports a font only index.html declares (one that comes with Luca, or from Google
+  // Fonts) as missing in it, an error Luca would be told to fix in a file it must not edit
+  const families = [cfg.font, captionLook(cfg).hero?.font].map((f) => f?.toLowerCase())
+  const own = readFontFiles(p.dir).filter((f) => families.includes(f.family.toLowerCase()))
   const comp = captionsComposition(
     groups,
     cfg,
     { w: d.w, h: d.h, duration },
-    familyFaces(p.dir, cfg.font)
+    familyFaces(p.dir, cfg.font),
+    faceRules(own)
   )
   let index = html
   if (host) {

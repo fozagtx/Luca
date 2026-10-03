@@ -81,6 +81,9 @@ export function readProject(dir: string): Project | null {
     const p = JSON.parse(readFileSync(f, 'utf8')) as Project
     // old projects saved an orientation ('landscape'…) as the aspect
     p.aspect = normalizeAspect(p.aspect)
+    // the folder it was read from: one renamed or moved in Finder, or copied from another Mac,
+    // still names the place it was made in
+    p.dir = dir
     return p
   } catch {
     return null
@@ -313,12 +316,14 @@ export async function startProject(
 
 /**
  * The file init copies into the project, under a name a src can hold: init writes the file's name
- * into index.html as it is, where a browser reads `#` as the start of a fragment, `?` of a query
- * and `%` of an escape. Such a file waits in `staging` under a safe name, like a prepared video.
+ * into index.html as it is, where a browser reads `#` as the start of a fragment, `?` of a query,
+ * `%` of an escape and `\` as `/`, and HyperFrames' checks end the path at a `'` ("Tom's
+ * video.mp4" is reported missing on every lint, which Luca is told to fix and can't). Such a
+ * file waits in `staging` under a safe name, like a prepared video.
  */
 async function safelyNamed(file: string, staging: string): Promise<string> {
   const name = basename(file)
-  if (!/[#?%"]/.test(name)) return file
+  if (!/[#?%"'\\]/.test(name)) return file
   mkdirSync(staging, { recursive: true })
   const out = join(staging, uniqueFile(staging, safeName(name)))
   await copyMedia(file, out)

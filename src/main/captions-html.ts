@@ -176,11 +176,13 @@ function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: nu
       })();`
 }
 
+/** `fontFaces`: @font-face rules for the project's own fonts the captions use. */
 export function captionsComposition(
   groups: CaptionGroup[],
   cfg: CaptionConfig,
   d: { w: number; h: number; duration: number },
-  faces?: ProjectFontFace[]
+  faces?: ProjectFontFace[],
+  fontFaces: string[] = []
 ): string {
   const style = captionStyle(cfg.style)
   const look = captionLook(cfg, faces)
@@ -220,7 +222,7 @@ export function captionsComposition(
 ${lines}
     </div>
 
-    <style>${css(look, cfg, d)}
+    <style>${fontFaces.length ? `\n${fontFaces.join('\n')}` : ''}${css(look, cfg, d)}
     </style>
 
     <script src="${GSAP}"></script>

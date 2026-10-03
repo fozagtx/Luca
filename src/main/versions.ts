@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { simpleGit, type SimpleGit } from 'simple-git'
 import type { Checkpoint } from '../shared/types'
@@ -40,11 +40,29 @@ function git(dir: string): SimpleGit {
 const queues = new Map<string, Promise<unknown>>()
 
 /**
+ * A commit cut off midway (the Mac shutting down, a crash) leaves .git/index.lock behind, and
+ * git refuses every commit after it: no more versions, and the project wouldn't open. Luca runs
+ * one git operation at a time per project and each takes seconds, so a lock this old is no one's.
+ */
+function clearStaleLock(dir: string): void {
+  const lock = join(dir, '.git', 'index.lock')
+  try {
+    if (Date.now() - statSync(lock).mtimeMs > 60_000) rmSync(lock, { force: true })
+  } catch {
+    // no lock
+  }
+}
+
+/**
  * One writing git operation at a time per project. Checkpoints are fired and forgotten (after an
  * edit, after an agent turn), and two commits at once fail on HEAD's lock and lose one of them.
  */
-function serial<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+function serial<T>(dir: string, op: () => Promise<T>): Promise<T> {
   const key = resolve(dir)
+  const fn = (): Promise<T> => {
+    clearStaleLock(dir)
+    return op()
+  }
   const next = (queues.get(key) ?? Promise.resolve()).then(fn, fn)
   const tail = next.catch(() => undefined)
   queues.set(key, tail)
@@ -69,9 +87,16 @@ async function ensureRepoNow(dir: string): Promise<void> {
   if (st.files.length > 0) await g.commit(fresh ? 'Import' : 'Edit: changes made outside Luca')
 }
 
-/** Commit only when something changed. Returns the new sha or null. */
+/**
+ * Commit only when something changed. Returns the new sha, or null when nothing changed or git
+ * couldn't save it (e.g. a Mac without the developer tools git needs): the change itself is made
+ * either way, so saving its version never fails it.
+ */
 export function checkpoint(dir: string, message: string): Promise<string | null> {
-  return serial(dir, () => checkpointNow(dir, message))
+  return serial(dir, () => checkpointNow(dir, message)).catch((err: unknown) => {
+    console.warn('[luca] checkpoint failed', err)
+    return null
+  })
 }
 
 async function checkpointNow(dir: string, message: string): Promise<string | null> {

@@ -1,6 +1,7 @@
 import {
   query,
   type CanUseTool,
+  type HookCallback,
   type Options,
   type PermissionResult,
   type Query,
@@ -87,6 +88,9 @@ const DISALLOWED_TOOLS = [
   'mcp__chrome-devtools__*'
 ]
 
+/** The tools that change files: never in media/ or renders/, never outside the project. */
+const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
+
 type Pending = {
   resolve: (r: PermissionResult) => void
   /** The always-allow rule, or null when this request may only be allowed once. */
@@ -115,6 +119,26 @@ const PLAIN_ERRORS: Record<string, string> = {
   closed: 'The project was closed before Luca finished.',
   ended: 'Luca stopped unexpectedly before finishing this.'
 }
+
+/**
+ * A turn Claude couldn't answer, as people should read it: Claude Code ends it with its own API
+ * error ("API Error: Connection refused … (ECONNREFUSED)", "API Error: Repeated 529 Overloaded
+ * errors"). Null for anything else, which is shown as it is.
+ */
+function plainApiError(text: string): string | null {
+  if (!/^API Error\b/i.test(text)) return null
+  if (/connect|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|timed? ?out|network|socket|proxy/i.test(text))
+    return 'Luca couldn’t reach Claude. Check your internet connection, then try again.'
+  if (/overload|\b529\b|\b429\b|rate.?limit|limiting requests|\b5\d\d\b/i.test(text))
+    return 'Claude is busy right now. Try again in a minute.'
+  return null
+}
+
+/**
+ * What Claude Code says when the conversation a project saved is gone: it cleans up old ones,
+ * and a project copied from another Mac never had its conversation here.
+ */
+const LOST_SESSION = /No conversation found/i
 
 type ToolPart = Extract<ChatContentPart, { type: 'tool' }>
 
@@ -211,6 +235,10 @@ export class ProjectAgent {
   private interrupted = false
   private starting: Promise<void> | null = null
   private abort = new AbortController()
+  /** The message the turn being answered sent, to ask a new session when the saved one is gone. */
+  private asked: SDKUserMessage | null = null
+  /** The session ended because the conversation it was to resume is gone. */
+  private lostSession = false
 
   constructor(readonly project: Project) {
     mkdirSync(lucaDir(project.dir), { recursive: true })
@@ -339,6 +367,7 @@ export class ProjectAgent {
       disallowedTools: DISALLOWED_TOOLS,
       mcpServers: { luca: lucaMcpServer(this.project.dir) },
       canUseTool: this.canUseTool,
+      hooks: { PreToolUse: [{ matcher: EDIT_TOOLS.join('|'), hooks: [this.guardEdits] }] },
       includePartialMessages: true,
       abortController: this.abort,
       resume: this.sessionId ?? undefined,
@@ -349,8 +378,19 @@ export class ProjectAgent {
       }
     }
     try {
-      this.q = query({ prompt: this.stream(), options })
-      void this.consume(this.q)
+      const q = query({ prompt: this.stream(), options })
+      this.q = q
+      void this.consume(q, !!options.resume)
+      // Claude Code only says init with its first reply: once it has answered the handshake it is
+      // up, so the chat stops saying "Waking up…" and approved requests in the queue go to it
+      q.initializationResult().then(
+        () => {
+          if (this.q === q && this.state === 'starting')
+            this.setState(this.working ? 'working' : 'ready')
+        },
+        // consume() reports how the session ended
+        () => undefined
+      )
     } catch (err) {
       this.setState('error', String(err))
     }
@@ -530,6 +570,12 @@ export class ProjectAgent {
       parent_tool_use_id: null,
       session_id: this.sessionId ?? ''
     } as SDKUserMessage
+    this.asked = msg
+    this.deliver(msg)
+  }
+
+  /** Hand a message to the session's input stream. */
+  private deliver(msg: SDKUserMessage): void {
     const w = this.waiters.shift()
     if (w) w(msg)
     else this.inbox.push(msg)
@@ -566,21 +612,8 @@ export class ProjectAgent {
         }
       }
     }
-    // Never let edits escape the project folder.
-    const target = input.file_path ?? input.path ?? input.notebook_path
-    if (
-      typeof target === 'string' &&
-      ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(toolName)
-    ) {
-      const abs = resolve(this.project.dir, target)
-      if (!abs.startsWith(resolve(this.project.dir) + sep)) {
-        return { behavior: 'deny', message: 'Luca only allows edits inside the project folder.' }
-      }
-      const rel = abs.slice(resolve(this.project.dir).length + 1)
-      if (rel.startsWith(`media${sep}`) || rel.startsWith(`renders${sep}`)) {
-        return { behavior: 'deny', message: 'media/ and renders/ are immutable in Luca.' }
-      }
-    }
+    const refused = this.editRefusal(toolName, input)
+    if (refused) return { behavior: 'deny', message: refused }
     if (getSettings().approvals === 'full') return { behavior: 'allow', updatedInput: input }
     // "Always allow" remembers a command by its first word, so it is only offered (and only
     // honoured) for plain read-only commands; anything that could change, delete, download or
@@ -608,6 +641,40 @@ export class ProjectAgent {
     return new Promise<PermissionResult>((resolvePerm) => {
       this.pending.set(id, { resolve: resolvePerm, rule })
     })
+  }
+
+  /** Why an edit can't happen, or null: edits stay in the project, out of media/ and renders/. */
+  private editRefusal(toolName: string, input: Record<string, unknown>): string | null {
+    const target = input.file_path ?? input.path ?? input.notebook_path
+    if (typeof target !== 'string' || !EDIT_TOOLS.includes(toolName)) return null
+    const abs = resolve(this.project.dir, target)
+    if (!abs.startsWith(resolve(this.project.dir) + sep))
+      return 'Luca only allows edits inside the project folder.'
+    const rel = abs.slice(resolve(this.project.dir).length + 1)
+    if (rel.startsWith(`media${sep}`) || rel.startsWith(`renders${sep}`))
+      return 'media/ and renders/ are immutable in Luca.'
+    return null
+  }
+
+  /**
+   * Edit and Write are allowed outright (allowedTools), and Claude Code then never asks
+   * canUseTool about them, so the edit guard runs as a hook before every edit instead.
+   */
+  private guardEdits: HookCallback = async (input) => {
+    if (input.hook_event_name !== 'PreToolUse') return {}
+    const reason = this.editRefusal(
+      input.tool_name,
+      (input.tool_input ?? {}) as Record<string, unknown>
+    )
+    return reason
+      ? {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: reason
+          }
+        }
+      : {}
   }
 
   decide(id: string, decision: PermissionDecision): void {
@@ -663,7 +730,7 @@ export class ProjectAgent {
   }
 
   // ---------------------------------------------------------------- event mapping
-  private async consume(q: Query): Promise<void> {
+  private async consume(q: Query, resumed: boolean): Promise<void> {
     let failure: string | null = null
     try {
       for await (const m of q) {
@@ -678,6 +745,12 @@ export class ProjectAgent {
     this.q = null
     for (const w of this.waiters.splice(0)) w(null)
     this.inbox.length = 0
+    const lost = this.lostSession || (failure !== null && LOST_SESSION.test(failure))
+    this.lostSession = false
+    if (resumed && lost) {
+      void this.startOver()
+      return
+    }
     if (failure !== null) {
       if (/not logged in|\/login|invalid api key|authentication/i.test(failure)) {
         this.setState('needs-login', failure)
@@ -687,6 +760,20 @@ export class ProjectAgent {
     }
     if (this.working) this.finishTurn(true, 'ended')
     if (this.state === 'working' || this.state === 'ready') this.setState('idle')
+  }
+
+  /**
+   * The conversation this project saved is gone, so resuming it can never work: forget it and
+   * start a new session, which is asked what the lost one never read. The video and the plan in
+   * .luca/ are all there; only the earlier chat is new to Luca.
+   */
+  private async startOver(): Promise<void> {
+    this.sessionId = null
+    this.saveSession()
+    await this.start()
+    if (!this.working) return
+    if (this.q && this.asked) this.deliver({ ...this.asked, session_id: '' })
+    else this.finishTurn(true, 'ended')
   }
 
   private onMessage(m: SDKMessage): void {
@@ -800,13 +887,26 @@ export class ProjectAgent {
         return
       }
       case 'result': {
+        // the saved conversation couldn't be resumed: the session ends now, and consume() starts
+        // a new one for this turn
+        if (
+          m.subtype === 'error_during_execution' &&
+          m.num_turns === 0 &&
+          m.errors?.some((e) => LOST_SESSION.test(e))
+        ) {
+          this.lostSession = true
+          return
+        }
         this.sessionId = m.session_id
         this.saveSession()
         const isError = m.is_error
-        const resultText = m.subtype === 'success' ? m.result : ''
+        const said = m.subtype === 'success' ? m.result : ''
+        // Claude Code words API errors for developers; the person (and whoever waits on the turn)
+        // reads them in plain words
+        const resultText = (isError && plainApiError(said)) || said
         const err = m.subtype !== 'success' ? m.subtype : isError ? resultText : undefined
-        if (isError && /not logged in|\/login|invalid api key|authentication/i.test(resultText)) {
-          this.setState('needs-login', resultText)
+        if (isError && /not logged in|\/login|invalid api key|authentication/i.test(said)) {
+          this.setState('needs-login', said)
         } else if (!this.streamedText && resultText) {
           this.appendText(resultText)
         }

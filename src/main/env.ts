@@ -30,6 +30,8 @@ export async function loginShellPath(): Promise<string> {
     '/opt/homebrew/sbin',
     '/usr/local/bin',
     join(homedir(), '.local', 'bin'),
+    // Claude Code's local install (`claude migrate-installer`): shells reach it by an alias, not PATH
+    join(homedir(), '.claude', 'local'),
     join(homedir(), '.bun', 'bin'),
     join(homedir(), '.npm-global', 'bin'),
     '/usr/bin',

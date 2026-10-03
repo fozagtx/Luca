@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { extname, join, relative, sep } from 'node:path'
 import { placeWords } from '../shared/captions'
 import type { CleanResult, CleanStatus, Cut, Edl, Project, Transcript } from '../shared/types'
@@ -187,6 +195,8 @@ async function renderClean(
       : `${labels.join('')}concat=n=${segs.length}:v=1:a=1[v][a]`
   )
   const kbps = bitrate > 0 ? Math.max(1000, Math.round(bitrate / 1000)) : 8000
+  // only a whole render takes the name a clean master is found (and reused) by
+  const part = out.replace(/\.mp4$/, '.part.mp4')
   const args = [
     '-y',
     '-v',
@@ -205,11 +215,15 @@ async function renderClean(
     '192k',
     '-movflags',
     '+faststart',
-    out
+    part
   ]
   const kept = segs.reduce((n, s) => n + (s.end - s.start), 0)
   const r = await ffmpegProgress(args, kept, onProgress, { timeoutMs: 3_600_000 })
-  if (r.code !== 0 || !existsSync(out)) throw new Error(`ffmpeg failed: ${r.stderr.slice(-800)}`)
+  if (r.code !== 0 || !existsSync(part)) {
+    rmSync(part, { force: true })
+    throw new Error(`ffmpeg failed: ${r.stderr.slice(-800)}`)
+  }
+  renameSync(part, out)
 }
 
 /** Each kept word moves back by the total cut before it; words inside a cut are dropped. */
@@ -480,7 +494,10 @@ export async function applyEdl(
     const out = join(p.dir, cleanRel)
     mkdirSync(join(p.dir, 'media'), { recursive: true })
     setStatus({ stage: 'applying', message: `${cuts.length} cuts`, progress: 0 })
-    if (!existsSync(out) || statSync(out).size === 0) {
+    // a render cut off midway (Luca quit, the disk filled up) can't be read: it is made again
+    const whole =
+      existsSync(out) && statSync(out).size > 0 && (await probe(out).catch(() => null))?.duration
+    if (!whole) {
       const segs = keptSegments(cuts, duration)
       if (!segs.length) throw new Error('The EDL cuts the whole clip')
       await renderClean(
@@ -493,6 +510,10 @@ export async function applyEdl(
       )
     }
     if (opts.signal?.aborted) throw new Error('Stopped')
+    const newDuration = Math.round((await probe(out)).duration * 1000) / 1000
+    // relinking to a file that can't be read would give every clip of the speech no length
+    if (!(newDuration > 0))
+      throw new Error('The cut video couldn’t be made. Try the clean edit again.')
     const original =
       (existsSync(join(p.dir, '.luca', 'transcript.original.json'))
         ? (JSON.parse(
@@ -502,7 +523,6 @@ export async function applyEdl(
     if (original)
       writeFileSync(join(p.dir, 'transcript.json'), JSON.stringify(remap(original, cuts), null, 2))
     setStatus({ stage: 'relinking' })
-    const newDuration = Math.round((await probe(out)).duration * 1000) / 1000
     writeFileSync(join(p.dir, 'edl.json'), JSON.stringify({ ...edl, cuts }, null, 2))
     relink(p, cleanRel, cuts, newDuration)
     writeFileSync(appliedFile(p.dir), JSON.stringify({ file: cleanRel, cuts }, null, 2))
