@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { AddressInfo } from 'node:net'
 import { basename, dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import { findTags, setAttrs } from './html'
-import { PREVIEW_SYNC_SCRIPT } from './preview-sync'
+import { patchRuntime, PREVIEW_SYNC_SCRIPT } from './preview-sync'
 import { GSAP_ROUTE, gsapDir, localGsap } from './vendor-gsap'
 
 const RUNTIME_PATH = '/hf/runtime.js'
@@ -26,6 +26,19 @@ function hyperframesRuntime(): string | null {
   }
   if (!runtimeFile) console.warn('[luca] the preview runtime is missing: footage will not play')
   return runtimeFile
+}
+
+let runtimeSource: string | null = null
+/** The runtime as the preview gets it: with its volume probe's way out (preview-sync.ts). */
+function runtimeScript(): string | null {
+  if (runtimeSource) return runtimeSource
+  const file = hyperframesRuntime()
+  if (!file) return null
+  const raw = readFileSync(file, 'utf8')
+  runtimeSource = patchRuntime(raw)
+  if (runtimeSource === raw)
+    console.warn('[luca] the preview runtime changed: its volume probe runs on every load')
+  return runtimeSource
 }
 
 /** Mirror what HyperFrames Studio does for preview: make sure the runtime and the
@@ -203,12 +216,17 @@ export class LucaServer {
     }
 
     if (url.pathname === RUNTIME_PATH) {
-      const file = hyperframesRuntime()
-      if (!file) {
+      const script = runtimeScript()
+      if (!script) {
         res.writeHead(404).end('Preview engine not found')
         return
       }
-      this.sendFile(req, res, resolve(file, '..'), 'hyperframe.runtime.iife.js', {})
+      res.writeHead(200, {
+        'content-type': MIME['.js'],
+        'cache-control': 'no-cache',
+        'content-length': String(Buffer.byteLength(script))
+      })
+      res.end(req.method === 'HEAD' ? undefined : script)
       return
     }
 

@@ -166,5 +166,56 @@ function previewSync(): void {
   window.setInterval(step, 100)
 }
 
+/**
+ * Tells the engine which clips' volume no animation touches (see patchRuntime).
+ *
+ * On every load the engine looks for animated volume by seeking the whole animation 60 times for
+ * every second of every clip: 28,800 seeks for a 4-minute clip and its sound, which froze Luca's
+ * window for 4.6 s on each preview reload (measured; it grows with the length and the captions).
+ * Only a GSAP tween of that element's `volume` can change what it finds, so a clip no tween
+ * touches is skipped; when the tweens can't be read, the engine probes as before.
+ */
+function volumeProbeHint(): void {
+  type Tween = { vars?: Record<string, unknown>; targets?: () => unknown[] }
+  type Timeline = {
+    getChildren?: (nested: boolean, tweens: boolean, timelines: boolean) => Tween[]
+  }
+  const mentionsVolume = (v: unknown, depth = 0): boolean => {
+    if (!v || typeof v !== 'object' || depth > 3) return false
+    if (Array.isArray(v)) return v.some((k) => mentionsVolume(k, depth + 1))
+    const o = v as Record<string, unknown>
+    return 'volume' in o || mentionsVolume(o.keyframes, depth + 1) || mentionsVolume(o.startAt)
+  }
+  ;(window as Window & { __lucaSkipVolumeProbe?: unknown }).__lucaSkipVolumeProbe = (
+    el: Element,
+    timeline: Timeline
+  ): boolean => {
+    try {
+      const tweens = timeline?.getChildren?.(true, true, false)
+      if (!Array.isArray(tweens)) return false
+      return !tweens.some((t) => mentionsVolume(t.vars) && (t.targets?.() ?? []).includes(el))
+    } catch {
+      return false
+    }
+  }
+}
+
 /** The guard as a script for the preview page, run before the composition's own scripts. */
-export const PREVIEW_SYNC_SCRIPT = `(${previewSync.toString()})();`
+export const PREVIEW_SYNC_SCRIPT = `(${previewSync.toString()})();(${volumeProbeHint.toString()})();`
+
+/**
+ * The engine's volume probe, given a way out: `if(window.__lucaSkipVolumeProbe&&
+ * window.__lucaSkipVolumeProbe(el,timeline)||…)return;` at the top of the function that starts
+ * it (it is the only code that checks `allowLiveTimelineSeek`). Returns the runtime unchanged
+ * when the engine's code has moved on and the spot isn't there.
+ */
+export function patchRuntime(source: string): string {
+  const spot =
+    /(function [\w$]+\(([\w$]+),([\w$]+),[\w$]+,[\w$]+,([\w$]+)=\{\}\)\{if\()(\4\.allowLiveTimelineSeek===!1\|\|)/
+  if (!spot.test(source)) return source
+  return source.replace(
+    spot,
+    (_m, head: string, el: string, tl: string, _opts: string, rest: string) =>
+      `${head}window.__lucaSkipVolumeProbe&&window.__lucaSkipVolumeProbe(${el},${tl})||${rest}`
+  )
+}
