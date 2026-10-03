@@ -3,6 +3,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
+import { PREVIEW_SYNC_SCRIPT } from './preview-sync'
 
 const RUNTIME_PATH = '/hf/runtime.js'
 let runtimeFile: string | null = null
@@ -26,14 +27,20 @@ function hyperframesRuntime(): string | null {
 }
 
 /** Mirror what HyperFrames Studio does for preview: make sure the runtime and the
- *  `window.__timelines` registry exist before the composition's own scripts run. */
+ *  `window.__timelines` registry exist before the composition's own scripts run. Luca's
+ *  footage-in-step guard (preview-sync.ts) goes in right after the runtime. */
 export function prepareCompositionHtml(html: string): string {
   let out = html
-  if (!/hyperframe\.runtime|hyperframes-preview-runtime/.test(out)) {
-    const tag = `<script data-hyperframes-preview-runtime="1" src="${RUNTIME_PATH}"></script>`
+  const head = (tag: string): void => {
     out = /<head\b[^>]*>/i.test(out)
       ? out.replace(/<head\b[^>]*>/i, (m) => `${m}\n${tag}`)
       : `${tag}\n${out}`
+  }
+  if (!out.includes('data-luca-preview-sync')) {
+    head(`<script data-luca-preview-sync="1">${PREVIEW_SYNC_SCRIPT}</script>`)
+  }
+  if (!/hyperframe\.runtime|hyperframes-preview-runtime/.test(out)) {
+    head(`<script data-hyperframes-preview-runtime="1" src="${RUNTIME_PATH}"></script>`)
   }
   const init = '<script>window.__timelines=window.__timelines||{};</script>'
   out = /<body\b[^>]*>/i.test(out)
