@@ -81,6 +81,9 @@ export function readProject(dir: string): Project | null {
     const p = JSON.parse(readFileSync(f, 'utf8')) as Project
     // old projects saved an orientation ('landscape'…) as the aspect
     p.aspect = normalizeAspect(p.aspect)
+    // the folder it was read from: one renamed or moved in Finder, or copied from another Mac,
+    // still names the place it was made in
+    p.dir = dir
     return p
   } catch {
     return null
