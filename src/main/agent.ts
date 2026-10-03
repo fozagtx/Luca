@@ -362,6 +362,16 @@ export class ProjectAgent {
       const q = query({ prompt: this.stream(), options })
       this.q = q
       void this.consume(q, !!options.resume)
+      // Claude Code only says init with its first reply: once it has answered the handshake it is
+      // up, so the chat stops saying "Waking up…" and approved requests in the queue go to it
+      q.initializationResult().then(
+        () => {
+          if (this.q === q && this.state === 'starting')
+            this.setState(this.working ? 'working' : 'ready')
+        },
+        // consume() reports how the session ended
+        () => undefined
+      )
     } catch (err) {
       this.setState('error', String(err))
     }
