@@ -248,7 +248,15 @@ export type ExportProgress = {
   stage: string
   status: 'running' | 'done' | 'error' | 'cancelled'
   outputPath?: string
+  /** The project the export is of, and the finished file in it (renders/…), to watch it in Luca. */
+  projectId?: string
+  file?: string
+  /** What went wrong, as the renderer said it. */
   error?: string
+  /** The same in plain words, for people. */
+  reason?: string
+  /** What was asked for, so Try again asks for the same. */
+  options?: ExportOptions
 }
 
 /** Luca updating itself from its GitHub releases. */
