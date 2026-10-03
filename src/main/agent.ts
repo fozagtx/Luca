@@ -121,6 +121,20 @@ const PLAIN_ERRORS: Record<string, string> = {
 }
 
 /**
+ * A turn Claude couldn't answer, as people should read it: Claude Code ends it with its own API
+ * error ("API Error: Connection refused … (ECONNREFUSED)", "API Error: Repeated 529 Overloaded
+ * errors"). Null for anything else, which is shown as it is.
+ */
+function plainApiError(text: string): string | null {
+  if (!/^API Error\b/i.test(text)) return null
+  if (/connect|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|timed? ?out|network|socket|proxy/i.test(text))
+    return 'Luca couldn’t reach Claude. Check your internet connection, then try again.'
+  if (/overload|\b529\b|\b429\b|rate.?limit|limiting requests|\b5\d\d\b/i.test(text))
+    return 'Claude is busy right now. Try again in a minute.'
+  return null
+}
+
+/**
  * What Claude Code says when the conversation a project saved is gone: it cleans up old ones,
  * and a project copied from another Mac never had its conversation here.
  */
@@ -886,10 +900,13 @@ export class ProjectAgent {
         this.sessionId = m.session_id
         this.saveSession()
         const isError = m.is_error
-        const resultText = m.subtype === 'success' ? m.result : ''
+        const said = m.subtype === 'success' ? m.result : ''
+        // Claude Code words API errors for developers; the person (and whoever waits on the turn)
+        // reads them in plain words
+        const resultText = (isError && plainApiError(said)) || said
         const err = m.subtype !== 'success' ? m.subtype : isError ? resultText : undefined
-        if (isError && /not logged in|\/login|invalid api key|authentication/i.test(resultText)) {
-          this.setState('needs-login', resultText)
+        if (isError && /not logged in|\/login|invalid api key|authentication/i.test(said)) {
+          this.setState('needs-login', said)
         } else if (!this.streamedText && resultText) {
           this.appendText(resultText)
         }
