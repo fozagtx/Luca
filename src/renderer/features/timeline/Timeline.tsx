@@ -444,11 +444,14 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
             seek(Math.max(0, Math.min(duration, t)))
             return true
           }}
-          onCursorDragStart={() => (dragging.current = true)}
+          onCursorDragStart={() => {
+            dragging.current = true
+            usePlayer.getState().scrubStart()
+          }}
           onCursorDrag={(t) => seek(Math.max(0, Math.min(duration, t)))}
           onCursorDragEnd={(t) => {
             dragging.current = false
-            seek(Math.max(0, Math.min(duration, t)))
+            usePlayer.getState().scrubEnd(Math.max(0, Math.min(duration, t)))
           }}
           onClickAction={(_, { action }) => {
             if (action.id !== STRIP_ROW) select(action.id)

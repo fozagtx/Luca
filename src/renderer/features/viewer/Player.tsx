@@ -36,7 +36,10 @@ export function Player(): ReactElement | null {
   const version = useProject((s) => s.previewVersion)
   const ref = useRef<HyperframesPlayer | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
+  /** Where to pick up once a reloaded preview is ready (play, pause and seek meanwhile update it). */
   const restore = useRef<{ time: number; playing: boolean } | null>(null)
+  /** The time a restore seeked to, until the player reports it (it reports 0 first). */
+  const landing = useRef<{ time: number; until: number } | null>(null)
   const loadError = usePlayer((s) => s.loadError)
   const [el, setEl] = useState<HyperframesPlayer | null>(null)
   const { setHandle, setReady, setLoadError, setPlaying, setTime, setDuration } =
@@ -48,9 +51,18 @@ export function Player(): ReactElement | null {
     setEl(el)
     if (!el) return
     setHandle({
-      play: () => el.play(),
-      pause: () => el.pause(),
-      seek: (t) => el.seek(t),
+      play: () => {
+        if (restore.current) restore.current.playing = true
+        el.play()
+      },
+      pause: () => {
+        if (restore.current) restore.current.playing = false
+        el.pause()
+      },
+      seek: (t) => {
+        if (restore.current) restore.current.time = t
+        el.seek(t)
+      },
       setMuted: (m) => {
         el.muted = m
       },
@@ -65,14 +77,22 @@ export function Player(): ReactElement | null {
       const r = restore.current
       if (r) {
         restore.current = null
-        el.seek(Math.min(r.time, el.duration || r.time))
+        const time = Math.min(r.time, el.duration || r.time)
+        el.seek(time)
         if (r.playing) el.play()
-        setTime(el.currentTime)
+        landing.current = { time, until: performance.now() + 1500 }
+        setTime(time)
       } else {
-        setTime(0)
+        // the player says ready again when the page finishes loading: keep the playhead
+        setTime(el.currentTime)
       }
     }
-    const onTime = (): void => setTime(el.currentTime)
+    const onTime = (): void => {
+      const l = landing.current
+      if (l && Math.abs(el.currentTime - l.time) > 0.5 && performance.now() < l.until) return
+      landing.current = null
+      setTime(el.currentTime)
+    }
     const onPlay = (): void => setPlaying(true)
     const onPause = (): void => setPlaying(false)
     const onEnded = (): void => setPlaying(false)
@@ -99,6 +119,8 @@ export function Player(): ReactElement | null {
       el.removeEventListener('durationchange', onDuration)
       el.removeEventListener('error', onError)
       setHandle(null)
+      restore.current = null
+      landing.current = null
       setLoadError(null)
       setReady(false)
       setPlaying(false)
@@ -113,7 +135,9 @@ export function Player(): ReactElement | null {
     const el = ref.current
     if (!el || !project) return
     if (version > 0) {
-      restore.current = { time: el.currentTime, playing: !el.paused }
+      // a change that lands before the last reload was ready keeps the place that one saved:
+      // the half-loaded page would say 0 s and paused
+      restore.current ??= { time: el.currentTime, playing: !el.paused }
       setReady(false)
     }
     setLoadError(null)
