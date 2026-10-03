@@ -131,10 +131,27 @@ export function CaptionPreview({
             {g.words.map((w, j) => {
               const on = j === activeWord
               const spoken = j <= activeWord
+              // emphasis words (a look with an emphasis face) sit on a row of their own
+              const em = look.emphasis && w.em ? look.emphasis : null
+              const rowBreak =
+                !!look.emphasis && j > 0 && !!w.em !== !!g.words[j - 1].em ? (
+                  <span style={{ display: 'block' }} />
+                ) : null
               const ws: CSSProperties = {
                 display: 'inline-block',
-                transition: 'color 90ms, background-color 90ms, transform 120ms, opacity 90ms',
-                ...(look.wordBox ? { padding: '0.02em 0.16em', borderRadius: '0.2em' } : {})
+                transition:
+                  'color 90ms, background-color 90ms, transform 120ms, opacity 90ms, filter 200ms',
+                ...(look.wordBox ? { padding: '0.02em 0.16em', borderRadius: '0.2em' } : {}),
+                ...(em
+                  ? {
+                      fontFamily: `'${em.font}', serif`,
+                      fontStyle: em.italic ? 'italic' : 'normal',
+                      fontWeight: em.weight,
+                      fontSize: `${em.scale}em`,
+                      letterSpacing: '-0.01em',
+                      lineHeight: 1
+                    }
+                  : {})
               }
               switch (look.anim) {
                 case 'pop':
@@ -168,10 +185,16 @@ export function CaptionPreview({
                 case 'glow':
                   if (on) ws.color = accent
                   break
+                case 'blur':
+                  Object.assign(ws, {
+                    opacity: spoken ? 1 : 0,
+                    filter: spoken ? 'blur(0px)' : `blur(${Math.max(2, 14 * k)}px)`
+                  })
+                  break
               }
               return (
                 <span key={j}>
-                  {j > 0 ? ' ' : ''}
+                  {rowBreak ?? (j > 0 ? ' ' : '')}
                   <span style={ws}>{w.text}</span>
                 </span>
               )

@@ -1,6 +1,7 @@
 import type {
   CaptionAnimation,
   CaptionConfig,
+  CaptionEmphasis,
   CaptionGroup,
   CaptionHero,
   CaptionLayout,
@@ -8,6 +9,7 @@ import type {
   ProjectFontFace
 } from './types'
 import { BUNDLED_FONTS } from './fonts.generated'
+import { beatAt, SUNROOM, type ShortBeat } from './short'
 
 /**
  * Caption engine shared by main (writes the HyperFrames captions composition) and the renderer
@@ -47,7 +49,18 @@ export type CaptionStyle = {
   layout?: CaptionLayout
   /** The hero word's look for a scatter layout (scale × `size`). */
   hero?: CaptionHero | null
+  /** The style's own line length, used while wordsPerLine is left at the style's `words`. */
+  line?: { words: number; chars: number }
+  /** The face of the words passed as emphasis, on their own row of the line (scale × `size`). */
+  emphasis?: CaptionEmphasisLook
+  /**
+   * Follows a tutorial short's layout (src/shared/short.ts): white over the speaker, `ink` on the
+   * paper just above the speaker card, and lower on a graphic beat.
+   */
+  layouts?: { ink: string }
 }
+
+export type CaptionEmphasisLook = { font: string; italic: boolean; weight: number; scale: number }
 
 export const CAPTION_STYLES: CaptionStyle[] = [
   {
@@ -237,6 +250,25 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     words: 'short'
   },
   {
+    id: 'sunroom',
+    name: 'Sunroom',
+    blurb:
+      'Bold sans, key words in italic serif, blurring in word by word. In a tutorial short it follows the layout: white over you, black on the paper.',
+    font: 'Inter',
+    weight: 700,
+    size: 74,
+    uppercase: false,
+    letterSpacing: -0.035,
+    color: '#FFFFFF',
+    accent: '#FFFFFF',
+    shadow: '0 2px 16px rgba(0,0,0,0.35)',
+    anim: 'blur',
+    words: 'normal',
+    line: { words: 4, chars: 24 },
+    emphasis: { font: 'Instrument Serif', italic: true, weight: 400, scale: 1.45 },
+    layouts: { ink: SUNROOM.ink }
+  },
+  {
     id: 'slam',
     name: 'Slam',
     blurb: 'Tall condensed caps that slam in word by word.',
@@ -281,7 +313,8 @@ export const CAPTION_ANIMATIONS: { id: CaptionAnim; blurb: string }[] = [
   { id: 'typewriter', blurb: 'words appear one at a time; the spoken word in the highlight color' },
   { id: 'slam', blurb: 'words slam in big, one at a time' },
   { id: 'glow', blurb: 'lines fade in; the spoken word lights up in the highlight color' },
-  { id: 'bounce', blurb: 'lines bounce up' }
+  { id: 'bounce', blurb: 'lines bounce up' },
+  { id: 'blur', blurb: 'words blur into focus one at a time' }
 ]
 
 export const CAPTION_SIZES: Record<CaptionConfig['size'], number> = { sm: 0.82, md: 1, lg: 1.22 }
@@ -314,6 +347,10 @@ export type CaptionLook = {
   layout: CaptionLayout
   /** The hero word's resolved look for a scatter layout; null means no hero. */
   hero: CaptionHero | null
+  /** How emphasis words are drawn; null when the style has no emphasis face. */
+  emphasis: CaptionEmphasisLook | null
+  /** Lines follow a tutorial short's layout, `ink` being their color on the paper. */
+  layouts: { ink: string } | null
 }
 
 const OUTLINE = 'rgba(0,0,0,0.92)'
@@ -363,7 +400,9 @@ export function captionLook(
         : (s.shadow ?? null),
     box,
     layout: o.layout ?? s.layout ?? 'line',
-    hero
+    hero,
+    emphasis: s.emphasis ?? null,
+    layouts: s.layouts ?? null
   }
 }
 
@@ -782,6 +821,7 @@ export function cleanCaptionConfig(raw: Partial<CaptionConfig>): CaptionConfig {
   const font = typeof raw.font === 'string' ? raw.font.trim().replace(/\s+/g, ' ') : ''
   const accent = safeColor(raw.accent)
   const overrides = cleanOverrides(raw.overrides)
+  const emphasis = cleanEmphasis(raw.emphasis)
   return {
     style: s.id,
     font: FAMILY.test(font) ? font : s.font,
@@ -791,13 +831,28 @@ export function cleanCaptionConfig(raw: Partial<CaptionConfig>): CaptionConfig {
     uppercase: typeof raw.uppercase === 'boolean' ? raw.uppercase : s.uppercase,
     clean: raw.clean !== false,
     ...(accent ? { accent } : {}),
-    ...(overrides ? { overrides } : {})
+    ...(overrides ? { overrides } : {}),
+    ...(emphasis ? { emphasis } : {})
   }
+}
+
+/** Emphasis words with every value checked: short phrases, times that are times. */
+export function cleanEmphasis(raw: unknown): CaptionEmphasis[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out: CaptionEmphasis[] = []
+  for (const item of raw.slice(0, 80)) {
+    const r = obj(item)
+    const text = typeof r?.text === 'string' ? r.text.replace(/\s+/g, ' ').trim() : ''
+    if (!text || text.length > 48 || !/[\p{L}\p{N}]/u.test(text)) continue
+    const at = clamp(r?.at, 0, 86_400)
+    out.push(at === undefined ? { text } : { text, at: round(at) })
+  }
+  return out.length ? out : undefined
 }
 
 // ------------------------------------------------------------------ transcript → lines
 
-type TimedWord = { text: string; start: number; end: number }
+type TimedWord = { text: string; start: number; end: number; em?: boolean }
 
 const FILLERS = new Set(['um', 'uh', 'erm', 'er', 'ah', 'hmm', 'mm', 'uhm', 'mhm', 'umm', 'uhh'])
 const bare = (t: string): string => t.toLowerCase().replace(/[^\p{L}\p{N}']/gu, '')
@@ -837,6 +892,13 @@ export function cleanWords(words: TimedWord[], clean = true): TimedWord[] {
   return out
 }
 
+/**
+ * How far after a word's start a cut can fall and still count as before the word (cuts are picked
+ * by eye): up to 0.12 s, and never more than half the word, which is otherwise said before it.
+ */
+const slack = (w: { start: number; end: number }): number =>
+  Math.min(0.12, Math.max(0, (w.end - w.start) / 2))
+
 const LIMITS: Record<CaptionConfig['wordsPerLine'], { words: number; chars: number }> = {
   short: { words: 3, chars: 18 },
   normal: { words: 5, chars: 30 },
@@ -850,10 +912,20 @@ const LIMITS: Record<CaptionConfig['wordsPerLine'], { words: number; chars: numb
  */
 export function groupWords(
   words: TimedWord[],
-  opts: { wordsPerLine: CaptionConfig['wordsPerLine']; portrait?: boolean }
+  opts: {
+    wordsPerLine: CaptionConfig['wordsPerLine']
+    portrait?: boolean
+    /** Times a line never runs across (a tutorial short's cuts): it ends before, the next starts. */
+    breaks?: number[]
+    /** The line length to use instead of wordsPerLine's (a style's own, like Sunroom's). */
+    limit?: { words: number; chars: number }
+    /** Give a lone last word of a phrase a word from the line before ("your" / "project"). */
+    balance?: boolean
+  }
 ): CaptionGroup[] {
-  const lim = LIMITS[opts.wordsPerLine]
+  const lim = opts.limit ?? LIMITS[opts.wordsPerLine]
   const maxChars = Math.round(lim.chars * (opts.portrait ? 0.72 : 1))
+  const breaks = [...(opts.breaks ?? [])].sort((a, b) => a - b)
   const groups: CaptionGroup[] = []
   let cur: TimedWord[] = []
   const flush = (): void => {
@@ -870,18 +942,31 @@ export function groupWords(
     const w = words[i]
     const prev = cur[cur.length - 1]
     if (prev) {
-      const chars = cur.reduce((n, x) => n + x.text.length + 1, 0) + w.text.length
-      if (w.start - prev.end > 0.45 || cur.length >= lim.words || chars > maxChars) flush()
+      // emphasis rows count as one word; a phrase of them starts its own line
+      const chars = cur.reduce((n, x) => n + (x.em ? 0 : x.text.length + 1), 0) + w.text.length
+      const plain = cur.filter((x) => !x.em).length
+      const cut = breaks.some((b) => b > prev.start + 0.01 && b <= w.start + slack(w))
+      if (
+        cut ||
+        (w.em && !prev.em) ||
+        w.start - prev.end > 0.45 ||
+        (!w.em && plain >= lim.words) ||
+        (!w.em && chars > maxChars)
+      )
+        flush()
     }
     cur.push(w)
     if (/[.?!…]["')\]]?$/.test(w.text)) flush()
     else if (/[,;:]$/.test(w.text) && cur.length >= 2 && cur.length >= lim.words - 1) flush()
   }
   flush()
+  if (opts.balance) balanceLines(groups, breaks)
   for (let i = 0; i < groups.length; i++) {
     const g = groups[i]
     const next = groups[i + 1]
-    const room = next ? next.start - 0.04 : g.end + 0.6
+    // a line lingers (up to 0.6 s) but never past the next line or a cut
+    const cut = breaks.find((b) => b > g.end + 0.01)
+    const room = Math.min(next ? next.start - 0.04 : g.end + 0.6, cut ?? Infinity)
     g.end = Math.max(g.end, Math.min(g.end + 0.6, room))
     if (next && g.end > next.start) g.end = next.start
     g.start = round(g.start)
@@ -890,7 +975,88 @@ export function groupWords(
   return groups.filter((g) => g.end - g.start > 0.05)
 }
 
+/**
+ * A line of one word after a line of three or more that runs straight into it (no sentence or
+ * clause end, no pause, no cut between) takes that line's last word: "and even showing" / "your
+ * project", not "and even showing your" / "project".
+ */
+function balanceLines(groups: CaptionGroup[], breaks: number[]): void {
+  for (let i = 1; i < groups.length; i++) {
+    const g = groups[i]
+    const prev = groups[i - 1]
+    const last = prev.words[prev.words.length - 1]
+    const only = g.words[0]
+    if (g.words.length !== 1 || only.em || prev.words.length < 3 || last.em) continue
+    if (/[.?!…,;:]["')\]]?$/.test(last.text) || only.start - last.end > 0.45) continue
+    if (breaks.some((b) => b > last.start + 0.01 && b <= only.start + slack(only))) continue
+    prev.words = prev.words.slice(0, -1)
+    g.words = [last, only]
+    for (const x of [prev, g]) {
+      x.text = x.words.map((w) => w.text).join(' ')
+      x.start = x.words[0].start
+      x.end = x.words[x.words.length - 1].end
+    }
+  }
+}
+
 export const round = (n: number): number => Math.round(n * 1000) / 1000
+
+/**
+ * Marks the words said as emphasis: each phrase where it is said, matched word for word
+ * (ignoring case and punctuation). With `at`, only the time it is said closest to that (within
+ * 3 s); without, every time.
+ */
+export function markEmphasis(words: TimedWord[], emphasis?: CaptionEmphasis[]): TimedWord[] {
+  if (!emphasis?.length) return words
+  const out = words.map((w) => ({ ...w }))
+  const key = (t: string): string => t.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+  const keys = out.map((w) => key(w.text))
+  for (const e of emphasis) {
+    const phrase = e.text.split(/\s+/).map(key).filter(Boolean)
+    if (!phrase.length) continue
+    const hits: number[] = []
+    for (let i = 0; i + phrase.length <= out.length; i++)
+      if (phrase.every((p, j) => keys[i + j] === p)) hits.push(i)
+    if (!hits.length) continue
+    const picked =
+      e.at === undefined
+        ? hits
+        : hits
+            .filter((i) => Math.abs(out[i].start - e.at!) <= 3)
+            .sort((a, b) => Math.abs(out[a].start - e.at!) - Math.abs(out[b].start - e.at!))
+            .slice(0, 1)
+    for (const i of picked) for (let j = 0; j < phrase.length; j++) out[i + j].em = true
+  }
+  return out
+}
+
+/**
+ * Caption lines over a tutorial short's beats (in the captions' own time: composition time minus
+ * `offset`): each line takes the layout of the beat it starts in, so it is placed and colored for
+ * it, never outlives that beat, and lines on beats that asked for no caption go.
+ */
+export function followLayout(
+  groups: CaptionGroup[],
+  beats: ShortBeat[],
+  offset = 0
+): CaptionGroup[] {
+  const out: CaptionGroup[] = []
+  for (const g of groups) {
+    // a line that starts just before a cut (groupWords broke it there) belongs to the beat after
+    const beat = beatAt(beats, g.start + offset + (g.words[0] ? slack(g.words[0]) : 0))
+    if (beat?.caption === false) continue
+    const start = beat ? Math.max(g.start, round(beat.start - offset)) : g.start
+    const end = beat ? Math.min(g.end, round(beat.end - offset)) : g.end
+    if (end - start <= 0.05) continue
+    out.push({ ...g, start, end, layout: beat?.layout ?? 'full' })
+  }
+  return out
+}
+
+/** The times a tutorial short cuts between beats, in the captions' own time. */
+export function layoutBreaks(beats: ShortBeat[], offset = 0): number[] {
+  return [...new Set(beats.flatMap((b) => [b.start, b.end]))].map((t) => round(t - offset))
+}
 
 /** Short sample lines for style previews when a project has no transcript yet. */
 export const SAMPLE_WORDS: TimedWord[] = 'This is how your captions will look on the video'

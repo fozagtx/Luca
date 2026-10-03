@@ -1,0 +1,822 @@
+/*
+  Sunroom kit: the graphic vocabulary of Luca's tutorial-short template, as plain classes. Luca's
+  short_layout tool puts it in the head of index.html (the sunroom-kit style block), so every beat
+  file can build its graphic from these without styling anything: flat, clean, light UI on cream
+  paper, thin borders, soft shadows, monospace labels, one accent. Sizes are px for a 1080 px wide
+  frame. No class sets a CSS transform, so GSAP can move and scale any of them.
+
+  Every color comes from the theme the tool writes next to it (the sunroom-theme block): --sr-paper,
+  --sr-ink, --sr-ink-soft, --sr-accent, --sr-on-accent, --sr-card, --sr-card-ink, --sr-line,
+  --sr-shade, --sr-shadow, --sr-term and the fonts --sr-sans, --sr-serif, --sr-mono. A new palette
+  recolors everything built from these; only real-device details (a phone's bezel, the pointer,
+  a window's three dots) keep their own colors.
+*/
+
+/* A beat's content box (the paper above the caption in split, the whole frame in graphic). */
+.sr-area {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+/* Centers what is inside it, top to bottom, with even gaps. */
+.sr-stack {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+}
+.sr-row-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+}
+
+/* ---------------------------------------------------------------- type */
+
+/* The kinetic headline of a graphic beat: big italic serif, a lighter second line. */
+.sr-headline {
+  font-family: var(--sr-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 150px;
+  line-height: 0.98;
+  letter-spacing: -0.01em;
+  color: var(--sr-ink);
+  text-align: center;
+}
+.sr-sub {
+  display: block;
+  margin-top: 0.06em;
+  font-family: var(--sr-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 92px;
+  line-height: 1.05;
+  color: var(--sr-ink-soft);
+  text-align: center;
+}
+/* One word or line of a headline, for word-by-word entrances. */
+.sr-word {
+  display: inline-block;
+}
+.sr-serif {
+  font-family: var(--sr-serif);
+  font-style: italic;
+  font-weight: 400;
+}
+.sr-bold {
+  font-family: var(--sr-sans);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+.sr-label {
+  font-family: var(--sr-mono);
+  font-size: 26px;
+  letter-spacing: 0.02em;
+  color: var(--sr-ink-soft);
+}
+.sr-label.accent {
+  color: var(--sr-accent);
+}
+.sr-code {
+  font-family: var(--sr-mono);
+  font-size: 32px;
+  line-height: 1.6;
+  color: var(--sr-card-ink);
+  white-space: pre-wrap;
+}
+.sr-code b {
+  font-weight: 700;
+}
+.sr-code .dim,
+.sr-term .dim {
+  opacity: 0.45;
+}
+
+/* ---------------------------------------------------------------- cards */
+
+.sr-card {
+  position: relative;
+  background: var(--sr-card);
+  border: 1.5px solid var(--sr-line);
+  border-radius: 26px;
+  box-shadow: var(--sr-shadow);
+  padding: 40px 46px;
+  color: var(--sr-card-ink);
+  font-family: var(--sr-sans);
+}
+/* A placeholder line on a card or slide (the shape of text, not text). */
+.sr-ph {
+  height: 26px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--sr-card-ink) 8%, transparent);
+}
+.sr-ph.box {
+  height: 56px;
+  background: none;
+  border: 2px solid var(--sr-line);
+}
+/* A slide in a deck: stack two or three, slightly turned, with a label and placeholder lines. */
+.sr-slide {
+  position: relative;
+  width: 620px;
+  height: 360px;
+  padding: 34px 40px;
+  border-radius: 20px;
+  background: var(--sr-card);
+  border: 1.5px solid var(--sr-line);
+  box-shadow: var(--sr-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  font-family: var(--sr-sans);
+  font-size: 30px;
+  color: var(--sr-card-ink);
+}
+/* A numbered step or a checklist row: a picture on the left, number and serif words on the right. */
+.sr-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  width: 920px;
+  padding: 24px;
+  border-radius: 28px;
+  background: var(--sr-card);
+  border: 1.5px solid var(--sr-line);
+  box-shadow: var(--sr-shadow);
+}
+.sr-thumb {
+  flex: none;
+  width: 440px;
+  height: 250px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(
+    140deg,
+    color-mix(in srgb, var(--sr-ink) 7%, var(--sr-paper)),
+    color-mix(in srgb, var(--sr-ink) 17%, var(--sr-paper))
+  );
+}
+.sr-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.sr-step .sr-serif {
+  font-size: 72px;
+  line-height: 1;
+  color: var(--sr-card-ink);
+}
+/* A tall numbered card ("01/04 app launches"): stack them like a deck. */
+.sr-tile {
+  position: relative;
+  width: 640px;
+  height: 760px;
+  padding: 40px;
+  border-radius: 32px;
+  background: var(--sr-card);
+  border: 1.5px solid var(--sr-line);
+  box-shadow: var(--sr-shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+.sr-tile .sr-label {
+  align-self: flex-end;
+}
+.sr-tile .sr-serif {
+  font-size: 76px;
+  line-height: 1;
+  color: var(--sr-card-ink);
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- pills, buttons, badges */
+
+.sr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  height: 64px;
+  padding: 0 30px;
+  border-radius: 999px;
+  background: var(--sr-card);
+  border: 2px solid color-mix(in srgb, var(--sr-card-ink) 50%, transparent);
+  box-shadow: 0 12px 24px -16px var(--sr-shade);
+  font-family: var(--sr-mono);
+  font-size: 30px;
+  color: var(--sr-card-ink);
+  white-space: nowrap;
+}
+.sr-pill.dark {
+  background: var(--sr-ink);
+  border-color: var(--sr-ink);
+  color: var(--sr-paper);
+}
+.sr-pill.accent {
+  background: var(--sr-accent);
+  border-color: var(--sr-accent);
+  color: var(--sr-on-accent);
+}
+.sr-pill.big {
+  height: 92px;
+  padding: 0 42px;
+  font-size: 46px;
+}
+.sr-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  height: 140px;
+  padding: 0 110px;
+  border-radius: 999px;
+  background: var(--sr-accent);
+  box-shadow: 0 26px 44px -24px color-mix(in srgb, var(--sr-accent) 85%, transparent);
+  font-family: var(--sr-sans);
+  font-weight: 700;
+  font-size: 60px;
+  letter-spacing: -0.02em;
+  color: var(--sr-on-accent);
+  white-space: nowrap;
+}
+.sr-button.dark {
+  background: var(--sr-ink);
+  box-shadow: 0 26px 44px -24px color-mix(in srgb, var(--sr-ink) 80%, transparent);
+  color: var(--sr-paper);
+}
+/* A round check in the accent; add it to the corner of a card when its point is made. */
+.sr-check {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--sr-accent);
+}
+.sr-check::after {
+  content: '';
+  position: absolute;
+  left: 23px;
+  top: 13px;
+  width: 15px;
+  height: 28px;
+  border: solid var(--sr-on-accent);
+  border-width: 0 6px 6px 0;
+  transform: rotate(45deg);
+}
+/* A price or label tag ("$0") in the accent. */
+.sr-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 14px 30px;
+  border-radius: 16px;
+  background: var(--sr-accent);
+  font-family: var(--sr-mono);
+  font-weight: 700;
+  font-size: 46px;
+  color: var(--sr-on-accent);
+  white-space: nowrap;
+}
+/* A bookmark ("save this"): add .on to fill it with the accent. */
+.sr-bookmark {
+  display: inline-block;
+  width: 104px;
+  height: 136px;
+  background: var(--sr-card);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 74%, 0 100%);
+}
+.sr-bookmark.on {
+  background: var(--sr-accent);
+}
+.sr-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--sr-accent);
+  font-family: var(--sr-mono);
+  font-size: 30px;
+  color: var(--sr-on-accent);
+}
+.sr-avatar.c2 {
+  background: var(--sr-ink);
+  color: var(--sr-paper);
+}
+.sr-avatar.c3 {
+  background: var(--sr-ink-soft);
+  color: var(--sr-paper);
+}
+.sr-avatar.c4 {
+  background: color-mix(in srgb, var(--sr-accent) 40%, var(--sr-card));
+  color: var(--sr-card-ink);
+}
+/* The pointer that clicks things: place it with left/top inside its parent. */
+.sr-cursor {
+  position: absolute;
+  width: 72px;
+  height: 72px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 2.5v17.2l4.6-4.3 3 6.6 3.1-1.4-3-6.5h6.3z' fill='%2316130f' stroke='%23fff' stroke-width='1.4' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat center / contain;
+}
+/* A stroke that draws across words or a card (scaleX 0 → 1 from the left). */
+.sr-strike {
+  position: absolute;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--sr-accent);
+  transform-origin: left center;
+}
+
+/* ---------------------------------------------------------------- devices and windows */
+
+.sr-phone {
+  position: relative;
+  width: 390px;
+  height: 800px;
+  padding: 14px;
+  border-radius: 66px;
+  background: #1b1917;
+  box-shadow:
+    var(--sr-shadow),
+    0 0 0 2px var(--sr-line);
+}
+.sr-phone::before {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 30px;
+  width: 112px;
+  height: 32px;
+  margin-left: -56px;
+  border-radius: 20px;
+  background: #1b1917;
+}
+.sr-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 54px;
+  background: var(--sr-card);
+}
+.sr-screen img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.sr-browser {
+  position: relative;
+  width: 880px;
+  overflow: hidden;
+  border-radius: 26px;
+  background: var(--sr-card);
+  border: 1.5px solid var(--sr-line);
+  box-shadow: var(--sr-shadow);
+}
+.sr-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 66px;
+  padding: 0 26px;
+  border-bottom: 1.5px solid var(--sr-line);
+  font-family: var(--sr-mono);
+  font-size: 24px;
+  color: var(--sr-ink-soft);
+  white-space: nowrap;
+}
+.sr-bar > i {
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e8705a;
+}
+.sr-bar > i:nth-child(2) {
+  background: #e9b949;
+}
+.sr-bar > i:nth-child(3) {
+  background: #7dbe6a;
+}
+.sr-url {
+  flex: 1;
+  height: 40px;
+  margin-left: 18px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--sr-card-ink) 6%, transparent);
+}
+.sr-page {
+  position: relative;
+  min-height: 440px;
+  padding: 44px;
+}
+.sr-page img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sr-terminal {
+  position: relative;
+  width: 880px;
+  overflow: hidden;
+  border-radius: 26px;
+  background: var(--sr-term);
+  box-shadow:
+    var(--sr-shadow),
+    0 0 0 2px var(--sr-line);
+}
+.sr-terminal .sr-bar {
+  border-bottom-color: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.4);
+}
+.sr-term {
+  min-height: 380px;
+  padding: 34px 42px 46px;
+  font-family: var(--sr-mono);
+  font-size: 32px;
+  line-height: 1.65;
+  color: #ede6de;
+  white-space: pre;
+}
+.sr-term .ok {
+  color: color-mix(in srgb, var(--sr-accent) 60%, #ffffff);
+}
+.sr-prompt {
+  color: var(--sr-accent);
+}
+/* Typed text: animate width from 0ch to Nch with ease steps(N); monospace keeps it exact. */
+.sr-type {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.sr-caret {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.15em;
+  vertical-align: -0.2em;
+  background: var(--sr-accent);
+}
+
+/* ---------------------------------------------------------------- files */
+
+.sr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 60px;
+  padding: 0 24px;
+  border-radius: 14px;
+  background: var(--sr-card);
+  border: 1.5px solid var(--sr-line);
+  box-shadow: 0 12px 24px -16px var(--sr-shade);
+  font-family: var(--sr-mono);
+  font-size: 26px;
+  color: var(--sr-card-ink);
+  white-space: nowrap;
+}
+.sr-folder {
+  position: relative;
+  width: 300px;
+  height: 224px;
+}
+.sr-folder::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 124px;
+  height: 46px;
+  border-radius: 16px 16px 0 0;
+  background: color-mix(in srgb, var(--sr-accent) 48%, var(--sr-card));
+}
+.sr-folder::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 32px;
+  bottom: 0;
+  border-radius: 0 18px 18px 18px;
+  background: color-mix(in srgb, var(--sr-accent) 32%, var(--sr-card));
+  box-shadow: var(--sr-shadow);
+}
+/* A folder's file list: rows with a colored file icon and a monospace name. */
+.sr-list {
+  width: 820px;
+  padding: 10px 0;
+}
+.sr-file {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: 88px;
+  padding: 0 36px;
+  border-top: 1.5px solid var(--sr-line);
+  font-family: var(--sr-mono);
+  font-size: 30px;
+  color: var(--sr-card-ink);
+}
+.sr-file:first-child {
+  border-top: 0;
+}
+.sr-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--sr-accent);
+}
+.sr-icon.soft {
+  background: color-mix(in srgb, var(--sr-accent) 40%, var(--sr-card));
+}
+.sr-icon.ink {
+  background: color-mix(in srgb, var(--sr-card-ink) 35%, var(--sr-card));
+}
+.sr-icon.pale {
+  background: color-mix(in srgb, var(--sr-card-ink) 15%, var(--sr-card));
+}
+
+/* ---------------------------------------------------------------- editor, progress, clock */
+
+/* An empty video editor: a viewer, tracks (V1, A1…) with clips, and a playhead. */
+.sr-editor {
+  position: relative;
+  width: 900px;
+  padding: 28px;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--sr-ink) 4%, var(--sr-paper));
+  border: 1.5px solid var(--sr-line);
+  box-shadow: var(--sr-shadow);
+}
+.sr-viewer {
+  position: relative;
+  height: 400px;
+  border-radius: 18px;
+  border: 2px dashed color-mix(in srgb, var(--sr-ink) 24%, transparent);
+  background: color-mix(in srgb, var(--sr-card) 40%, transparent);
+  overflow: hidden;
+}
+.sr-tracks {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 26px;
+}
+.sr-track {
+  position: relative;
+  height: 58px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--sr-ink) 6%, transparent);
+  font-family: var(--sr-mono);
+  font-size: 22px;
+  color: var(--sr-ink-soft);
+}
+.sr-track > b {
+  position: absolute;
+  left: 18px;
+  top: 15px;
+  font-weight: 500;
+}
+/* A clip on a track: place it with left and width in %. */
+.sr-clip {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--sr-accent) 28%, var(--sr-card));
+}
+.sr-clip.strong {
+  background: color-mix(in srgb, var(--sr-accent) 62%, var(--sr-card));
+}
+.sr-clip.ink {
+  background: color-mix(in srgb, var(--sr-ink) 30%, var(--sr-card));
+}
+.sr-clip.pale {
+  background: color-mix(in srgb, var(--sr-ink) 14%, var(--sr-card));
+}
+/* A keyframe diamond on a track: place it with left in %. */
+.sr-key {
+  position: absolute;
+  top: 18px;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  background: var(--sr-ink);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+.sr-playhead {
+  position: absolute;
+  top: -12px;
+  bottom: -12px;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--sr-accent);
+}
+/* A progress bar ("rendering video.mp4 0% → 100%"): scaleX the .sr-fill from 0 to 1. */
+.sr-progress {
+  width: 860px;
+}
+.sr-progress-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  font-family: var(--sr-mono);
+  font-size: 26px;
+  color: var(--sr-ink-soft);
+}
+.sr-bar-track {
+  height: 16px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sr-ink) 10%, transparent);
+}
+.sr-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--sr-accent);
+  transform-origin: left center;
+}
+/* An analog clock: rotate .sr-hand.h and .sr-hand.m (they turn about the center). */
+.sr-clock {
+  position: relative;
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  background: var(--sr-card);
+  border: 10px solid var(--sr-card-ink);
+  box-shadow: var(--sr-shadow);
+}
+.sr-clock::before {
+  content: '';
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from -1.5deg,
+    var(--sr-card-ink) 0 3deg,
+    transparent 3deg 30deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 84%, #000 85%);
+  mask: radial-gradient(circle, transparent 84%, #000 85%);
+}
+.sr-clock::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 50%;
+  background: var(--sr-card-ink);
+}
+.sr-hand {
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  width: 12px;
+  height: 92px;
+  margin-left: -6px;
+  border-radius: 6px;
+  background: var(--sr-card-ink);
+  transform-origin: 50% 100%;
+}
+.sr-hand.m {
+  width: 8px;
+  height: 128px;
+  margin-left: -4px;
+  background: var(--sr-accent);
+}
+
+/* ---------------------------------------------------------------- phone UI */
+
+/* A notification that slides down from the top ("New message"). */
+.sr-notify {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  width: 900px;
+  padding: 28px 34px;
+  border-radius: 30px;
+  background: var(--sr-card);
+  box-shadow: 0 26px 50px -24px rgba(0, 0, 0, 0.5);
+  font-family: var(--sr-sans);
+}
+.sr-notify > i {
+  flex: none;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--sr-accent);
+}
+.sr-notify b {
+  display: block;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--sr-card-ink);
+}
+.sr-notify span {
+  display: block;
+  font-size: 28px;
+  color: var(--sr-ink-soft);
+}
+/* A share sheet: round icons with labels (Message, Mail, Copy link, More). */
+.sr-share {
+  display: flex;
+  gap: 40px;
+  padding: 36px 44px;
+  border-radius: 32px;
+  background: var(--sr-card);
+  border: 1.5px solid var(--sr-line);
+  box-shadow: var(--sr-shadow);
+}
+.sr-share > span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  font-family: var(--sr-sans);
+  font-size: 24px;
+  color: var(--sr-ink-soft);
+}
+.sr-share > span > i {
+  display: block;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--sr-card-ink) 10%, var(--sr-card));
+}
+/* A comment box ("comment BRAG"): a pill-shaped field with a send button. */
+.sr-input {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  width: 900px;
+  height: 104px;
+  padding: 0 18px 0 30px;
+  border-radius: 999px;
+  background: var(--sr-card);
+  box-shadow: 0 20px 40px -22px rgba(0, 0, 0, 0.5);
+  font-family: var(--sr-sans);
+  font-weight: 700;
+  font-size: 40px;
+  color: var(--sr-card-ink);
+}
+.sr-input > i {
+  flex: none;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: var(--sr-accent);
+}
+.sr-input > span {
+  flex: 1;
+}
+
+/* Lines between nodes (a graph): an <svg class="sr-links"> over the area, <line> or <path> inside. */
+.sr-links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.sr-links line,
+.sr-links path {
+  fill: none;
+  stroke: var(--sr-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+/* Stickers over the speaker (full beats) cast a soft shadow on the footage. */
+.sr-sticker {
+  filter: drop-shadow(0 16px 24px rgba(0, 0, 0, 0.3));
+}

@@ -8,6 +8,7 @@ import {
   type CaptionLook,
   type SpeechClip
 } from '../shared/captions'
+import { SUNROOM } from '../shared/short'
 import type { CaptionConfig, CaptionGroup, ProjectFontFace } from '../shared/types'
 import { findTags } from './html'
 
@@ -55,8 +56,45 @@ function css(look: CaptionLook, cfg: CaptionConfig, d: { w: number; h: number })
         overflow: visible;
       }
       ${s} .w { display: inline-block; ${look.wordBox ? 'padding: 0.02em 0.16em; border-radius: 0.2em;' : ''} }
+      ${emphasisCss(look, d)}
+      ${layoutCss(look, d)}
       ${scatterCss(look, cfg, d)}
     `
+}
+
+/** Emphasis words: their own row above (or below) the rest of the line, in the look's emphasis face. */
+function emphasisCss(look: CaptionLook, d: { w: number; h: number }): string {
+  const em = look.emphasis
+  if (!em) return ''
+  const s = `[data-composition-id="${HOST_ID}"]`
+  return `
+      ${s} .emrow { display: block; line-height: 1; margin: 0.02em 0 0.04em; }
+      ${s} .em {
+        font-family: ${look.layouts ? `var(--sr-serif, '${em.font}')` : `'${em.font}', serif`};
+        font-style: ${em.italic ? 'italic' : 'normal'};
+        font-weight: ${em.weight}; font-size: ${em.scale}em; letter-spacing: -0.01em;
+        text-transform: none;
+      }
+      ${s} .emrow:last-child { margin-bottom: 0; }
+      ${s} .emrow + .w, ${s} .w + .emrow { margin-top: ${Math.round((Math.min(d.w, d.h) / 1080) * 4)}px; }`
+}
+
+/**
+ * Lines on a tutorial short (src/shared/short.ts) sit where its layout leaves room: over the
+ * speaker in full, on the paper just above the speaker card in split, lower down on a graphic
+ * beat. On the paper they take the theme's ink, so a new palette recolors them too.
+ */
+function layoutCss(look: CaptionLook, d: { w: number; h: number }): string {
+  if (!look.layouts) return ''
+  const s = `[data-composition-id="${HOST_ID}"]`
+  const floor = SUNROOM.captionFloor
+  const at = (l: keyof typeof floor): string =>
+    `${s} .cg-${l} { align-items: flex-end; padding-top: 0; padding-bottom: ${Math.round((1 - floor[l]) * d.h)}px; }`
+  return `
+      ${at('full')}
+      ${at('split')}
+      ${at('graphic')}
+      ${s} .cg-split .cl, ${s} .cg-graphic .cl { color: var(--sr-ink, ${look.layouts.ink}); text-shadow: none; }`
 }
 
 /** The scatter layout's own rules: each word is a span pinned to its slot on the stage. */
@@ -165,6 +203,10 @@ function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: nu
             case 'bounce':
               tl.fromTo(line, { opacity: 0, y: 46 * O.k, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: 'elastic.out(1, 0.55)' }, g[0]);
               break;
+            case 'blur':
+              tl.set(line, { opacity: 1 }, g[0]);
+              reveal(words, g, { opacity: 0, filter: 'blur(' + 14 * O.k + 'px)' }, { opacity: 1, filter: 'blur(0px)', duration: 0.24, ease: 'power2.out' });
+              break;
             default:
               tl.fromTo(line, { opacity: 0 }, { opacity: 1, duration: O.slow ? 0.45 : 0.25, ease: 'power2.out' }, g[0]);
           }
@@ -174,6 +216,27 @@ function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: nu
         window.__timelines = window.__timelines || {};
         window.__timelines['${HOST_ID}'] = tl;
       })();`
+}
+
+/** A line's words as spans; emphasis words (when the look has an emphasis face) on rows of their own. */
+function lineWords(g: CaptionGroup, look: CaptionLook): string {
+  if (!look.emphasis || !g.words.some((w) => w.em))
+    return g.words.map((w) => `<span class="w">${esc(w.text)}</span>`).join(' ')
+  const out: string[] = []
+  let row: string[] = []
+  const close = (): void => {
+    if (row.length) out.push(`<span class="emrow">${row.join(' ')}</span>`)
+    row = []
+  }
+  for (const w of g.words) {
+    if (w.em) row.push(`<span class="w em">${esc(w.text)}</span>`)
+    else {
+      close()
+      out.push(`<span class="w">${esc(w.text)}</span>`)
+    }
+  }
+  close()
+  return out.join(' ')
 }
 
 /** `fontFaces`: @font-face rules for the project's own fonts the captions use. */
@@ -205,9 +268,7 @@ export function captionsComposition(
       : groups
           .map(
             (g, i) =>
-              `      <div class="cg" id="lc-${i}"><div class="cl">${g.words
-                .map((w) => `<span class="w">${esc(w.text)}</span>`)
-                .join(' ')}</div></div>`
+              `      <div class="cg${look.layouts && g.layout ? ` cg-${g.layout}` : ''}" id="lc-${i}"><div class="cl">${lineWords(g, look)}</div></div>`
           )
           .join('\n')
   return `<!-- Captions made by Luca (style: ${style.name}${cfg.overrides ? ', customized' : ''}, font: ${cfg.font}). Luca rebuilds this file from the transcript whenever the captions or the clips under them change, so edits here are lost: change captions with the captions_apply tool. -->

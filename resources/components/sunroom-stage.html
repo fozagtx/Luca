@@ -1,0 +1,412 @@
+<!doctype html>
+<!--
+  sunroom-stage: the paper stage of Luca's Sunroom template (a tutorial short)
+
+  A sheet of paper (warm cream in the default palette) with soft leaf shadows
+  drifting across it, as if a plant stood by a sunny window. It sits ABOVE the speaker's footage and
+  changes with each beat of the short:
+
+    - full:    the paper is gone; a soft vignette warms the footage and keeps
+               white captions readable.
+    - split:   the paper covers the top of the frame and the speaker shows in
+               a full-width card below it, with rounded top corners (the card
+               is the footage showing through a cut-out in the paper).
+    - graphic: the paper covers the whole frame; the speaker is hidden.
+
+  The footage itself is moved (punched in, or lifted into the card) by the
+  main timeline in index.html: a sub-composition can't reach host elements.
+  Luca's short_layout tool writes both, from the same beats.
+
+  Colors come from the theme in index.html (custom properties on :root, which
+  the short_layout tool writes): --sr-paper for the paper, --sr-shade and
+  --sr-shade-strength for the leaf shadows, --sr-glow for the window light. A
+  new palette recolors the stage without touching this file.
+
+  Variables (data-composition-variables below):
+    - beats:  the layout over time, "<f|s|g>:<start>:<end>;…" in seconds.
+              Time no beat covers is full.
+    - length: seconds the stage plays (the host's data-duration).
+    - card:   top edge of the speaker card, as a fraction of the height.
+    - radius: the card's top corners, px for a 1080 px wide frame.
+    - vignette: strength of the warm vignette over the footage in full.
+
+  Determinism: the leaves are laid out once at mount by a fixed-step LCG,
+  every layout change is a gsap set of data-mode at a beat's start, and the
+  shadows sway on finite yoyo tweens. No Math.random, no clocks.
+-->
+<html
+  lang="en"
+  data-composition-id="sunroom-stage"
+  data-composition-duration="10"
+  data-composition-variables='[
+    { "id": "beats", "type": "string", "role": "timing", "label": "Beats", "description": "The layout over time: <f|s|g>:<start>:<end>; separated by semicolons.", "default": "s:0:3;g:3:6;f:6:10" },
+    { "id": "length", "type": "number", "role": "timing", "label": "Length", "description": "Seconds the stage plays.", "default": 10, "min": 0.5, "max": 3600, "step": 0.01, "unit": "s" },
+    { "id": "card", "type": "number", "role": "style", "label": "Card top", "description": "Top edge of the speaker card in split, as a fraction of the height.", "default": 0.52, "min": 0.3, "max": 0.8, "step": 0.01 },
+    { "id": "radius", "type": "number", "role": "style", "label": "Card corners", "description": "Corner radius of the speaker card, px at 1080 wide.", "default": 60, "min": 0, "max": 160, "step": 1 },
+    { "id": "vignette", "type": "number", "role": "style", "label": "Vignette", "description": "Strength of the warm vignette over the speaker when they fill the frame.", "default": 0.7, "min": 0, "max": 1, "step": 0.05 }
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Sunroom stage</title>
+  </head>
+  <body>
+    <template id="sunroom-stage-template">
+      <div
+        data-composition-id="sunroom-stage"
+        data-width="1080"
+        data-height="1920"
+        data-duration="10"
+      >
+        <div class="ss-stage" data-mode="full">
+          <div class="ss-grade"></div>
+          <div class="ss-paper">
+            <div class="ss-light"></div>
+            <div class="ss-shadows"></div>
+          </div>
+        </div>
+
+        <style>
+          [data-composition-id='sunroom-stage'] {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+          }
+
+          [data-composition-id='sunroom-stage'] .ss-stage,
+          [data-composition-id='sunroom-stage'] .ss-grade,
+          [data-composition-id='sunroom-stage'] .ss-paper,
+          [data-composition-id='sunroom-stage'] .ss-light,
+          [data-composition-id='sunroom-stage'] .ss-shadows {
+            position: absolute;
+            inset: 0;
+          }
+
+          [data-composition-id='sunroom-stage'] .ss-paper {
+            background: var(--sr-paper, #f2ece7);
+            overflow: hidden;
+          }
+
+          /* sunlight from the window, top left, and a touch of shade at the foot */
+          [data-composition-id='sunroom-stage'] .ss-light {
+            background:
+              radial-gradient(
+                120% 70% at 18% 8%,
+                var(--sr-glow, rgba(255, 252, 246, 0.6)),
+                transparent 62%
+              ),
+              linear-gradient(
+                to bottom,
+                transparent 62%,
+                color-mix(in srgb, var(--sr-shade, #16130f) 7%, transparent) 100%
+              );
+          }
+
+          [data-composition-id='sunroom-stage'] .ss-branch {
+            position: absolute;
+            left: 0;
+            top: 0;
+            overflow: visible;
+            opacity: calc(var(--ss-alpha, 0.15) * var(--sr-shade-strength, 1));
+          }
+
+          [data-composition-id='sunroom-stage'] .ss-leaf {
+            fill: var(--sr-shade, #16130f);
+          }
+
+          [data-composition-id='sunroom-stage'] .ss-stem {
+            fill: none;
+            stroke: var(--sr-shade, #16130f);
+            stroke-linecap: round;
+          }
+
+          /* the footage's own look when the speaker fills the frame: warm, darker at the edges */
+          [data-composition-id='sunroom-stage'] .ss-grade {
+            background:
+              radial-gradient(
+                ellipse 88% 66% at 50% 40%,
+                rgba(24, 12, 4, 0) 52%,
+                rgba(24, 12, 4, 0.5) 100%
+              ),
+              linear-gradient(to bottom, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, 0.22) 100%),
+              rgba(255, 150, 70, 0.05);
+            opacity: 0;
+          }
+
+          [data-composition-id='sunroom-stage'] .ss-stage[data-mode='full'] .ss-paper {
+            opacity: 0;
+          }
+
+          [data-composition-id='sunroom-stage'] .ss-stage[data-mode='full'] .ss-grade {
+            opacity: var(--ss-vignette, 0.7);
+          }
+
+          [data-composition-id='sunroom-stage'] .ss-stage[data-mode='split'] .ss-paper {
+            clip-path: var(--ss-split-clip, inset(0 0 48% 0));
+          }
+        </style>
+
+        <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+        <script>
+          ;(function () {
+            'use strict'
+
+            var root = document.querySelector('[data-composition-id="sunroom-stage"]')
+            var stage = root.querySelector('.ss-stage')
+            var shadows = root.querySelector('.ss-shadows')
+            var vars =
+              window.__hyperframes && window.__hyperframes.getVariables
+                ? window.__hyperframes.getVariables()
+                : {}
+
+            function num(value, fallback, min, max) {
+              var n = Number(value)
+              if (!isFinite(n)) n = fallback
+              return Math.max(min, Math.min(max, n))
+            }
+
+            var length = num(vars.length, 10, 0.5, 3600)
+            var cardTop = num(vars.card, 0.52, 0.3, 0.8)
+
+            // Sizes come from the host box, measured once at mount (1080×1920 as a fallback).
+            var box = root.getBoundingClientRect()
+            var W = Math.max(1, Math.round(box.width) || 1080)
+            var H = Math.max(1, Math.round(box.height) || 1920)
+            var k = W / 1080
+            var r = Math.round(num(vars.radius, 60, 0, 160) * k)
+
+            root.style.setProperty('--ss-vignette', String(num(vars.vignette, 0.7, 0, 1)))
+
+            // SPLIT: the paper keeps the top of the frame and the two fillets above the card's
+            // rounded corners, so the footage shows below it as a card.
+            var top = Math.round(H * cardTop)
+            var split =
+              'path("M0 0 H' +
+              W +
+              ' V' +
+              (top + r) +
+              ' A' +
+              r +
+              ' ' +
+              r +
+              ' 0 0 0 ' +
+              (W - r) +
+              ' ' +
+              top +
+              ' H' +
+              r +
+              ' A' +
+              r +
+              ' ' +
+              r +
+              ' 0 0 0 0 ' +
+              (top + r) +
+              ' Z")'
+            root.style.setProperty('--ss-split-clip', split)
+
+            // LEAF SHADOWS: three branches of a window plant, laid out by a seeded LCG.
+            var state = 20240917
+            function next() {
+              state = (Math.imul(1664525, state) + 1013904223) >>> 0
+              return state / 4294967296
+            }
+            function leaf(len, wid) {
+              return (
+                'M0 0 C' +
+                (len * 0.28).toFixed(1) +
+                ' ' +
+                (-wid).toFixed(1) +
+                ' ' +
+                (len * 0.72).toFixed(1) +
+                ' ' +
+                (-wid * 0.9).toFixed(1) +
+                ' ' +
+                len.toFixed(1) +
+                ' 0 C' +
+                (len * 0.72).toFixed(1) +
+                ' ' +
+                (wid * 0.9).toFixed(1) +
+                ' ' +
+                (len * 0.28).toFixed(1) +
+                ' ' +
+                wid.toFixed(1) +
+                ' 0 0 Z'
+              )
+            }
+            // a branch: a stem from (x0, y0) bending through (cx, cy) to (x1, y1), leaves on both sides
+            function branch(spec) {
+              var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+              svg.setAttribute('class', 'ss-branch')
+              svg.setAttribute('width', String(W))
+              svg.setAttribute('height', String(H))
+              svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H)
+              svg.style.filter = 'blur(' + Math.round(spec.blur * k) + 'px)'
+              svg.style.setProperty('--ss-alpha', String(spec.alpha))
+              var parts = []
+              var x0 = spec.from[0] * W,
+                y0 = spec.from[1] * H
+              var cx = spec.bend[0] * W,
+                cy = spec.bend[1] * H
+              var x1 = spec.to[0] * W,
+                y1 = spec.to[1] * H
+              parts.push(
+                '<path d="M' +
+                  x0.toFixed(1) +
+                  ' ' +
+                  y0.toFixed(1) +
+                  ' Q' +
+                  cx.toFixed(1) +
+                  ' ' +
+                  cy.toFixed(1) +
+                  ' ' +
+                  x1.toFixed(1) +
+                  ' ' +
+                  y1.toFixed(1) +
+                  '" class="ss-stem" stroke-width="' +
+                  (6 * k).toFixed(1) +
+                  '"/>'
+              )
+              for (var i = 0; i < spec.count; i += 1) {
+                var t = 0.08 + (0.9 * (i + 0.5)) / spec.count
+                var u = 1 - t
+                var px = u * u * x0 + 2 * u * t * cx + t * t * x1
+                var py = u * u * y0 + 2 * u * t * cy + t * t * y1
+                var dx = 2 * u * (cx - x0) + 2 * t * (x1 - cx)
+                var dy = 2 * u * (cy - y0) + 2 * t * (y1 - cy)
+                var along = (Math.atan2(dy, dx) * 180) / Math.PI
+                var side = i % 2 === 0 ? 1 : -1
+                var angle = along + side * (32 + next() * 26)
+                var len = (spec.size * (0.75 + next() * 0.5) + 30 * t) * k
+                var wid = len * (0.26 + next() * 0.1)
+                parts.push(
+                  '<path transform="translate(' +
+                    px.toFixed(1) +
+                    ' ' +
+                    py.toFixed(1) +
+                    ') rotate(' +
+                    angle.toFixed(1) +
+                    ')" d="' +
+                    leaf(len, wid) +
+                    '" class="ss-leaf"/>'
+                )
+              }
+              svg.innerHTML = parts.join('')
+              shadows.appendChild(svg)
+              return svg
+            }
+
+            var specs = [
+              // top right, in focus: the branch the split layout shows above the card
+              {
+                from: [1.06, 0.03],
+                bend: [0.78, 0.16],
+                to: [0.42, 0.33],
+                count: 13,
+                size: 118,
+                blur: 9,
+                alpha: 0.17,
+                origin: [1, 0.03],
+                sway: [16, -10, 2.2],
+                period: 5.6
+              },
+              // bottom left, softer
+              {
+                from: [-0.08, 0.98],
+                bend: [0.16, 0.8],
+                to: [0.42, 0.7],
+                count: 10,
+                size: 112,
+                blur: 13,
+                alpha: 0.14,
+                origin: [0, 0.98],
+                sway: [14, 8, -2],
+                period: 6.4
+              },
+              // a far, out-of-focus spray across the middle right
+              {
+                from: [1.08, 0.5],
+                bend: [0.86, 0.43],
+                to: [0.6, 0.38],
+                count: 8,
+                size: 150,
+                blur: 26,
+                alpha: 0.1,
+                origin: [1, 0.5],
+                sway: [22, -12, 1.4],
+                period: 7.2
+              }
+            ]
+            var branches = specs.map(branch)
+
+            // THE LAYOUT OVER TIME. Each segment is [mode, start, end]; time no beat covers is full.
+            var modes = { f: 'full', s: 'split', g: 'graphic' }
+            var segs = String(vars.beats || '')
+              .split(';')
+              .map(function (part) {
+                var bits = part.trim().split(':')
+                var mode = modes[bits[0]]
+                var s = Number(bits[1])
+                var e = Number(bits[2])
+                return mode && isFinite(s) && isFinite(e) && e > s ? [mode, s, e] : null
+              })
+              .filter(Boolean)
+              .sort(function (a, b) {
+                return a[1] - b[1]
+              })
+            // the mode at every change, gaps back to full
+            var changes = []
+            var cursor = 0
+            segs.forEach(function (seg) {
+              if (seg[1] > cursor + 0.001) changes.push(['full', cursor])
+              changes.push([seg[0], seg[1]])
+              cursor = Math.max(cursor, seg[2])
+            })
+            if (cursor < length) changes.push(['full', cursor])
+
+            var tl = gsap.timeline({ paused: true })
+            // anchor: the stage spans its whole window, so holds keep tl.time() honest
+            tl.to({ t: 0 }, { t: 1, duration: length, ease: 'none' }, 0)
+
+            var first = changes.length && changes[0][1] <= 0.001 ? changes[0][0] : 'full'
+            gsap.set(stage, { attr: { 'data-mode': first } })
+            var last = first
+            changes.forEach(function (c) {
+              if (c[1] <= 0.001 || c[0] === last) return
+              tl.set(stage, { attr: { 'data-mode': c[0] } }, c[1])
+              last = c[0]
+            })
+
+            // the shadows drift: each branch sways about where it enters the frame
+            branches.forEach(function (svg, i) {
+              var spec = specs[i]
+              var reps = Math.max(1, Math.ceil(length / spec.period) + 1)
+              tl.fromTo(
+                svg,
+                {
+                  x: 0,
+                  y: 0,
+                  rotation: 0,
+                  transformOrigin:
+                    Math.round(spec.origin[0] * W) + 'px ' + Math.round(spec.origin[1] * H) + 'px'
+                },
+                {
+                  x: spec.sway[0] * k,
+                  y: spec.sway[1] * k,
+                  rotation: spec.sway[2],
+                  duration: spec.period,
+                  ease: 'sine.inOut',
+                  yoyo: true,
+                  repeat: reps
+                },
+                (i * spec.period) / 3
+              )
+            })
+
+            window.__timelines['sunroom-stage'] = tl
+          })()
+        </script>
+      </div>
+    </template>
+  </body>
+</html>

@@ -445,8 +445,17 @@ export type CaptionGroup = {
   text: string
   start: number
   end: number
-  words: { text: string; start: number; end: number }[]
+  /** `em`: a word the look draws in its emphasis face (Sunroom's italic serif). */
+  words: { text: string; start: number; end: number; em?: boolean }[]
+  /** The tutorial short's layout under the line, which places and colors it (Sunroom). */
+  layout?: ShortLayout
 }
+
+/** How a tutorial short shows the speaker on a beat (src/shared/short.ts). */
+export type ShortLayout = 'full' | 'split' | 'graphic'
+
+/** A word or short phrase the captions draw in the look's emphasis face; `at` picks one time it is said. */
+export type CaptionEmphasis = { text: string; at?: number }
 
 /** How the caption engine lays a line out: centered lines today, or words scattered with a hero. */
 export type CaptionLayout = 'line' | 'scatter'
@@ -476,11 +485,22 @@ export type CaptionConfig = {
   clean: boolean
   /** A custom look on top of the style; anything set here wins over the style's own value. */
   overrides?: CaptionOverrides
+  /** Words drawn in the look's emphasis face, for looks that have one (Sunroom). */
+  emphasis?: CaptionEmphasis[]
 }
 
 /** How caption lines come in and how the spoken word is marked (the styles' animations). */
 export type CaptionAnimation =
-  'fade' | 'slide' | 'pop' | 'karaoke' | 'highlight' | 'typewriter' | 'slam' | 'glow' | 'bounce'
+  | 'fade'
+  | 'slide'
+  | 'pop'
+  | 'karaoke'
+  | 'highlight'
+  | 'typewriter'
+  | 'slam'
+  | 'glow'
+  | 'bounce'
+  | 'blur'
 
 /** Caption look overrides. Colors are CSS colors; px are for a 1080 px short side, like the styles. */
 export type CaptionOverrides = {

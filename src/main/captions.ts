@@ -17,9 +17,12 @@ import {
   cleanCaptionConfig,
   cleanWords,
   familyCssUrls,
+  followLayout,
   googleFontUrl,
   groupWords,
   keepFontSubsets,
+  layoutBreaks,
+  markEmphasis,
   parseFontFaces,
   parseGoogleFontsInput,
   placeWords,
@@ -49,6 +52,7 @@ import {
 } from './html'
 import { AUDIO_EXT, VIDEO_EXT, lucaDir } from './projects'
 import { bundledResourcesDir } from './resources'
+import { readShortPlan } from './short'
 import { checkpoint } from './versions'
 
 const HOST_ID = CAPTIONS_ID
@@ -98,12 +102,17 @@ export function hasTranscript(dir: string): boolean {
   return readWords(dir).length > 0
 }
 
-/** Changes exactly when the words' timing on the timeline can: the speech clips or the transcript. */
+/**
+ * Changes exactly when the words' timing on the timeline can: the speech clips or the transcript,
+ * or a tutorial short's beats, which break and place the lines.
+ */
 function speechPrint(p: Project, html: string): string {
   const f = join(p.dir, 'transcript.json')
+  const plan = readShortPlan(p.dir)
   return createHash('sha1')
     .update(JSON.stringify(speechClips(html, p.source)))
     .update(existsSync(f) ? readFileSync(f) : '')
+    .update(plan ? JSON.stringify([plan.beats, plan.face]) : '')
     .digest('hex')
     .slice(0, 16)
 }
@@ -208,6 +217,11 @@ export function captionState(p: Project): CaptionState {
 
 export function captionWords(p: Project): TimedWord[] {
   return placedWords(p, readIndex(p.dir)).words
+}
+
+/** What is said, word by word in composition seconds, fillers and stutters dropped. */
+export function spokenWords(p: Project): TimedWord[] {
+  return cleanWords(placeWords(readWords(p.dir), speechClips(readIndex(p.dir), p.source)))
 }
 
 // ------------------------------------------------------------------ fonts in index.html
@@ -541,18 +555,27 @@ function buildCaptions(
         : 'There is no transcript to caption yet. Transcribe the video first.'
     )
   const d = dims(html)
-  const groups = groupWords(cleanWords(placed.words, cfg.clean), {
-    wordsPerLine: cfg.wordsPerLine,
-    portrait: d.h > d.w
-  })
-  if (!groups.length && !empty) throw new Error('The transcript has no words to show as captions.')
   const host = findTagById(html, HOST_ID)
   const start = placed.duration ? placed.start : Number(host?.attrs['data-start'] ?? 0) || 0
+  // a look that follows a tutorial short's layout breaks lines at its cuts and places them per beat
+  const look = captionLook(cfg)
+  const plan = look.layouts ? readShortPlan(p.dir) : null
+  const words = cleanWords(placed.words, cfg.clean)
+  const style = captionStyle(cfg.style)
+  let groups = groupWords(look.emphasis ? markEmphasis(words, cfg.emphasis) : words, {
+    wordsPerLine: cfg.wordsPerLine,
+    portrait: d.h > d.w,
+    ...(style.line && cfg.wordsPerLine === style.words ? { limit: style.line } : {}),
+    ...(look.layouts ? { balance: true } : {}),
+    ...(plan ? { breaks: layoutBreaks(plan.beats, start) } : {})
+  })
+  if (plan) groups = followLayout(groups, plan.beats, start)
+  if (!groups.length && !empty) throw new Error('The transcript has no words to show as captions.')
   const duration = round(placed.duration || Number(host?.attrs['data-duration'] ?? 0) || d.duration)
   // the captions file declares its own fonts as well: HyperFrames checks each file on its own,
   // and lint reports a font only index.html declares (one that comes with Luca, or from Google
   // Fonts) as missing in it, an error Luca would be told to fix in a file it must not edit
-  const families = [cfg.font, captionLook(cfg).hero?.font].map((f) => f?.toLowerCase())
+  const families = [cfg.font, look.hero?.font, look.emphasis?.font].map((f) => f?.toLowerCase())
   const own = readFontFiles(p.dir).filter((f) => families.includes(f.family.toLowerCase()))
   const comp = captionsComposition(
     groups,
@@ -588,10 +611,11 @@ export async function applyCaptions(
 ): Promise<{ lines: number; config: CaptionConfig }> {
   const cfg = cleanCaptionConfig(config)
   // a font that comes with Luca goes into the project before the captions use it (the scatter
-  // hero's display font too)
+  // hero's display font and the emphasis face too)
   installBundledFont(p.dir, cfg.font)
-  const heroFont = captionLook(cfg).hero?.font
-  if (heroFont) installBundledFont(p.dir, heroFont)
+  const look = captionLook(cfg)
+  for (const font of [look.hero?.font, look.emphasis?.font])
+    if (font) installBundledFont(p.dir, font)
   const indexFile = join(p.dir, 'index.html')
   const html = readFileSync(indexFile, 'utf8')
   const built = buildCaptions(p, cfg, html)

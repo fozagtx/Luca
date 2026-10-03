@@ -23,7 +23,8 @@ import {
   captionStyle,
   cleanWords,
   configFor,
-  groupWords
+  groupWords,
+  markEmphasis
 } from '../../../shared/captions'
 import { Button } from '../../components/ui/button'
 import { GenerateButton } from '../../components/ui/generate-button'
@@ -135,7 +136,14 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
   const groups = useMemo(() => {
     if (!cfg) return []
     const src = words && words.length ? words : SAMPLE_WORDS
-    return groupWords(cleanWords(src, cfg.clean), { wordsPerLine: cfg.wordsPerLine, portrait })
+    // as the captions will be: the look's emphasis words and its own line length
+    const s = captionStyle(cfg.style)
+    const cleaned = cleanWords(src, cfg.clean)
+    return groupWords(s.emphasis ? markEmphasis(cleaned, cfg.emphasis) : cleaned, {
+      wordsPerLine: cfg.wordsPerLine,
+      portrait,
+      ...(s.line && cfg.wordsPerLine === s.words ? { limit: s.line } : {})
+    })
   }, [words, cfg, portrait])
   const sample = useSampleGroups(groups, 8)
   // the gallery shows each style with its own defaults, over the same sample lines
@@ -521,7 +529,9 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
           <span className="text-[11px] text-text-3">
             {look.anim === 'fade' || look.anim === 'slide' || look.anim === 'bounce'
               ? 'This style animates whole lines'
-              : 'Colors the word being spoken'}
+              : look.anim === 'blur'
+                ? 'Words blur into focus as they are said'
+                : 'Colors the word being spoken'}
           </span>
         </Row>
 
