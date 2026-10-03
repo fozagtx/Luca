@@ -85,6 +85,18 @@ function flush(): void {
   for (const l of listeners) l(e)
 }
 
+/**
+ * Reload the preview for something only it sees (an edit-friendly copy of a clip is ready). Like
+ * any change it keeps the playhead and whether it was playing.
+ */
+export function refreshPreview(path: string): void {
+  if (!watcher) return
+  version += 1
+  const e: ProjectChanged = { paths: [path], version, composition: true }
+  broadcast(Channels.projectChanged, e)
+  for (const l of listeners) l(e)
+}
+
 export function stopWatching(): void {
   if (timer) clearTimeout(timer)
   timer = null
