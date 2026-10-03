@@ -9,24 +9,28 @@ let pending = new Set<string>()
 let timer: NodeJS.Timeout | null = null
 let listeners: ((e: ProjectChanged) => void)[] = []
 
+/** Never read by the preview or the timeline: the agent's frame grabs (`snapshot`) among them. */
 const IGNORED_TOP = new Set([
   '.hyperframes',
   '.thumbnails',
   '.waveform-cache',
   'media',
   'renders',
+  'snapshots',
   '.git',
   'node_modules'
 ])
 
 /**
  * What Luca and the agent keep beside the composition that the preview never loads: Luca's own
- * state, the cut list, remocn wrapper sources (their render lands in index.html) and project
- * notes. Changing only these doesn't need a preview reload or a timeline re-read.
+ * state, the cut list and the words (transcript.json), remocn wrapper sources (their render lands
+ * in index.html) and project notes. Changing only these doesn't need a preview reload or a
+ * timeline re-read.
  */
 const METADATA_TOP = new Set(['.luca', '.claude', 'remocn'])
 const METADATA_FILES = new Set([
   'edl.json',
+  'transcript.json',
   'CLAUDE.md',
   'AGENTS.md',
   'meta.json',
