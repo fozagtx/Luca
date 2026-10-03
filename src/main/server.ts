@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync, type ReadStream } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
@@ -328,7 +328,7 @@ export class LucaServer {
         res.end()
         return
       }
-      createReadStream(abs, { start, end }).pipe(res)
+      stream(createReadStream(abs, { start, end }), res)
       return
     }
 
@@ -338,6 +338,19 @@ export class LucaServer {
       res.end()
       return
     }
-    createReadStream(abs).pipe(res)
+    stream(createReadStream(abs), res)
   }
+}
+
+/**
+ * Send a file's bytes. A file replaced or removed between the stat and the read (the agent
+ * rewriting it, a clean edit swapping the master) fails the read: that ends this response instead
+ * of throwing in the main process.
+ */
+function stream(file: ReadStream, res: ServerResponse): void {
+  file.on('error', () => {
+    if (res.headersSent) res.destroy()
+    else res.writeHead(404).end('Not found')
+  })
+  file.pipe(res)
 }
