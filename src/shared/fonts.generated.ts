@@ -71,6 +71,14 @@ export const BUNDLED_FONTS: { family: string; note: string; faces: ProjectFontFa
     faces: [{ file: 'HelveticaRounded-Bold.otf', weight: 700, italic: false }]
   },
   {
+    family: 'Instrument Serif',
+    note: 'Condensed display serif; its italic is the Sunroom short look',
+    faces: [
+      { file: 'InstrumentSerif-Regular.ttf', weight: 400, italic: false },
+      { file: 'InstrumentSerif-Italic.ttf', weight: 400, italic: true }
+    ]
+  },
+  {
     family: 'Loki Cola',
     note: 'Spencerian soda-script classic',
     faces: [{ file: 'LokiCola.ttf', weight: 400, italic: false }]
