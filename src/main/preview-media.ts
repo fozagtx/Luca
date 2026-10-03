@@ -54,7 +54,7 @@ function copyName(projectDir: string, rel: string): string | null {
   return `${basename(rel, extname(rel))}-${hash}.mp4`
 }
 
-/** A media src as a project-relative path, or null for a URL, a data: src or outside the project. */
+/** A media src as a project-relative path; null for a URL, a data: src or outside the project. */
 function projectFile(projectDir: string, htmlRel: string, src: string): string | null {
   if (!src || /^[a-z][\w+.-]*:/i.test(src) || src.startsWith('//') || src.startsWith('/'))
     return null

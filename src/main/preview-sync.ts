@@ -32,13 +32,14 @@ function previewSync(): void {
   if (win.__lucaSync) return
   win.__lucaSync = true
 
-  /** Below this the picture is in step; it is nudged once it is this far out, and seeked past BIG. */
+  /** Under IN_STEP the picture is in step; it is nudged past OUT_OF_STEP and seeked past BIG. */
   const IN_STEP = 0.006
   const OUT_OF_STEP = 0.02
   const BIG = 0.25
   /** A gap closes in about half a second: 40 ms behind plays 8% faster, never more than 15%. */
   const GAIN = 2
   const MAX_NUDGE = 0.15
+  const HEARD_NUDGE = 0.05
   /** Seeking a playing video freezes it until the seek lands: only worth it when that is quick. */
   const QUICK_SEEK = 0.2
 
@@ -155,8 +156,10 @@ function previewSync(): void {
         setNudge(v, s, 1)
         continue
       }
-      // behind (off < 0) plays faster, ahead plays slower; steps of 0.5% keep rate changes rare
-      const n = 1 - Math.max(-MAX_NUDGE, Math.min(MAX_NUDGE, off * GAIN))
+      // behind (off < 0) plays faster, ahead plays slower; steps of 0.5% keep rate changes rare;
+      // a video that is heard is held to 5%, where the speed change can't be heard
+      const most = v.muted || v.volume === 0 ? MAX_NUDGE : HEARD_NUDGE
+      const n = 1 - Math.max(-most, Math.min(most, off * GAIN))
       setNudge(v, s, Math.round(n * 200) / 200)
     }
   }
