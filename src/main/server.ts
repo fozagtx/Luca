@@ -71,7 +71,9 @@ export function prepareCompositionHtml(
 
 /**
  * The page with GSAP CDN scripts pointed at Luca's copy (an integrity hash for another version
- * would refuse it) and each `<video>`/`<audio>` src that `swap` answers for replaced.
+ * would refuse it) and each `<video>`/`<audio>` src that `swap` answers for replaced. The file it
+ * names stays in `data-luca-src`, so a script that finds the footage by its file (the Sunroom
+ * layout, short.ts) still finds it in the preview.
  */
 function rewriteSrcs(html: string, swap?: (src: string) => string | null): string {
   let out = ''
@@ -90,7 +92,7 @@ function rewriteSrcs(html: string, swap?: (src: string) => string | null): strin
         })
     } else if ((tag.name === 'video' || tag.name === 'audio') && swap) {
       const to = swap(src)
-      if (to) raw = setAttrs(tag, { src: to })
+      if (to) raw = setAttrs(tag, { src: to, 'data-luca-src': src })
     }
     if (raw === null) continue
     out += html.slice(at, tag.start) + raw

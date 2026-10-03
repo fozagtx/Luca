@@ -7,7 +7,8 @@ function selectorFor(el: Element): string {
     if (
       a.name.startsWith('data-') &&
       a.value &&
-      !/^data-(start|duration|end|track-index)$/.test(a.name)
+      // data-luca-src is the preview's (server.ts), never in the composition's files
+      !/^data-(start|duration|end|track-index|luca-src)$/.test(a.name)
     ) {
       return `${el.tagName.toLowerCase()}[${a.name}="${a.value.replace(/"/g, '\\"')}"]`
     }

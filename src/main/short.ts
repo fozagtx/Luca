@@ -208,7 +208,11 @@ function layoutScript(
   sources: string[],
   states: ReturnType<typeof speakerStates>
 ): string {
-  const selector = sources.map((s) => `video[src="${s.replace(/"/g, '\\"')}"]`).join(', ')
+  // by its file, or in the preview by the file an edit-friendly copy stands in for (server.ts)
+  const selector = sources
+    .map((s) => s.replace(/"/g, '\\"'))
+    .map((s) => `video[src="${s}"], video[data-luca-src="${s}"]`)
+    .join(', ')
   const rows = states.map((s) => [s.start, s.duration, s.x, s.y, s.scale, s.to, s.origin])
   return `<script id="${SCRIPT_ID}">
       // Sunroom: where the speaker is on every beat (filling the frame, in the card under the
