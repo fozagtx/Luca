@@ -120,9 +120,18 @@ export async function transcribe(
   const expected = Math.max(8, duration * 0.3)
   const started = Date.now()
   let t = queued
+  let missed = 0
   while (t.status !== 'completed' && t.status !== 'error') {
     await new Promise((r) => setTimeout(r, 1200))
-    t = await client.transcripts.get(queued.id)
+    try {
+      t = await client.transcripts.get(queued.id)
+      missed = 0
+    } catch (err) {
+      // the transcript keeps going on their side: a Wi-Fi blip or a busy gateway on one of these
+      // checks (one every 1.2 s, for minutes) doesn't lose it, a minute without an answer does
+      if (++missed >= 50) throw err
+      continue
+    }
     const elapsed = (Date.now() - started) / 1000
     const p = t.status === 'queued' ? 0.04 : 0.95 * (1 - Math.exp(-elapsed / expected))
     report({ stage: 'transcribing', progress: p, estimated: true })
