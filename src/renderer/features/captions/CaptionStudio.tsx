@@ -530,7 +530,7 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
             {look.anim === 'fade' || look.anim === 'slide' || look.anim === 'bounce'
               ? 'This style animates whole lines'
               : look.anim === 'blur'
-                ? 'Words blur into focus as they are said'
+                ? 'Lines blur into focus as they are said'
                 : 'Colors the word being spoken'}
           </span>
         </Row>

@@ -253,7 +253,7 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     id: 'sunroom',
     name: 'Sunroom',
     blurb:
-      'Bold sans, key words in italic serif, blurring in word by word. In a tutorial short it follows the layout: white over you, black on the paper.',
+      'Bold sans, key words in italic serif, lines blurring into focus. In a tutorial short it follows the layout: white over you, ink on the paper.',
     font: 'Inter',
     weight: 700,
     size: 74,
@@ -314,7 +314,7 @@ export const CAPTION_ANIMATIONS: { id: CaptionAnim; blurb: string }[] = [
   { id: 'slam', blurb: 'words slam in big, one at a time' },
   { id: 'glow', blurb: 'lines fade in; the spoken word lights up in the highlight color' },
   { id: 'bounce', blurb: 'lines bounce up' },
-  { id: 'blur', blurb: 'words blur into focus one at a time' }
+  { id: 'blur', blurb: 'lines blur into focus; an emphasis row comes in on its own word' }
 ]
 
 export const CAPTION_SIZES: Record<CaptionConfig['size'], number> = { sm: 0.82, md: 1, lg: 1.22 }

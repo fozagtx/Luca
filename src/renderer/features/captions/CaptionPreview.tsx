@@ -66,6 +66,12 @@ export function CaptionPreview({
     textAlign: 'center'
   }
   const activeWord = g ? g.words.reduce((a, w, j) => (t >= w.start ? j : a), -1) : -1
+  // the blur look brings a line in by rows: each row with its first word
+  const rowStart = (j: number): number => {
+    let r = j
+    while (g && r > 0 && !!g.words[r].em === !!g.words[r - 1].em) r--
+    return r
+  }
   const scatter =
     look.layout === 'scatter' && g ? scatterLayout(g, look, cfg, frameDims(portrait), gi) : null
   const pos =
@@ -185,12 +191,14 @@ export function CaptionPreview({
                 case 'glow':
                   if (on) ws.color = accent
                   break
-                case 'blur':
+                case 'blur': {
+                  const shown = rowStart(j) === 0 || activeWord >= rowStart(j)
                   Object.assign(ws, {
-                    opacity: spoken ? 1 : 0,
-                    filter: spoken ? 'blur(0px)' : `blur(${Math.max(2, 14 * k)}px)`
+                    opacity: shown ? 1 : 0,
+                    filter: shown ? 'blur(0px)' : `blur(${Math.max(2, 14 * k)}px)`
                   })
                   break
+                }
               }
               return (
                 <span key={j}>

@@ -121,7 +121,14 @@ function scatterCss(look: CaptionLook, cfg: CaptionConfig, d: { w: number; h: nu
 }
 
 function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: number }): string {
-  const data = groups.map((g) => [g.start, g.end, g.words.map((w) => [w.start, w.end])])
+  // the blur look reveals a line by rows: an emphasis row and the words after it each come in
+  // whole, on their first word (a word at a time would leave half a line off center)
+  const data = groups.map((g) => [
+    g.start,
+    g.end,
+    g.words.map((w) => [w.start, w.end]),
+    g.words.map((w, j) => (j > 0 && !!w.em === !!g.words[j - 1].em ? 0 : 1))
+  ])
   const opts = {
     anim: look.anim,
     layout: look.layout,
@@ -205,7 +212,12 @@ function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: nu
               break;
             case 'blur':
               tl.set(line, { opacity: 1 }, g[0]);
-              reveal(words, g, { opacity: 0, filter: 'blur(' + 14 * O.k + 'px)' }, { opacity: 1, filter: 'blur(0px)', duration: 0.24, ease: 'power2.out' });
+              g[3].forEach(function (first, j) {
+                if (!first) return;
+                var row = [];
+                for (var r = j; r < g[2].length && (r === j || !g[3][r]); r++) if (words[r]) row.push(words[r]);
+                if (row.length) tl.fromTo(row, { opacity: 0, filter: 'blur(' + 14 * O.k + 'px)' }, { opacity: 1, filter: 'blur(0px)', duration: 0.28, ease: 'power2.out' }, j === 0 ? g[0] : g[2][j][0]);
+              });
               break;
             default:
               tl.fromTo(line, { opacity: 0 }, { opacity: 1, duration: O.slow ? 0.45 : 0.25, ease: 'power2.out' }, g[0]);

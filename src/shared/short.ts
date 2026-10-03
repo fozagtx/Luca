@@ -464,7 +464,7 @@ This video is a Sunroom short: a person explains a tool or a how-to to camera, a
 - Paper: one flat paper color with soft leaf shadows drifting across it, like dappled window light. The stage draws it; never draw a background of your own.
 - Type: a bold, tightly set sans for captions and UI words; a large italic serif for headlines and the one key word of a sentence; a monospace for small labels, file names and code.
 - Graphics: flat, clean, light UI mock-ups (cards with thin borders and soft shadows, pills, a phone, a browser, a terminal, an editor), one accent color for badges, playheads, progress bars, check marks and stickers. No gradients on UI, no glows, no 3D, no emoji.
-- Captions: 1–4 words at a time, each word blurring into focus as it is said; the key word in the italic serif on its own row.
+- Captions: 1–4 words at a time, each line blurring into focus as it is said; the key word in the italic serif on its own row, coming in on its own word.
 
 ## The palette is a theme
 - short_layout's palette sets the colors as tokens, which the paper, every graphic and the captions read. Presets: ${PALETTES.map((p) => `${p.id} (${p.blurb.toLowerCase()})`).join('; ')}. Or pass your own hex colors on top of one: paper, ink (text on the paper), accent, card (UI surfaces).
