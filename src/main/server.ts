@@ -1,18 +1,27 @@
 import { randomBytes } from 'node:crypto'
-import { createReadStream, readFileSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
-import { extname, join, normalize, resolve, sep } from 'node:path'
+import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 
 const RUNTIME_PATH = '/hf/runtime.js'
 let runtimeFile: string | null = null
+/**
+ * The preview runtime that plays the footage, its sound and the animations on one clock. The
+ * package's exports map hides dist/ (resolving the file itself throws), but its package.json is
+ * exported, so the file is found beside it. Without it the player only moves the animations: the
+ * footage stands still and nothing is heard.
+ */
 function hyperframesRuntime(): string | null {
   if (runtimeFile) return runtimeFile
   try {
-    runtimeFile = require.resolve('@hyperframes/core/dist/hyperframe.runtime.iife.js')
+    const pkg = require.resolve('@hyperframes/core/package.json')
+    const file = join(dirname(pkg), 'dist', 'hyperframe.runtime.iife.js')
+    runtimeFile = existsSync(file) ? file : null
   } catch {
     runtimeFile = null
   }
+  if (!runtimeFile) console.warn('[luca] the preview runtime is missing: footage will not play')
   return runtimeFile
 }
 
