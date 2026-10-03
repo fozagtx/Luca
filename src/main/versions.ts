@@ -87,9 +87,16 @@ async function ensureRepoNow(dir: string): Promise<void> {
   if (st.files.length > 0) await g.commit(fresh ? 'Import' : 'Edit: changes made outside Luca')
 }
 
-/** Commit only when something changed. Returns the new sha or null. */
+/**
+ * Commit only when something changed. Returns the new sha, or null when nothing changed or git
+ * couldn't save it (e.g. a Mac without the developer tools git needs): the change itself is made
+ * either way, so saving its version never fails it.
+ */
 export function checkpoint(dir: string, message: string): Promise<string | null> {
-  return serial(dir, () => checkpointNow(dir, message))
+  return serial(dir, () => checkpointNow(dir, message)).catch((err: unknown) => {
+    console.warn('[luca] checkpoint failed', err)
+    return null
+  })
 }
 
 async function checkpointNow(dir: string, message: string): Promise<string | null> {

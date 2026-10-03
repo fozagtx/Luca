@@ -145,7 +145,8 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     stopWatching()
     flushPosterRefresh()
     const p = openProject(dir)
-    await ensureRepo(p.dir)
+    // versions need a working git; without one the project still opens and edits, unversioned
+    await ensureRepo(p.dir).catch(warnCheckpoint)
     setCurrentProject(p)
     watchProject(p.dir)
     broadcast(Channels.projectOpened, p)
