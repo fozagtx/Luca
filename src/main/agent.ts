@@ -1,6 +1,7 @@
 import {
   query,
   type CanUseTool,
+  type HookCallback,
   type Options,
   type PermissionResult,
   type Query,
@@ -86,6 +87,9 @@ const DISALLOWED_TOOLS = [
   'mcp__playwright__*',
   'mcp__chrome-devtools__*'
 ]
+
+/** The tools that change files: never in media/ or renders/, never outside the project. */
+const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
 
 type Pending = {
   resolve: (r: PermissionResult) => void
@@ -349,6 +353,7 @@ export class ProjectAgent {
       disallowedTools: DISALLOWED_TOOLS,
       mcpServers: { luca: lucaMcpServer(this.project.dir) },
       canUseTool: this.canUseTool,
+      hooks: { PreToolUse: [{ matcher: EDIT_TOOLS.join('|'), hooks: [this.guardEdits] }] },
       includePartialMessages: true,
       abortController: this.abort,
       resume: this.sessionId ?? undefined,
@@ -593,21 +598,8 @@ export class ProjectAgent {
         }
       }
     }
-    // Never let edits escape the project folder.
-    const target = input.file_path ?? input.path ?? input.notebook_path
-    if (
-      typeof target === 'string' &&
-      ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(toolName)
-    ) {
-      const abs = resolve(this.project.dir, target)
-      if (!abs.startsWith(resolve(this.project.dir) + sep)) {
-        return { behavior: 'deny', message: 'Luca only allows edits inside the project folder.' }
-      }
-      const rel = abs.slice(resolve(this.project.dir).length + 1)
-      if (rel.startsWith(`media${sep}`) || rel.startsWith(`renders${sep}`)) {
-        return { behavior: 'deny', message: 'media/ and renders/ are immutable in Luca.' }
-      }
-    }
+    const refused = this.editRefusal(toolName, input)
+    if (refused) return { behavior: 'deny', message: refused }
     if (getSettings().approvals === 'full') return { behavior: 'allow', updatedInput: input }
     // "Always allow" remembers a command by its first word, so it is only offered (and only
     // honoured) for plain read-only commands; anything that could change, delete, download or
@@ -635,6 +627,40 @@ export class ProjectAgent {
     return new Promise<PermissionResult>((resolvePerm) => {
       this.pending.set(id, { resolve: resolvePerm, rule })
     })
+  }
+
+  /** Why an edit can't happen, or null: edits stay in the project, out of media/ and renders/. */
+  private editRefusal(toolName: string, input: Record<string, unknown>): string | null {
+    const target = input.file_path ?? input.path ?? input.notebook_path
+    if (typeof target !== 'string' || !EDIT_TOOLS.includes(toolName)) return null
+    const abs = resolve(this.project.dir, target)
+    if (!abs.startsWith(resolve(this.project.dir) + sep))
+      return 'Luca only allows edits inside the project folder.'
+    const rel = abs.slice(resolve(this.project.dir).length + 1)
+    if (rel.startsWith(`media${sep}`) || rel.startsWith(`renders${sep}`))
+      return 'media/ and renders/ are immutable in Luca.'
+    return null
+  }
+
+  /**
+   * Edit and Write are allowed outright (allowedTools), and Claude Code then never asks
+   * canUseTool about them, so the edit guard runs as a hook before every edit instead.
+   */
+  private guardEdits: HookCallback = async (input) => {
+    if (input.hook_event_name !== 'PreToolUse') return {}
+    const reason = this.editRefusal(
+      input.tool_name,
+      (input.tool_input ?? {}) as Record<string, unknown>
+    )
+    return reason
+      ? {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: reason
+          }
+        }
+      : {}
   }
 
   decide(id: string, decision: PermissionDecision): void {
