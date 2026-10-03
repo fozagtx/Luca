@@ -9,12 +9,14 @@ import {
   CAPTION_STYLES,
   captionStyle,
   configFor,
+  isBuiltinFont,
   type CaptionAnim
 } from '../shared/captions'
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
 import { DEFAULT_ASPECT, sizeOf } from '../shared/aspect'
 import { REFERENCE_STUDY } from '../shared/motion'
 import { BUNDLED_LUTS } from '../shared/luts'
+import { DEFAULT_FONTS, MAX_BEATS, PALETTES, SUNROOM } from '../shared/short'
 import type { CaptionConfig, Cut, CutReason } from '../shared/types'
 import { applyColor, footageVideos, removeColor } from './color'
 import {
@@ -23,7 +25,9 @@ import {
   applyCaptions,
   captionState,
   hasTranscript,
-  knownFont
+  knownFont,
+  refreshCaptions,
+  spokenWords
 } from './captions'
 import {
   cleanEditInTurn,
@@ -44,6 +48,7 @@ import { readProject, safeJoin, VIDEO_EXT } from './projects'
 import { studyReference } from './reference'
 import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
 import { addTreatment } from './treatments'
+import { applyShortLayout, readShortPlan, shortGuide, STAGE_ID } from './short'
 
 const text = (data: unknown): { content: { type: 'text'; text: string }[] } => ({
   content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data) }]
@@ -194,6 +199,9 @@ function heardResult(summary: Record<string, unknown>, h: Heard): { content: Con
 
 const SIZES: Record<CaptionConfig['size'], string> = { sm: 'small', md: 'medium', lg: 'large' }
 
+const hex = z.string().regex(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'a hex color like #6C5CE7')
+const paletteIds = PALETTES.map((p) => p.id) as [string, ...string[]]
+
 /** What the captions look like now, for Luca to put in its own words. */
 function describeCaptions(cfg: CaptionConfig, lines: number): string {
   const o = cfg.overrides
@@ -204,7 +212,8 @@ function describeCaptions(cfg: CaptionConfig, lines: number): string {
     `${cfg.position} of the frame`,
     cfg.uppercase ? 'all caps' : '',
     cfg.accent ? `highlight color ${cfg.accent}` : '',
-    o ? `customized: ${Object.keys(o).join(', ')}` : ''
+    o ? `customized: ${Object.keys(o).join(', ')}` : '',
+    cfg.emphasis?.length ? `emphasis on ${cfg.emphasis.map((e) => `“${e.text}”`).join(', ')}` : ''
   ]
   return parts.filter(Boolean).join(', ')
 }
@@ -238,7 +247,14 @@ function describe(i: LibraryItem, remocnReady: boolean): Record<string, unknown>
       ...(i.duration ? { durationSeconds: Math.round(i.duration * 10) / 10 } : {}),
       add: `npx ${HYPERFRAMES} add ${i.name} --json`
     }
-  if (i.source === 'luca') return { ...base, add: `treatment_add {"name":"${i.name}"}` }
+  if (i.source === 'luca')
+    return {
+      ...base,
+      add:
+        i.name === STAGE_ID
+          ? 'short_layout {"beats":[…],"face":{…},"palette":{…}}: the whole tutorial-short layout, not a single clip'
+          : `treatment_add {"name":"${i.name}"}`
+    }
   return {
     ...base,
     useFor: i.remocn?.useFor,
@@ -283,7 +299,10 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'so any text can use it offline. ' +
       'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it. ' +
       'treatment_add installs one of Luca’s own footage treatments (mosaic-reveal) into the project ' +
-      'and returns the snippet to place it over the footage.',
+      'and returns the snippet to place it over the footage. ' +
+      'short_layout lays out a tutorial short (the Sunroom template, .luca/TEMPLATE.md) from the beats ' +
+      'you choose: the speaker full frame, in a card under a graphic or off screen, the paper, a slot ' +
+      'for each graphic and its palette; call it again with only a palette or fonts to restyle.',
     tools: [
       tool(
         'transcribe',
@@ -428,6 +447,105 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         }
       ),
       tool(
+        'short_layout',
+        [
+          'Lay out a tutorial short in the Sunroom template (.luca/TEMPLATE.md) from the beats you choose, or restyle it. Each beat is a stretch of the video where the speaker fills the frame (full), sits in a card under a graphic on the paper (split) or is off screen for a graphic (graphic); layouts change with a hard cut. It moves and crops the speaker’s picture only (the footage and its sound play untouched), puts the paper over it, and makes one empty, timed slot per split and graphic beat (and per full beat with a sticker) for you to build its graphic in. Captions in the sunroom look follow the layout by themselves.',
+          'Calling it again replaces the layout; slots keep their graphics by beat number. Leave beats out to keep the ones on the timeline and change only the palette or fonts: everything recolors, nothing else moves.',
+          'Returns each slot with its file, its area, its time and what is said during it, or an error saying which beat to fix.'
+        ].join('\n'),
+        {
+          beats: z
+            .array(
+              z.object({
+                start: z
+                  .number()
+                  .min(0)
+                  .describe('seconds on the timeline, at the start of a word'),
+                end: z.number().min(0),
+                layout: z.enum(['full', 'split', 'graphic']),
+                caption: z
+                  .boolean()
+                  .optional()
+                  .describe('false on a graphic beat whose headline already says the words'),
+                zoom: z
+                  .number()
+                  .min(1)
+                  .max(1.6)
+                  .optional()
+                  .describe('full beats: punch-in, default 1.15 and 1 in turn'),
+                sticker: z
+                  .boolean()
+                  .optional()
+                  .describe('full beats: a slot for a sticker beside the head'),
+                note: z.string().max(140).optional().describe('what its graphic will show')
+              })
+            )
+            .min(1)
+            .max(MAX_BEATS)
+            .optional()
+            .describe(
+              'every beat in time order, back to back from 0 s to the end, each at least 0.5 s (1.5–4 s is the rhythm); leave out to keep the beats on the timeline'
+            ),
+          face: z
+            .object({
+              x: z.number().min(0).max(1).optional(),
+              y: z.number().min(0).max(1)
+            })
+            .optional()
+            .describe(
+              'where the center of the speaker’s face is in the frame, as fractions of its width and height (default 0.5, 0.4): read it off a frame of the footage'
+            ),
+          palette: z
+            .object({
+              preset: z
+                .enum(paletteIds)
+                .optional()
+                .describe(PALETTES.map((p) => `${p.id}: ${p.blurb}`).join('; ')),
+              paper: hex.optional().describe('the background paper'),
+              ink: hex.optional().describe('text on the paper'),
+              accent: hex.optional().describe('badges, buttons, playheads, checks: a brand color'),
+              card: hex.optional().describe('UI card surfaces')
+            })
+            .optional()
+            .describe(
+              `colors, as a theme every graphic and caption reads: from the user's brand, product or a color they name (default ${PALETTES[0].id}); hex colors go on top of the preset. Kept until you pass another.`
+            ),
+          fonts: z
+            .object({
+              sans: z.string().max(60).optional(),
+              serif: z.string().max(60).optional()
+            })
+            .optional()
+            .describe(
+              `the type pairing, a font that comes with Luca or a Google Fonts family (default ${DEFAULT_FONTS.sans} and ${DEFAULT_FONTS.serif}); keep a bold sans and an italic serif`
+            )
+        },
+        async (args) => {
+          const p = readProject(projectDir)
+          if (!p) return text({ ok: false, error: 'No project is open.' })
+          try {
+            // the theme's fonts go in the project first, so the preview and exports have them
+            const fonts = args.fonts ?? readShortPlan(p.dir)?.fonts
+            for (const family of [fonts?.serif ?? DEFAULT_FONTS.serif, fonts?.sans])
+              if (family && !isBuiltinFont(family)) await addFontByName(p.dir, family)
+            const res = applyShortLayout(p.dir, args, { words: spokenWords(p) })
+            if (!res.ok) return text({ ok: false, error: res.error })
+            // captions in the template's look take its sans; any others are re-timed to the cuts
+            const applied = captionState(p).applied
+            if (args.fonts?.sans && applied?.style === SUNROOM.captionStyle)
+              await applyCaptions(
+                p,
+                { ...applied, font: res.theme.fonts.sans },
+                { checkpoint: false }
+              )
+            else refreshCaptions(p)
+            return text({ ok: true, guide: shortGuide(res) })
+          } catch (err) {
+            return text({ ok: false, error: message(err) })
+          }
+        }
+      ),
+      tool(
         'broll_search',
         'Search free stock photos and short clips (Pexels) of something that is mentioned, to show as B-roll: a product, a place, a company or its logo, an object, an animal, an idea made visual. Returns the best matches with their ids, plus small previews of the first ones so you can see them. Pick the one that shows exactly what is said, then add it with broll_add. Never use it for a background.',
         {
@@ -542,6 +660,22 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
             .boolean()
             .optional()
             .describe('drop ums, stutters and false starts (default true)'),
+          emphasis: z
+            .array(
+              z.object({
+                text: z.string().min(1).max(48).describe('a word or short phrase, as said'),
+                at: z
+                  .number()
+                  .min(0)
+                  .optional()
+                  .describe('seconds on the timeline it is said, to pick that one time')
+              })
+            )
+            .max(60)
+            .optional()
+            .describe(
+              'for looks with an emphasis face (sunroom): the word of a sentence that carries it, drawn in the italic serif on its own row; 3–8 in a short. [] clears them'
+            ),
           overrides: z
             .object({
               color: cssColor.optional().describe('text color'),
@@ -658,7 +792,8 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
             uppercase: args.uppercase ?? base.uppercase,
             clean: args.clean ?? base.clean,
             accent: args.accent ?? base.accent,
-            overrides: args.overrides ? { ...base.overrides, ...args.overrides } : base.overrides
+            overrides: args.overrides ? { ...base.overrides, ...args.overrides } : base.overrides,
+            emphasis: args.emphasis ?? base.emphasis
           }
           try {
             // Luca's turn is saved as one version when it ends

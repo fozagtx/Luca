@@ -95,6 +95,8 @@ type StartStore = {
   setType: (type: VideoTypeId) => void
   /** Switching style turns on the type's steps for that style. */
   setStyle: (style: StyleId) => void
+  /** A template's palette (src/shared/short.ts); null lets Luca match it to the brand. */
+  setPalette: (palette: string | null) => void
   setReference: (path: string | null) => void
   clearReference: () => void
   toggleStep: (id: EditStepId) => void
@@ -199,6 +201,13 @@ export const useStart = create<StartStore>((set, get) => ({
   setType: (type) =>
     set((s) => ({ edit: editOf(type, s.edit.style, s.edit.notes), typePicked: true })),
   setStyle: (style) => set((s) => ({ edit: editOf(s.edit.type, style, s.edit.notes) })),
+  setPalette: (palette) =>
+    set((s) => {
+      const edit = { ...s.edit }
+      if (palette) edit.palette = palette
+      else delete edit.palette
+      return { edit }
+    }),
   setReference: (path) => set({ reference: path }),
   clearReference: () => set({ reference: null }),
   toggleStep: (id) =>
@@ -246,7 +255,8 @@ export const useStart = create<StartStore>((set, get) => ({
       style: edit.style,
       steps: edit.steps.filter((id) => !(voiceOnly && editStep(id).needsPicture)),
       ...(notes ? { notes } : {}),
-      ...(reference ? { reference } : {})
+      ...(reference ? { reference } : {}),
+      ...(edit.palette && videoType(edit.type).template ? { palette: edit.palette } : {})
     }
     // all the footage's length once every video is read; a voiceover's comes from the timeline
     const length =

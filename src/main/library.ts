@@ -4,6 +4,7 @@ import bundledHf from './catalog/hyperframes.json'
 import bundledRemocn from './catalog/remocn.json'
 import { catalog } from './hyperframes'
 import { remocnCatalog } from './remocn'
+import { STAGE_ID } from './short'
 import { LUCA_TREATMENTS } from './treatments'
 
 const TTL = 10 * 60 * 1000
@@ -29,6 +30,17 @@ export async function library(cwd: string): Promise<LibraryItem[]> {
       duration: 5
     })
   }
+  // the tutorial-short template is a whole layout, placed by short_layout rather than as a clip
+  items.push({
+    source: 'luca',
+    name: STAGE_ID,
+    type: 'component',
+    title: 'Sunroom tutorial short',
+    description:
+      'The whole layout of a tutorial short: the speaker full frame, in a rounded card under a graphic, or off screen, on paper with drifting leaf shadows, cut on the words, in a palette from the brand. Use it when someone teaching on camera wants that split-screen short.',
+    tags: ['template', 'layout', 'split screen', 'short', 'tutorial', 'paper', 'talking head'],
+    category: 'templates'
+  })
   cache = { at: Date.now(), items }
   return cache.items
 }

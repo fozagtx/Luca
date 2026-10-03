@@ -4,6 +4,7 @@
  * .luca/EDIT.md).
  */
 import { MOTION_GUIDE } from './motion'
+import { palettePreset, SUNROOM_GUIDE } from './short'
 import type { EditStepId, StartEdit, StyleId, VideoTypeId } from './types'
 
 export type EditStep = {
@@ -111,6 +112,24 @@ export const EDIT_STEPS: EditStep[] = [
       'Sound: the music the user gave is the clock (find its BPM and its drop; the biggest change lands on the drop). A sound effect for every event (a click on the press, a whoosh with the move, an impact on a reveal), placed by its peak, from the files the user gave; never synthesize one. Mix music under speech with sound_mix. If there is no music or no sound effects, say so in one line and ask the user to drop them in the chat.'
   },
   {
+    id: 'layout',
+    name: 'Split-screen layout',
+    blurb: 'You, a split screen or a graphic, cut on the words',
+    needsWords: true,
+    needsPicture: true,
+    guide:
+      'The layout, as .luca/TEMPLATE.md says: choose the beats from the word times (full, split or graphic, a new one every 1.5–4 s, cut at the start of a word), choose the palette, and lay them out with short_layout, which moves the speaker and puts the paper and a slot for each graphic on the timeline.'
+  },
+  {
+    id: 'graphics',
+    name: 'Clean graphics',
+    blurb: 'A mock-up or headline for every point',
+    needsWords: true,
+    needsPicture: false,
+    guide:
+      'The graphics: build each slot short_layout returned, from the template’s kit, colored only with its theme tokens, each item landing on the word that names it.'
+  },
+  {
     id: 'critique',
     name: 'Director’s review',
     blurb: 'Checks its own work frame by frame before you see it',
@@ -162,7 +181,22 @@ export type VideoType = {
   steps: Record<StyleId, EditStepId[]>
   /** For Luca: what this kind of video needs from the edit. */
   guide: string
+  /** What a step means for this kind of video, where it differs from the step's own guide. */
+  stepGuides?: Partial<Record<EditStepId, string>>
+  /** A template it follows: the look and the structure, in place of a style. */
+  template?: Template
 }
+
+/** A template a video type follows, saved to .luca/<file> so later turns keep to it. */
+export type Template = {
+  name: string
+  file: string
+  /** For Luca: the whole template. */
+  guide: string
+}
+
+/** Steps of a tutorial short, whichever way it is built: the template is its style. */
+const SHORT_STEPS: EditStepId[] = ['cut', 'hook', 'layout', 'graphics', 'captions']
 
 export const VIDEO_TYPES: VideoType[] = [
   {
@@ -216,6 +250,22 @@ export const VIDEO_TYPES: VideoType[] = [
     },
     guide:
       'A person talking to camera: a creator’s take, a founder’s update or pitch. Tight pacing with no dead air, a hook in the first 2 seconds, the speaker’s name and role on screen, the product or logo shown when it is named, captions that stay clear of the face.'
+  },
+  {
+    id: 'short',
+    name: 'Tutorial short',
+    who: 'For creators teaching on camera',
+    blurb: 'The Sunroom template: split screen, clean UI graphics, serif captions',
+    example: 'e.g. “60 seconds on my notes app, brand color #6C5CE7, end with ‘comment NOTES’”',
+    steps: { motion: SHORT_STEPS, classic: SHORT_STEPS },
+    guide:
+      'A tutorial short: a person explains a tool or a how-to to camera, vertical, 30–90 s, edited exactly in the Sunroom template (.luca/TEMPLATE.md): the speaker full frame, in a card under a graphic, or off screen for a graphic, cut on the words, with clean UI graphics and serif-accented captions.',
+    stepGuides: {
+      hook: 'The hook is the first beat: from 0 s, a split (or graphic) beat whose graphic shows what the video is about within half a second.',
+      captions:
+        'Captions last, with captions_apply style "sunroom" and 3–8 emphasis words (the word of a sentence that carries it, with the time it is said); they follow the layout by themselves.'
+    },
+    template: { name: 'Sunroom', file: 'TEMPLATE.md', guide: SUNROOM_GUIDE }
   }
 ]
 
@@ -278,6 +328,7 @@ export function editGuide(
 ): string {
   const type = videoType(edit.type)
   const style = styleOf(edit.style)
+  const template = type.template
   const { run, skipped } = runnableSteps(edit.steps, opts)
   const out = [
     '# How the user wants this video edited',
@@ -285,15 +336,23 @@ export function editGuide(
     '',
     `## ${type.name}`,
     type.guide,
-    '',
-    `## ${style.name} style`,
-    style.guide,
     ''
   ]
+  if (template) {
+    const picked = edit.palette ? palettePreset(edit.palette) : null
+    out.push(
+      `## The ${template.name} template`,
+      `This video follows the ${template.name} template in .luca/${template.file}: the look, the three layouts, the palette, pacing, the graphic kit and the order of work. Read it before your first edit in a session and keep every edit in it.`,
+      picked
+        ? `Palette: the user picked ${picked.name} (${picked.blurb.toLowerCase()}) on the start card: pass palette {"preset": "${picked.id}"}, with a brand color from the brief as the accent if they gave one.`
+        : `Palette: choose it from the brief, their product, logo or screenshots (their brand color as the accent), or a color they named; ${palettePreset(undefined).name} only when nothing suggests one.`,
+      ''
+    )
+  } else out.push(`## ${style.name} style`, style.guide, '')
   if (run.length) {
     out.push(
       '## The first edit, in this order',
-      ...run.map((s, i) => `${i + 1}. ${s.name}: ${s.guide}`),
+      ...run.map((s, i) => `${i + 1}. ${s.name}: ${type.stepGuides?.[s.id] ?? s.guide}`),
       ''
     )
   } else {
@@ -316,7 +375,9 @@ export function editGuide(
     '## Rules',
     opts.voiceOnly
       ? '- There is no footage to play: every frame needs a visual that follows what is said or asked (B-roll, animated key words, simple diagrams, clean UI drawn in code). No intro or outro they didn’t ask for.'
-      : '- The user’s footage is the video: it fills the frame. No stock or animated backgrounds behind it, no intro or outro they didn’t ask for.',
+      : template
+        ? `- The speaker’s footage and voice are never cut or retimed beyond the clean edit: the ${template.name} layout only moves and crops the picture, and its paper is the only background. No intro or outro they didn’t ask for.`
+        : '- The user’s footage is the video: it fills the frame. No stock or animated backgrounds behind it, no intro or outro they didn’t ask for.',
     '- Keep what they said and the order they said it in; cut only what the steps above ask for.',
     '- When you’re done, reply in 2–4 short lines: what you did, with times, and one thing they could ask for next.'
   )

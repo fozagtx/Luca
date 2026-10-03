@@ -111,7 +111,7 @@ This video is edited inside Luca. The person sees the preview in Luca itself: ne
 3. Videos use \`muted\` with a separate \`<audio>\` element for the audio track
 4. Only deterministic logic — no \`Date.now()\`, no \`Math.random()\`, no network fetches
 
-If .luca/MOTION.md exists this video is motion style: read it before your first edit in a session and follow it. If .luca/REFERENCE.md exists, its shot list is the structure to follow.
+If .luca/MOTION.md exists this video is motion style: read it before your first edit in a session and follow it. If .luca/TEMPLATE.md exists this video follows a template: read it before your first edit in a session and keep every edit in it. If .luca/REFERENCE.md exists, its shot list is the structure to follow.
 `
   writeFileSync(join(dir, 'CLAUDE.md'), notes)
   writeFileSync(join(dir, 'AGENTS.md'), notes)
@@ -276,7 +276,11 @@ export async function startProject(
       style: 'motion',
       steps: videoType('talking').steps.motion
     }
-    if (edit.style === 'motion') writeFileSync(join(lucaDir(dir), 'MOTION.md'), MOTION_GUIDE + '\n')
+    // a template is the look and the structure, in place of a style
+    const template = videoType(edit.type).template
+    if (edit.style === 'motion' && !template)
+      writeFileSync(join(lucaDir(dir), 'MOTION.md'), MOTION_GUIDE + '\n')
+    if (template) writeFileSync(join(lucaDir(dir), template.file), template.guide + '\n')
     if (edit.reference) {
       report({ stage: 'studying', message: 'Studying your reference' })
       const r = await studyReference(dir, edit.reference)
@@ -289,6 +293,7 @@ export async function startProject(
     })
     writeFileSync(join(lucaDir(dir), 'EDIT.md'), guide + '\n')
     brief += `\n\n${guide}`
+    if (template) brief += `\n\n${template.guide}`
 
     const now = new Date().toISOString()
     const project: Project = {

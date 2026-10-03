@@ -400,8 +400,8 @@ export type StartArgs = {
   edit?: StartEdit
 }
 
-/** The kinds of explainer Luca makes (src/shared/edits.ts). */
-export type VideoTypeId = 'launch' | 'concept' | 'tutorial' | 'talking'
+/** The kinds of explainer Luca makes (src/shared/edits.ts); 'short' is the Sunroom template. */
+export type VideoTypeId = 'launch' | 'concept' | 'tutorial' | 'talking' | 'short'
 
 /** How Luca builds it: morphing motion design or a classic edit (src/shared/edits.ts). */
 export type StyleId = 'motion' | 'classic'
@@ -419,6 +419,8 @@ export type EditStepId =
   | 'motion'
   | 'sound'
   | 'critique'
+  | 'layout'
+  | 'graphics'
 
 /** Picked on the start card before Luca begins. */
 export type StartEdit = {
@@ -431,6 +433,8 @@ export type StartEdit = {
   notes?: string
   /** Absolute path of a reference video Luca studies and builds the same way. */
   reference?: string
+  /** A template's palette picked on the start card (src/shared/short.ts); Luca chooses when absent. */
+  palette?: string
 }
 
 export type StartResult = {

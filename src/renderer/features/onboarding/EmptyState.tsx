@@ -8,6 +8,7 @@ import {
   type AspectChoice
 } from '@shared/aspect'
 import { editStep, STYLES, VIDEO_TYPES, videoType } from '@shared/edits'
+import { PALETTES, palettePreset } from '@shared/short'
 import type { FootageInfo, StyleId, VideoTypeId } from '@shared/types'
 import {
   AudioLines,
@@ -22,6 +23,8 @@ import {
   Plus,
   Rocket,
   Smartphone,
+  Sparkles,
+  SquareSplitVertical,
   Trash2,
   Upload,
   X,
@@ -64,7 +67,8 @@ const TYPE_ICONS: Record<VideoTypeId, LucideIcon> = {
   launch: Rocket,
   concept: Lightbulb,
   tutorial: Clapperboard,
-  talking: Smartphone
+  talking: Smartphone,
+  short: SquareSplitVertical
 }
 
 export function EmptyState(): ReactElement {
@@ -241,8 +245,8 @@ function StartCard(): ReactElement {
 /** The card's form: the style, the kind of video, a reference, the steps, the brief, and go. */
 function EditForm({ onGo }: { onGo: () => void }): ReactElement {
   const { files, footage, aspect, aspectFrom, edit, busy, reference } = useStart()
-  const { setAspect, setType, setStyle, toggleStep, setNotes, setReference, clearReference } =
-    useStart()
+  const { setAspect, setType, setStyle, setPalette, toggleStep, setNotes } = useStart()
+  const { setReference, clearReference } = useStart()
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [keyLater, setKeyLater] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -257,6 +261,8 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
   const shape = aspectFrom ? footage[aspectFrom]?.aspect : undefined
   const notes = edit.notes ?? ''
   const style = STYLES.find((s) => s.id === edit.style) ?? STYLES[0]
+  // a template is its own look: no style to pick, a palette instead
+  const template = videoType(edit.type).template
 
   const pickReference = async (): Promise<void> => {
     const paths = await luca.project.pickMedia()
@@ -299,24 +305,26 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
       <div className="flex flex-col gap-5 p-4">
         <Tiles />
 
-        <Field label="How should it be made?">
-          <div className="flex flex-col gap-1.5">
-            <Segmented
-              items={STYLE_ITEMS}
-              value={edit.style}
-              onChange={setStyle}
-              ariaLabel="Style"
-              className="h-8 w-fit"
-            />
-            <span className="text-[11px] leading-[1.4] text-text-3">{style.blurb}</span>
-          </div>
-        </Field>
+        {template ? null : (
+          <Field label="How should it be made?">
+            <div className="flex flex-col gap-1.5">
+              <Segmented
+                items={STYLE_ITEMS}
+                value={edit.style}
+                onChange={setStyle}
+                ariaLabel="Style"
+                className="h-8 w-fit"
+              />
+              <span className="text-[11px] leading-[1.4] text-text-3">{style.blurb}</span>
+            </div>
+          </Field>
+        )}
 
         <Field label="What kind of video is it?">
           <div
             role="radiogroup"
             aria-label="What kind of video is it?"
-            className="grid grid-cols-2 gap-2 md:grid-cols-4"
+            className="grid grid-cols-2 gap-2 md:grid-cols-5"
           >
             {VIDEO_TYPES.map((t) => {
               const Icon = TYPE_ICONS[t.id]
@@ -359,6 +367,19 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
             })}
           </div>
         </Field>
+
+        {template ? (
+          <Field label="Colors">
+            <div className="flex flex-col gap-1.5">
+              <PalettePicker value={edit.palette ?? null} onChange={setPalette} />
+              <span className="text-[11px] leading-[1.4] text-text-3">
+                {edit.palette
+                  ? palettePreset(edit.palette).blurb
+                  : `Auto: Luca matches your brand from the brief, logo or screenshots, or uses ${palettePreset(undefined).name}`}
+              </span>
+            </div>
+          </Field>
+        ) : null}
 
         <Field label="Reference video (optional)">
           <div className="flex flex-col gap-1.5">
@@ -481,6 +502,58 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
           onClick={onGo}
         />
       </div>
+    </div>
+  )
+}
+
+/** The template's palettes as swatches (paper, ink and accent), with Auto first. */
+function PalettePicker({
+  value,
+  onChange
+}: {
+  value: string | null
+  onChange: (palette: string | null) => void
+}): ReactElement {
+  const ring = (on: boolean): string =>
+    cn(
+      'flex size-8 items-center justify-center rounded-full transition-[box-shadow] duration-150',
+      on
+        ? 'shadow-[0_0_0_2px_var(--bg),0_0_0_4px_var(--accent)]'
+        : 'shadow-[0_0_0_1px_var(--border)] hover:shadow-[0_0_0_1px_var(--border-strong)]'
+    )
+  return (
+    <div role="radiogroup" aria-label="Colors" className="flex flex-wrap items-center gap-2.5">
+      <Tip label="Auto: matched to your brand" side="top">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={value === null}
+          aria-label="Auto"
+          onClick={() => onChange(null)}
+          className={cn(ring(value === null), 'bg-bg text-text-2')}
+        >
+          <Sparkles size={13} strokeWidth={1.8} />
+        </button>
+      </Tip>
+      {PALETTES.map((p) => (
+        <Tip key={p.id} label={`${p.name}: ${p.blurb}`} side="top">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={value === p.id}
+            aria-label={p.name}
+            onClick={() => onChange(p.id)}
+            className={ring(value === p.id)}
+            style={{ background: p.colors.paper }}
+          >
+            {/* the ink and the accent, side by side on the paper */}
+            <span className="flex items-center gap-[3px]">
+              <span className="size-2.5 rounded-full" style={{ background: p.colors.ink }} />
+              <span className="size-2.5 rounded-full" style={{ background: p.colors.accent }} />
+            </span>
+          </button>
+        </Tip>
+      ))}
     </div>
   )
 }
