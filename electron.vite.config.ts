@@ -46,6 +46,7 @@ export default defineConfig({
         '/p': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false },
         '/api': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false },
         '/hf': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false },
+        '/vendor': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false },
         '/fonts': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false },
         '/luts': { target: `http://127.0.0.1:${lucaDevPort}`, changeOrigin: false }
       }

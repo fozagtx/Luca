@@ -3,6 +3,10 @@
  * Speaks a tiny message protocol with export.ts over process.parentPort.
  */
 import type { RenderJob } from '@hyperframes/producer'
+import { serveGsapToFetch } from './vendor-gsap'
+
+// compositions load GSAP from a CDN: render with Luca's copy, so exports work offline too
+serveGsapToFetch()
 
 export type WorkerIn =
   | {

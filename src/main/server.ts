@@ -2,9 +2,10 @@ import { randomBytes } from 'node:crypto'
 import { createReadStream, existsSync, readFileSync, statSync, type ReadStream } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
-import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
+import { basename, dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import { findTags, setAttrs } from './html'
 import { PREVIEW_SYNC_SCRIPT } from './preview-sync'
+import { GSAP_ROUTE, gsapDir, localGsap } from './vendor-gsap'
 
 const RUNTIME_PATH = '/hf/runtime.js'
 let runtimeFile: string | null = null
@@ -29,13 +30,14 @@ function hyperframesRuntime(): string | null {
 
 /** Mirror what HyperFrames Studio does for preview: make sure the runtime and the
  *  `window.__timelines` registry exist before the composition's own scripts run. Luca's
- *  footage-in-step guard (preview-sync.ts) goes in right after the runtime, and `swap` may point
- *  a `<video>` or `<audio>` at an edit-friendly copy of its file (preview-media.ts). */
+ *  footage-in-step guard (preview-sync.ts) goes in right after the runtime, GSAP comes from Luca
+ *  (vendor-gsap.ts), and `swap` may point a `<video>` or `<audio>` at an edit-friendly copy of its
+ *  file (preview-media.ts). */
 export function prepareCompositionHtml(
   html: string,
   swap?: (src: string) => string | null
 ): string {
-  let out = swap ? swapMedia(html, swap) : html
+  let out = rewriteSrcs(html, swap)
   const head = (tag: string): void => {
     out = /<head\b[^>]*>/i.test(out)
       ? out.replace(/<head\b[^>]*>/i, (m) => `${m}\n${tag}`)
@@ -54,15 +56,31 @@ export function prepareCompositionHtml(
   return out
 }
 
-/** The page with each `<video>`/`<audio>` src that `swap` answers for replaced. */
-function swapMedia(html: string, swap: (src: string) => string | null): string {
+/**
+ * The page with GSAP CDN scripts pointed at Luca's copy (an integrity hash for another version
+ * would refuse it) and each `<video>`/`<audio>` src that `swap` answers for replaced.
+ */
+function rewriteSrcs(html: string, swap?: (src: string) => string | null): string {
   let out = ''
   let at = 0
   for (const tag of findTags(html)) {
-    if ((tag.name !== 'video' && tag.name !== 'audio') || !tag.attrs.src) continue
-    const src = swap(tag.attrs.src)
+    const src = tag.attrs.src
     if (!src) continue
-    out += html.slice(at, tag.start) + setAttrs(tag, { src })
+    let raw: string | null = null
+    if (tag.name === 'script') {
+      const gsap = localGsap(src)
+      if (gsap)
+        raw = setAttrs(tag, {
+          src: `${GSAP_ROUTE}${basename(gsap)}`,
+          integrity: null,
+          crossorigin: null
+        })
+    } else if ((tag.name === 'video' || tag.name === 'audio') && swap) {
+      const to = swap(src)
+      if (to) raw = setAttrs(tag, { src: to })
+    }
+    if (raw === null) continue
+    out += html.slice(at, tag.start) + raw
     at = tag.end
   }
   return at === 0 ? html : out + html.slice(at)
@@ -191,6 +209,16 @@ export class LucaServer {
         return
       }
       this.sendFile(req, res, resolve(file, '..'), 'hyperframe.runtime.iife.js', {})
+      return
+    }
+
+    if (url.pathname.startsWith(GSAP_ROUTE)) {
+      const dir = gsapDir()
+      if (!dir) {
+        res.writeHead(404).end('Not found')
+        return
+      }
+      this.sendFile(req, res, dir, basename(url.pathname), {})
       return
     }
 
