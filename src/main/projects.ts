@@ -13,6 +13,7 @@ import { basename, extname, join, relative } from 'node:path'
 import { bestFit, DEFAULT_ASPECT, normalizeAspect, orientationOf, sizeOf } from '../shared/aspect'
 import { editGuide, videoType } from '../shared/edits'
 import { BRIEF_ONLY, MOTION_GUIDE, REFERENCE_STUDY } from '../shared/motion'
+import { STUDIO_GUIDE } from '../shared/studio'
 import type {
   Aspect,
   CreateProgress,
@@ -277,6 +278,7 @@ export async function startProject(
       steps: videoType('talking').steps.motion
     }
     if (edit.style === 'motion') writeFileSync(join(lucaDir(dir), 'MOTION.md'), MOTION_GUIDE + '\n')
+    if (edit.style === 'studio') writeFileSync(join(lucaDir(dir), 'STUDIO.md'), STUDIO_GUIDE + '\n')
     if (edit.reference) {
       report({ stage: 'studying', message: 'Studying your reference' })
       const r = await studyReference(dir, edit.reference)

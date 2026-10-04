@@ -1,5 +1,6 @@
 import { basename, extname } from 'node:path'
 import {
+  captionCase,
   captionLook,
   captionStyle,
   captionTextShadow,
@@ -26,7 +27,69 @@ const GSAP = 'https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js'
 const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-function css(look: CaptionLook, cfg: CaptionConfig, d: { w: number; h: number }): string {
+/**
+ * Where a stretch of captions sits and what color it takes, in the captions track's own time:
+ * the Studio look moves them above the speaker's card and recolors them for each background.
+ */
+export type CaptionZone = {
+  start: number
+  end: number
+  /** Line center and widest line, in frame px. */
+  x: number
+  y: number
+  w: number
+  /** Text color for an adaptive style; its shadow goes with it on a light background. */
+  color?: string
+  light?: boolean
+}
+
+/** How the Studio look places captions: zones over time, and words set in the italic serif. */
+export type CaptionPlacement = {
+  zones: CaptionZone[]
+  /** Lowercase words or phrases ("api key") shown in `emphasisFont` when they are said. */
+  emphasis: string[]
+  emphasisFont: string | null
+}
+
+const bare = (w: string): string => w.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+
+/** Which words of a line are emphasis: single words, or every word of a phrase said in order. */
+function emphasized(words: { text: string }[], emphasis: string[]): boolean[] {
+  const out = words.map(() => false)
+  if (!emphasis.length) return out
+  const plain = words.map((w) => bare(w.text))
+  for (const e of emphasis) {
+    const parts = e.split(/\s+/).map(bare).filter(Boolean)
+    if (!parts.length) continue
+    for (let i = 0; i + parts.length <= plain.length; i++)
+      if (parts.every((p, j) => plain[i + j] === p)) parts.forEach((_, j) => (out[i + j] = true))
+  }
+  return out
+}
+
+/** Inline styles that put one line group in its zone (and recolor it for an adaptive style). */
+function zoneStyles(
+  z: CaptionZone | undefined,
+  look: CaptionLook,
+  d: { w: number; h: number }
+): { group: string; line: string } {
+  if (!z) return { group: '', line: '' }
+  const pad = (v: number): number => Math.max(0, Math.round(v))
+  const group = `align-items:center;padding:${pad(2 * z.y - d.h)}px ${pad(d.w - 2 * z.x)}px ${pad(d.h - 2 * z.y)}px ${pad(2 * z.x - d.w)}px`
+  const line = [
+    `max-width:${Math.round(z.w)}px`,
+    ...(look.adaptive && z.color ? [`color:${z.color}`] : []),
+    ...(look.adaptive && z.light ? ['text-shadow:none'] : [])
+  ].join(';')
+  return { group, line }
+}
+
+function css(
+  look: CaptionLook,
+  cfg: CaptionConfig,
+  d: { w: number; h: number },
+  emFont: string | null = null
+): string {
   const k = Math.min(d.w, d.h) / 1080
   const portrait = d.h > d.w
   const size = Math.round(look.size * k)
@@ -49,12 +112,13 @@ function css(look: CaptionLook, cfg: CaptionConfig, d: { w: number; h: number })
         font-family: '${cfg.font}', 'Inter', sans-serif; font-weight: ${look.weight};
         font-style: ${look.italic ? 'italic' : 'normal'}; font-size: ${size}px; line-height: 1.18;
         letter-spacing: ${look.letterSpacing}em; color: ${look.color};
-        text-transform: ${cfg.uppercase ? 'uppercase' : 'none'};
+        text-transform: ${captionCase(cfg, look)};
         ${shadow ? `text-shadow: ${shadow};` : ''}
         ${box ? `background: ${box.bg}; border-radius: ${radius}; padding: ${box.padding};` : ''}
         overflow: visible;
       }
       ${s} .w { display: inline-block; ${look.wordBox ? 'padding: 0.02em 0.16em; border-radius: 0.2em;' : ''} }
+      ${emFont ? `${s} .w.em { font-family: '${emFont}', serif; font-style: italic; font-weight: 400; font-size: 1.16em; letter-spacing: 0; line-height: 1; }` : ''}
       ${scatterCss(look, cfg, d)}
     `
 }
@@ -165,6 +229,9 @@ function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: nu
             case 'bounce':
               tl.fromTo(line, { opacity: 0, y: 46 * O.k, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: 'elastic.out(1, 0.55)' }, g[0]);
               break;
+            case 'blur':
+              tl.fromTo(line, { opacity: 0, y: 8 * O.k, filter: 'blur(' + Math.round(7 * O.k) + 'px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.3, ease: 'power2.out' }, g[0]);
+              break;
             default:
               tl.fromTo(line, { opacity: 0 }, { opacity: 1, duration: O.slow ? 0.45 : 0.25, ease: 'power2.out' }, g[0]);
           }
@@ -176,16 +243,23 @@ function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: nu
       })();`
 }
 
-/** `fontFaces`: @font-face rules for the project's own fonts the captions use. */
+/**
+ * `fontFaces`: @font-face rules for the project's own fonts the captions use. `place`: where the
+ * Studio look puts them over time, and its emphasis words.
+ */
 export function captionsComposition(
   groups: CaptionGroup[],
   cfg: CaptionConfig,
   d: { w: number; h: number; duration: number },
   faces?: ProjectFontFace[],
-  fontFaces: string[] = []
+  fontFaces: string[] = [],
+  place: CaptionPlacement | null = null
 ): string {
   const style = captionStyle(cfg.style)
   const look = captionLook(cfg, faces)
+  const zoneAt = (t: number): CaptionZone | undefined =>
+    place?.zones.find((z) => t >= z.start - 0.001 && t < z.end)
+  const emFont = place?.emphasis.length ? place.emphasisFont : null
   const k = Math.min(d.w, d.h) / 1080
   const lines =
     look.layout === 'scatter'
@@ -203,12 +277,13 @@ export function captionsComposition(
           })
           .join('\n')
       : groups
-          .map(
-            (g, i) =>
-              `      <div class="cg" id="lc-${i}"><div class="cl">${g.words
-                .map((w) => `<span class="w">${esc(w.text)}</span>`)
-                .join(' ')}</div></div>`
-          )
+          .map((g, i) => {
+            const z = zoneStyles(zoneAt(g.start), look, d)
+            const em = emFont ? emphasized(g.words, place?.emphasis ?? []) : []
+            return `      <div class="cg" id="lc-${i}"${z.group ? ` style="${z.group}"` : ''}><div class="cl"${z.line ? ` style="${z.line}"` : ''}>${g.words
+              .map((w, j) => `<span class="w${em[j] ? ' em' : ''}">${esc(w.text)}</span>`)
+              .join(' ')}</div></div>`
+          })
           .join('\n')
   return `<!-- Captions made by Luca (style: ${style.name}${cfg.overrides ? ', customized' : ''}, font: ${cfg.font}). Luca rebuilds this file from the transcript whenever the captions or the clips under them change, so edits here are lost: change captions with the captions_apply tool. -->
 <template id="${HOST_ID}-template">
@@ -222,7 +297,7 @@ export function captionsComposition(
 ${lines}
     </div>
 
-    <style>${fontFaces.length ? `\n${fontFaces.join('\n')}` : ''}${css(look, cfg, d)}
+    <style>${fontFaces.length ? `\n${fontFaces.join('\n')}` : ''}${css(look, cfg, d, emFont)}
     </style>
 
     <script src="${GSAP}"></script>

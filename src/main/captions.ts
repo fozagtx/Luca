@@ -49,6 +49,7 @@ import {
 } from './html'
 import { AUDIO_EXT, VIDEO_EXT, lucaDir } from './projects'
 import { bundledResourcesDir } from './resources'
+import { studioCaptionPlacement } from './studio/zones'
 import { checkpoint } from './versions'
 
 const HOST_ID = CAPTIONS_ID
@@ -224,6 +225,12 @@ function faceRules(files: FontFile[]): string[] {
     (f) =>
       `      @font-face { font-family: '${f.family}'; src: url('${f.file}') format('${fmt[extname(f.file).toLowerCase()] ?? 'truetype'}'); font-weight: ${f.weight}${f.weightMax ? ` ${f.weightMax}` : ''}; font-style: ${f.italic ? 'italic' : 'normal'}; font-display: block;${f.unicodeRange ? ` unicode-range: ${f.unicodeRange};` : ''} }`
   )
+}
+
+/** @font-face rules for the project's files of these families, for a composition of their own. */
+export function fontFaceRules(dir: string, families: string[]): string[] {
+  const want = families.map((f) => f.toLowerCase())
+  return faceRules(readFontFiles(dir).filter((f) => want.includes(f.family.toLowerCase())))
 }
 
 function fontFaces(dir: string): string | null {
@@ -549,17 +556,24 @@ function buildCaptions(
   const host = findTagById(html, HOST_ID)
   const start = placed.duration ? placed.start : Number(host?.attrs['data-start'] ?? 0) || 0
   const duration = round(placed.duration || Number(host?.attrs['data-duration'] ?? 0) || d.duration)
+  // with the Studio look on, captions sit where its layout leaves room and take its colors
+  const place = studioCaptionPlacement(p.dir, html, d, start)
   // the captions file declares its own fonts as well: HyperFrames checks each file on its own,
   // and lint reports a font only index.html declares (one that comes with Luca, or from Google
   // Fonts) as missing in it, an error Luca would be told to fix in a file it must not edit
-  const families = [cfg.font, captionLook(cfg).hero?.font].map((f) => f?.toLowerCase())
+  const families = [
+    cfg.font,
+    captionLook(cfg).hero?.font,
+    place?.emphasis.length ? place.emphasisFont : null
+  ].map((f) => f?.toLowerCase())
   const own = readFontFiles(p.dir).filter((f) => families.includes(f.family.toLowerCase()))
   const comp = captionsComposition(
     groups,
     cfg,
     { w: d.w, h: d.h, duration },
     familyFaces(p.dir, cfg.font),
-    faceRules(own)
+    faceRules(own),
+    place
   )
   let index = html
   if (host) {
@@ -592,6 +606,7 @@ export async function applyCaptions(
   installBundledFont(p.dir, cfg.font)
   const heroFont = captionLook(cfg).hero?.font
   if (heroFont) installBundledFont(p.dir, heroFont)
+  installEmphasisFont(p)
   const indexFile = join(p.dir, 'index.html')
   const html = readFileSync(indexFile, 'utf8')
   const built = buildCaptions(p, cfg, html)
@@ -622,13 +637,14 @@ export async function applyCaptions(
  * its own: the caller's checkpoint saves the edit and its captions as one. Returns whether
  * anything changed.
  */
-export function refreshCaptions(p: Project): boolean {
+export function refreshCaptions(p: Project, opts: { force?: boolean } = {}): boolean {
   const indexFile = join(p.dir, 'index.html')
   const html = readFileSync(indexFile, 'utf8')
   const saved = findTagById(html, HOST_ID) ? readConfig(p.dir) : null
   if (!saved) return false
   const speech = speechPrint(p, html)
-  if (saved.speech === speech) return false
+  if (saved.speech === speech && !opts.force) return false
+  if (opts.force) installEmphasisFont(p)
   const built = buildCaptions(p, cleanCaptionConfig(saved.config), html, true)
   const compFile = join(p.dir, COMP_FILE)
   let changed = false
@@ -646,6 +662,14 @@ export function refreshCaptions(p: Project): boolean {
     JSON.stringify({ ...saved, lines: built.lines, speech } satisfies Saved, null, 2)
   )
   return changed
+}
+
+/** The Studio look's italic serif for emphasis words, copied in when its plan names any. */
+function installEmphasisFont(p: Project): void {
+  const html = readFileSync(join(p.dir, 'index.html'), 'utf8')
+  const d = dims(html)
+  const place = studioCaptionPlacement(p.dir, html, d, 0)
+  if (place?.emphasis.length && place.emphasisFont) installBundledFont(p.dir, place.emphasisFont)
 }
 
 export async function removeCaptions(p: Project): Promise<void> {

@@ -265,6 +265,20 @@ export function describeActivity(
       return input.lut === 'none'
         ? act('edit', 'Removing the color grade', 'Removed the color grade')
         : act('edit', 'Grading the footage', 'Graded the footage')
+    case 'mcp__luca__studio_apply':
+      return input.remove
+        ? act('edit', 'Taking off the Studio look', 'Took off the Studio look')
+        : input.plan
+          ? act('edit', 'Building the Studio look', 'Built the Studio look')
+          : act('look', 'Reading the Studio plan', 'Read the Studio plan')
+    case 'mcp__luca__speaker_cutout':
+      return act('media', 'Cutting you out of the background', 'Cut you out of the background')
+    case 'mcp__luca__logo_add': {
+      const name = String(input.name ?? '').trim()
+      return /^[\p{L}\p{N} .-]{1,40}$/u.test(name)
+        ? act('add', `Getting the ${name} logo`, `Got the ${name} logo`)
+        : act('add', 'Getting a logo', 'Got a logo')
+    }
     case 'mcp__luca__font_add': {
       // a pasted link says nothing to people; a family name does
       const font = String(input.font ?? '').trim()

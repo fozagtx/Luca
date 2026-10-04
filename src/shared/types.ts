@@ -403,8 +403,11 @@ export type StartArgs = {
 /** The kinds of explainer Luca makes (src/shared/edits.ts). */
 export type VideoTypeId = 'launch' | 'concept' | 'tutorial' | 'talking'
 
-/** How Luca builds it: morphing motion design or a classic edit (src/shared/edits.ts). */
-export type StyleId = 'motion' | 'classic'
+/**
+ * How Luca builds it: morphing motion design, a classic edit, or the Studio look's paper-and-ink
+ * talking-head edit (src/shared/edits.ts).
+ */
+export type StyleId = 'motion' | 'classic' | 'studio'
 
 /** What Luca can do on the first edit (src/shared/edits.ts). */
 export type EditStepId =
@@ -419,6 +422,8 @@ export type EditStepId =
   | 'motion'
   | 'sound'
   | 'critique'
+  | 'cutout'
+  | 'scenes'
 
 /** Picked on the start card before Luca begins. */
 export type StartEdit = {
@@ -480,7 +485,16 @@ export type CaptionConfig = {
 
 /** How caption lines come in and how the spoken word is marked (the styles' animations). */
 export type CaptionAnimation =
-  'fade' | 'slide' | 'pop' | 'karaoke' | 'highlight' | 'typewriter' | 'slam' | 'glow' | 'bounce'
+  | 'fade'
+  | 'slide'
+  | 'pop'
+  | 'karaoke'
+  | 'highlight'
+  | 'typewriter'
+  | 'slam'
+  | 'glow'
+  | 'bounce'
+  | 'blur'
 
 /** Caption look overrides. Colors are CSS colors; px are for a 1080 px short side, like the styles. */
 export type CaptionOverrides = {

@@ -1,5 +1,10 @@
 import type { CSSProperties, ReactElement } from 'react'
-import { captionLook, captionTextShadow, scatterLayout } from '../../../shared/captions'
+import {
+  captionCase,
+  captionLook,
+  captionTextShadow,
+  scatterLayout
+} from '../../../shared/captions'
 import type { CaptionConfig, CaptionGroup, ProjectFontFace } from '../../../shared/types'
 import { cn } from '../../lib/cn'
 import { useLoopTime } from './preview-lib'
@@ -57,7 +62,7 @@ export function CaptionPreview({
     lineHeight: 1.18,
     letterSpacing: `${look.letterSpacing}em`,
     color: look.color,
-    textTransform: cfg.uppercase ? 'uppercase' : 'none',
+    textTransform: captionCase(cfg, look) as CSSProperties['textTransform'],
     textShadow: shadow || undefined,
     background: box?.bg,
     borderRadius: box ? (box.radius >= 999 ? 999 : Math.max(2, box.radius * k)) : undefined,

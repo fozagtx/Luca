@@ -15,7 +15,10 @@
     "Loki Cola": "Spencerian soda-script classic",
     "Min Sans": "Modern geometric sans, dense and even",
     "Red Hat Display": "Crisp open sans for titles and big words",
-    "Red Hat Text": "Readable open sans for smaller sizes"
+    "Red Hat Text": "Readable open sans for smaller sizes",
+    "Archivo Expanded": "Wide grotesque, light to black: big lowercase titles, prices and labels (the Studio look)",
+    "Archivo": "Neutral grotesque for small captions and labels (the Studio look)",
+    "Instrument Serif": "Condensed editorial serif; its italic marks the words that matter"
   },
   "families": {
     "Helvetica-Light.ttf": "Helvetica",

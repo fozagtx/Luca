@@ -8,6 +8,29 @@ export const BUNDLED_FONTS: { family: string; note: string; faces: ProjectFontFa
     faces: [{ file: 'Agraham.otf', weight: 400, italic: false }]
   },
   {
+    family: 'Archivo',
+    note: 'Neutral grotesque for small captions and labels (the Studio look)',
+    faces: [
+      { file: 'Archivo-Regular.ttf', weight: 400, italic: false },
+      { file: 'Archivo-Medium.ttf', weight: 500, italic: false },
+      { file: 'Archivo-SemiBold.ttf', weight: 600, italic: false },
+      { file: 'Archivo-Bold.ttf', weight: 700, italic: false }
+    ]
+  },
+  {
+    family: 'Archivo Expanded',
+    note: 'Wide grotesque, light to black: big lowercase titles, prices and labels (the Studio look)',
+    faces: [
+      { file: 'ArchivoExpanded-Light.ttf', weight: 300, italic: false },
+      { file: 'ArchivoExpanded-Regular.ttf', weight: 400, italic: false },
+      { file: 'ArchivoExpanded-Medium.ttf', weight: 500, italic: false },
+      { file: 'ArchivoExpanded-SemiBold.ttf', weight: 600, italic: false },
+      { file: 'ArchivoExpanded-Bold.ttf', weight: 700, italic: false },
+      { file: 'ArchivoExpanded-ExtraBold.ttf', weight: 800, italic: false },
+      { file: 'ArchivoExpanded-Black.ttf', weight: 900, italic: false }
+    ]
+  },
+  {
     family: 'Bebas Neue',
     note: 'Tall all-caps grotesque, made for headlines',
     faces: [{ file: 'BebasNeue-Regular.ttf', weight: 400, italic: false }]
@@ -69,6 +92,14 @@ export const BUNDLED_FONTS: { family: string; note: string; faces: ProjectFontFa
     family: 'Helvetica Rounded',
     note: "Helvetica's bold cut with softened corners",
     faces: [{ file: 'HelveticaRounded-Bold.otf', weight: 700, italic: false }]
+  },
+  {
+    family: 'Instrument Serif',
+    note: 'Condensed editorial serif; its italic marks the words that matter',
+    faces: [
+      { file: 'InstrumentSerif-Regular.ttf', weight: 400, italic: false },
+      { file: 'InstrumentSerif-Italic.ttf', weight: 400, italic: true }
+    ]
   },
   {
     family: 'Loki Cola',
