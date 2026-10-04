@@ -16,7 +16,15 @@ import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../s
 import { DEFAULT_ASPECT, sizeOf } from '../shared/aspect'
 import { REFERENCE_STUDY } from '../shared/motion'
 import { BUNDLED_LUTS } from '../shared/luts'
-import { DEFAULT_FONTS, MAX_BEATS, PALETTES, SUNROOM } from '../shared/short'
+import {
+  DEFAULT_FONTS,
+  GRAPHIC_KINDS,
+  GRAPHICS,
+  MAX_BEATS,
+  type GraphicKind,
+  PALETTES,
+  SUNROOM
+} from '../shared/short'
 import type { CaptionConfig, Cut, CutReason } from '../shared/types'
 import { applyColor, footageVideos, removeColor } from './color'
 import {
@@ -302,7 +310,8 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'and returns the snippet to place it over the footage. ' +
       'short_layout lays out a tutorial short (the Sunroom template, .luca/TEMPLATE.md) from the beats ' +
       'you choose: the speaker full frame, in a card under a graphic or off screen, the paper, a slot ' +
-      'for each graphic and its palette; call it again with only a palette or fonts to restyle.',
+      'for each graphic (built ready-made from the kind and words you give it) and its palette; call ' +
+      'it again with only a palette or fonts to restyle.',
     tools: [
       tool(
         'transcribe',
@@ -450,7 +459,8 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
         'short_layout',
         [
           'Lay out a tutorial short in the Sunroom template (.luca/TEMPLATE.md) from the beats you choose, or restyle it. Each beat is a stretch of the video where the speaker fills the frame (full), sits in a card under a graphic on the paper (split) or is off screen for a graphic (graphic); layouts change with a hard cut. It moves and crops the speaker’s picture only (the footage and its sound play untouched), puts the paper over it, and makes one empty, timed slot per split and graphic beat (and per full beat with a sticker) for you to build its graphic in. Captions in the sunroom look follow the layout by themselves.',
-          'Calling it again replaces the layout; slots keep their graphics by beat number. Leave beats out to keep the ones on the timeline and change only the palette or fonts: everything recolors, nothing else moves.',
+          'Give a beat a graphic (kind and its words) and the slot comes with that ready-made graphic built and timed to the words; a beat without one gets an empty slot to build in.',
+          'Calling it again replaces the layout; slots keep the graphics you built or edited, by beat number (ready-made ones you have not touched are rebuilt for the new beats). Leave beats out to keep the ones on the timeline and change only the palette or fonts: everything recolors, nothing else moves.',
           'Returns each slot with its file, its area, its time and what is said during it, or an error saying which beat to fix.'
         ].join('\n'),
         {
@@ -477,7 +487,40 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
                   .boolean()
                   .optional()
                   .describe('full beats: a slot for a sticker beside the head'),
-                note: z.string().max(140).optional().describe('what its graphic will show')
+                note: z.string().max(140).optional().describe('what its graphic will show'),
+                graphic: z
+                  .object({
+                    kind: z.enum(GRAPHIC_KINDS as [GraphicKind, ...GraphicKind[]]).describe(
+                      Object.entries(GRAPHICS)
+                        .map(([k, v]) => `${k}: ${v}`)
+                        .join('; ')
+                    ),
+                    headline: z
+                      .string()
+                      .max(48)
+                      .optional()
+                      .describe(
+                        'graphic beats: the big serif headline, 1–4 key words in lowercase as said'
+                      ),
+                    sub: z
+                      .string()
+                      .max(48)
+                      .optional()
+                      .describe('its lighter second line, the words said next'),
+                    label: z.string().max(60).optional(),
+                    items: z.array(z.string().max(120)).max(6).optional(),
+                    at: z
+                      .array(z.number())
+                      .max(6)
+                      .optional()
+                      .describe(
+                        'timeline seconds each item lands; default: the word that starts it'
+                      )
+                  })
+                  .optional()
+                  .describe(
+                    'a ready-made graphic built in the slot, timed to the words: the words are yours, the design is the template’s'
+                  )
               })
             )
             .min(1)

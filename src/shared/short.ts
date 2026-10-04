@@ -25,7 +25,58 @@ export type ShortBeat = {
   sticker?: boolean
   /** What the beat's graphic shows, in a few words; kept in its file. */
   note?: string
+  /** A ready-made graphic short_layout builds in the beat's slot, timed to the words. */
+  graphic?: ShortGraphic
 }
+
+/** One of the template's ready-made graphics, with its own words. */
+export type ShortGraphic = {
+  kind: GraphicKind
+  /** Graphic beats: the big serif headline at the top (the key words said), and its lighter line. */
+  headline?: string
+  sub?: string
+  /** The graphic's name for itself: a file, folder, address, app or product name, a keyword. */
+  label?: string
+  /** Its rows in order: lines in a terminal, files, points, cards, nodes, chips. */
+  items?: string[]
+  /** When each item lands, in seconds on the timeline; by default on the word that starts it. */
+  at?: number[]
+}
+
+/** The ready-made graphics: for split and graphic beats, then stickers for full beats. */
+export const GRAPHICS = {
+  phone: 'an app on a phone (label: the app; items: what its screen lists)',
+  browser: 'a website in a browser (label: its address; items: its headline, then its button)',
+  terminal: 'a terminal: the first item typed as a command, the others printed as steps done',
+  doc: 'a file card such as SKILL.md (label: the file; items: its lines, "key: value")',
+  files: 'file chips flying into a folder (label: the folder; items: the files)',
+  folder: 'a folder’s files listed one by one (label: the folder; items: the files)',
+  progress: 'a render: a strip of frames and a bar running to 100% (label: the file made)',
+  checklist: 'numbered cards with a picture and serif words, checked as each is said (items: 2–4)',
+  tiles: 'tall numbered cards dealt like a deck, one per item (items: 2–5)',
+  clock: 'a clock with spinning hands: time passing, hours lost (label: words under it)',
+  editor: 'a video editor whose clips build up as the playhead runs (label: the file)',
+  video:
+    'the finished video: a player card with a play button (label: the product; items: its tagline)',
+  share: 'a video card over a share sheet: sending it to people (label: the product)',
+  follow: 'a Follow button a cursor clicks into Following (items: topic chips under it)',
+  graph: 'a node linked to others around it (label: the center; items: the nodes)',
+  slides: 'a pile of half-made slides, a cursor and a question mark: not knowing how to present',
+  link: 'a link card: the product, its link, sent to your DMs (label: the product)',
+  tag: 'sticker: a price tag beside the head (label: "$0")',
+  pill: 'sticker: a /keyword pill under the caption (label: the keyword)',
+  comment: 'sticker: a comment box under the caption typing the keyword (label: the word)',
+  notify: 'sticker: a New message notification sliding in at the top (items: its line)',
+  bookmark: 'sticker: a bookmark beside the head that fills and says Saved',
+  timer: 'sticker: a small clock beside the head (minutes, time)'
+} as const
+
+export type GraphicKind = keyof typeof GRAPHICS
+
+export const GRAPHIC_KINDS = Object.keys(GRAPHICS) as GraphicKind[]
+
+/** The kinds that are stickers over the speaker, for full beats. */
+export const STICKERS: GraphicKind[] = ['tag', 'pill', 'comment', 'notify', 'bookmark', 'timer']
 
 /** Where the speaker's face is in the frame, as fractions of its width and height. */
 export type ShortFace = { x: number; y: number }
@@ -156,6 +207,12 @@ export function checkBeats(raw: ShortBeat[], duration: number): CheckedBeats {
     }
     const note = b.note?.replace(/\s+/g, ' ').trim().slice(0, 140)
     if (note) beat.note = note
+    if (b.graphic) {
+      const g = checkGraphic(b.graphic, b.layout)
+      if (typeof g === 'string') return { ok: false, error: `Beat ${n}: ${g}` }
+      beat.graphic = g
+      if (b.layout === 'full') beat.sticker = true
+    }
     if (end - start > LONG_BEAT)
       warnings.push(
         `Beat ${n} is ${(end - start).toFixed(1)} s long: split it, so something new lands every 1.5–4 s.`
@@ -166,6 +223,38 @@ export function checkBeats(raw: ShortBeat[], duration: number): CheckedBeats {
   if (duration - last.end > 0.5)
     notes.push(`From ${at(last.end)} to the end the speaker fills the frame (no beat covers it).`)
   return { ok: true, beats, notes, warnings }
+}
+
+const words = (v: unknown, max: number): string | undefined => {
+  const s = typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : ''
+  return s || undefined
+}
+
+/** A beat's graphic as Luca asked for it, cleaned up, or why it can't be made. */
+function checkGraphic(raw: ShortGraphic, layout: ShortLayout): ShortGraphic | string {
+  const kind = raw.kind
+  if (!GRAPHIC_KINDS.includes(kind))
+    return `there is no ready-made graphic called “${String(kind)}”. The kinds are ${GRAPHIC_KINDS.join(', ')}.`
+  const sticker = STICKERS.includes(kind)
+  if (layout === 'full' && !sticker)
+    return `a full beat shows the speaker, so its graphic is a sticker (${STICKERS.join(', ')}); make it a split or graphic beat for a ${kind}.`
+  if (layout !== 'full' && sticker)
+    return `${kind} is a sticker over the speaker, for a full beat; on a ${layout} beat use one of ${GRAPHIC_KINDS.filter((k) => !STICKERS.includes(k)).join(', ')}.`
+  const g: ShortGraphic = { kind }
+  const headline = words(raw.headline, 48)
+  const sub = words(raw.sub, 48)
+  const label = words(raw.label, 60)
+  if (headline) g.headline = headline
+  if (sub) g.sub = sub
+  if (label) g.label = label
+  const items = (Array.isArray(raw.items) ? raw.items : [])
+    .map((i) => words(i, 120))
+    .filter((i): i is string => !!i)
+    .slice(0, 6)
+  if (items.length) g.items = items
+  const at = (Array.isArray(raw.at) ? raw.at : []).filter((t) => Number.isFinite(t)).slice(0, 6)
+  if (at.length) g.at = at.map(r3)
+  return g
 }
 
 /** The beats as the stage reads them: "s:0:2.5;g:2.5:4;f:4:6". */

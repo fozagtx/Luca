@@ -481,6 +481,193 @@
   background: var(--sr-accent);
 }
 
+/* ---------------------------------------------------------------- screens */
+
+/*
+  A small app screen, so a phone, a browser page, a thumbnail or a viewer is never empty: a top bar
+  with the app's name, a hero card in the accent with a chart, then rows. Sized in em: set its
+  font-size (about 22px in a phone, 14px in a thumbnail) and everything scales with it.
+*/
+.sr-app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75em;
+  padding: 2.4em 1.1em 1.1em;
+  background: var(--sr-card);
+  font-family: var(--sr-sans);
+  color: var(--sr-card-ink);
+}
+.sr-app.flat {
+  padding-top: 1.1em;
+}
+.sr-app-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: 0.95em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.sr-app-top::before {
+  content: '';
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  border-radius: 0.35em;
+  background: var(--sr-accent);
+}
+.sr-app-top::after {
+  content: '';
+  flex: none;
+  width: 1.5em;
+  height: 1.5em;
+  margin-left: auto;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--sr-card-ink) 12%, var(--sr-card));
+}
+.sr-app-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  padding: 0.95em 1em 0.8em;
+  border-radius: 0.9em;
+  background: var(--sr-accent);
+  color: var(--sr-on-accent);
+}
+.sr-app-hero small {
+  font-family: var(--sr-mono);
+  font-size: 0.62em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.sr-app-hero b {
+  font-size: 1.55em;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+/* A small bar chart: spans of different heights (set each one's height in %). */
+.sr-app-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.3em;
+  height: 3.2em;
+  margin-top: 0.3em;
+}
+.sr-app-bars > span {
+  flex: 1;
+  border-radius: 0.2em 0.2em 0 0;
+  background: color-mix(in srgb, var(--sr-on-accent) 45%, transparent);
+}
+.sr-app-bars > span:last-child {
+  background: var(--sr-on-accent);
+}
+.sr-app-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  min-height: 2.6em;
+  padding: 0.45em 0.7em;
+  border-radius: 0.75em;
+  background: color-mix(in srgb, var(--sr-card-ink) 5%, var(--sr-card));
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sr-app-row::before {
+  content: '';
+  flex: none;
+  width: 1.7em;
+  height: 1.7em;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--sr-accent) 30%, var(--sr-card));
+}
+.sr-app-row > i {
+  margin-left: auto;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--sr-accent);
+}
+/* The finished video: a player card in the accent with the product's name and a play button. */
+.sr-video {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--sr-accent) 78%, #000000);
+  box-shadow: var(--sr-shadow);
+  font-family: var(--sr-sans);
+  color: #ffffff;
+  text-align: center;
+}
+.sr-video b {
+  font-size: 64px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.sr-video span {
+  font-size: 26px;
+  opacity: 0.75;
+}
+.sr-video::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 70%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255, 255, 255, 0.12);
+}
+/* The round play button: put it on a .sr-video or a frame. */
+.sr-play {
+  position: absolute;
+  right: 28px;
+  bottom: 28px;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.6);
+}
+.sr-play::after {
+  content: '';
+  position: absolute;
+  left: 38px;
+  top: 28px;
+  border-left: 32px solid #16130f;
+  border-top: 20px solid transparent;
+  border-bottom: 20px solid transparent;
+}
+/* A strip of frames, like a video's timeline: .sr-frame children, each a small .sr-app. */
+.sr-film {
+  display: flex;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 20px;
+  background: var(--sr-term);
+  box-shadow: var(--sr-shadow);
+}
+.sr-frame {
+  flex: 1;
+  height: 150px;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
 /* ---------------------------------------------------------------- files */
 
 .sr-chip {

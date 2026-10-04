@@ -6,6 +6,7 @@
  * marked and rewritten as a whole on the next call; the footage, its sound and the graphics Luca
  * built in the slots are never touched. Pure file work, so it runs outside the app too.
  */
+import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
@@ -37,6 +38,7 @@ import {
   upsertHeadBlock
 } from './html'
 import { bundledResourcesDir } from './resources'
+import { buildGraphic, type BuiltGraphic } from './short-graphics'
 
 export const STAGE_ID = 'sunroom-stage'
 const STAGE_FILE = `compositions/components/${STAGE_ID}.html`
@@ -124,10 +126,16 @@ function said(words: Word[], beat: ShortBeat): string {
     .join(' ')
 }
 
-/** The starter file of one slot: a sized, empty composition with its timeline registered. */
-function slotFile(slot: ShortSlot, w: number, h: number): string {
+/**
+ * The starter file of one slot: a sized composition with its timeline registered, empty, or with
+ * the ready-made graphic Luca asked for already built in it.
+ */
+function slotFile(slot: ShortSlot, w: number, h: number, built?: BuiltGraphic): string {
   const { id, beat, area } = slot
   const len = r3(beat.end - beat.start)
+  const ready = beat.graphic && built
+  const indent = (lines: string[], pad: string): string =>
+    lines.map((l) => (l ? pad + l : l)).join('\n')
   const where =
     beat.layout === 'split'
       ? `The speaker is in the card below; build the graphic inside #${id}-area, the paper above the caption line.`
@@ -137,7 +145,7 @@ function slotFile(slot: ShortSlot, w: number, h: number): string {
   return `<!doctype html>
 <!--
   Beat ${id.slice(5)} of the Sunroom short: ${beat.layout}, ${beat.start.toFixed(2)}–${beat.end.toFixed(2)} s on the timeline (${len.toFixed(2)} s).
-  Said: “${esc(slot.said || '…')}”${beat.note ? `\n  Shows: ${esc(beat.note)}` : ''}
+  Said: “${esc(slot.said || '…')}”${beat.note ? `\n  Shows: ${esc(beat.note)}` : ''}${ready ? `\n  Built from the ready-made ${beat.graphic!.kind} graphic, timed to the words. Change anything: once you\n  edit this file, re-applying the layout keeps it; until then it rebuilds it.` : ''}
   ${where}
   Times in this file are seconds from the beat's start. The Sunroom kit's classes (sr-…) are ready
   to use: see .luca/TEMPLATE.md. Luca wrote this file once; it is yours, and re-applying the layout
@@ -156,7 +164,7 @@ function slotFile(slot: ShortSlot, w: number, h: number): string {
           class="sr-area"
           data-sunroom-area="${beat.layout}"
           style="top: ${area.top}px; height: ${area.height}px"
-        ></div>
+        >${ready ? `\n${indent([built.markup], '          ')}\n        ` : ''}</div>
 
         <style>
           [data-composition-id='${id}'] {
@@ -168,7 +176,7 @@ function slotFile(slot: ShortSlot, w: number, h: number): string {
         <script src="${GSAP}"></script>
         <script>
           ;(function () {
-            var tl = gsap.timeline({ paused: true })
+            var tl = gsap.timeline({ paused: true })${ready ? `\n${indent(built.tweens, '            ')}` : ''}
             window.__timelines['${id}'] = tl
           })()
         </script>
@@ -177,6 +185,20 @@ function slotFile(slot: ShortSlot, w: number, h: number): string {
   </body>
 </html>
 `
+}
+
+const MADE = /^<!-- sunroom:made ([0-9a-f]{12}) -->\n/m
+const digest = (text: string): string => createHash('sha1').update(text).digest('hex').slice(0, 12)
+
+/** A slot file as the tool writes it: marked with a digest of itself, to tell if it was edited. */
+function stamped(text: string): string {
+  return text.replace(/^(<!doctype html>\n)/i, `$1<!-- sunroom:made ${digest(text)} -->\n`)
+}
+
+/** Whether a slot file is still exactly as the tool wrote it. */
+function untouched(text: string): boolean {
+  const m = MADE.exec(text)
+  return !!m && digest(text.replace(MADE, '')) === m[1]
 }
 
 /** A kept slot file brought in line with its beat: length, and the content box if the layout changed. */
@@ -336,15 +358,29 @@ export function applyShortLayout(
   mkdirSync(join(dir, BEATS_DIR), { recursive: true })
   for (const slot of slots) {
     const file = join(dir, slot.file)
-    if (existsSync(file)) {
-      const before = readFileSync(file, 'utf8')
+    const { beat } = slot
+    const built = beat.graphic
+      ? buildGraphic({
+          id: slot.id,
+          beat: { ...beat, graphic: beat.graphic },
+          area: slot.area,
+          size: [w, h],
+          words,
+          face
+        })
+      : undefined
+    const fresh = stamped(slotFile(slot, w, h, built))
+    // a file as Luca's tool made it is made again (new beat times, words or graphic); one Luca
+    // has edited since is its own and stays
+    const before = existsSync(file) ? readFileSync(file, 'utf8') : null
+    if (before === null || untouched(before)) {
+      if (before !== fresh) writeFileSync(file, fresh)
+      created.push(slot.id)
+    } else {
       const after = refreshSlotFile(before, slot)
       if (after.text !== before) writeFileSync(file, after.text)
       if (after.moved) moved.push(slot.id)
       kept.push(slot.id)
-    } else {
-      writeFileSync(file, slotFile(slot, w, h))
-      created.push(slot.id)
     }
   }
   const used = new Set(slots.map((s) => s.id))
@@ -445,8 +481,11 @@ export function shortGuide(res: Extract<ShortResult, { ok: true }>): string {
         : b.layout === 'graphic'
           ? `the whole frame${b.caption === false ? ' (no caption: the headline says the words)' : `, caption band ${band} kept clear`}`
           : 'a sticker beside the head'
-    return `- ${s.id} · ${b.layout} · ${b.start.toFixed(2)}–${b.end.toFixed(2)} s · ${where} · said: “${s.said || '…'}”${b.note ? ` · ${b.note}` : ''}`
+    const made = b.graphic && !res.kept.includes(s.id) ? ` · built: ${b.graphic.kind}` : ''
+    return `- ${s.id} · ${b.layout} · ${b.start.toFixed(2)}–${b.end.toFixed(2)} s · ${where} · said: “${s.said || '…'}”${b.note ? ` · ${b.note}` : ''}${made}`
   })
+  const built = res.slots.filter((s) => s.beat.graphic && !res.kept.includes(s.id)).length
+  const empty = res.slots.filter((s) => !s.beat.graphic && !res.kept.includes(s.id)).length
   const t = res.theme
   const palette = `Palette: ${t.preset} (paper ${t.colors.paper}, ink ${t.colors.ink}, accent ${t.colors.accent}, cards ${t.colors.card}); fonts ${t.fonts.sans} and ${t.fonts.serif} italic.`
   const colors =
@@ -461,12 +500,19 @@ export function shortGuide(res: Extract<ShortResult, { ok: true }>): string {
     ].join('\n')
   const out = [
     `Laid out ${beats.length} beats (${count('full')} full, ${count('split')} split, ${count('graphic')} graphic): the speaker and the paper change on every cut, the voice plays untouched. ${palette}`,
-    res.slots.length
-      ? `Build each slot's graphic in its file (compositions/beats/<id>.html), inside #<id>-area, with the Sunroom kit from .luca/TEMPLATE.md; times in a slot start at 0 at its beat. Items land on the words that name them (word time − beat start).`
-      : 'No slots: every beat is full.',
+    ...(built
+      ? [
+          `${built} slot${built === 1 ? ' has its' : 's have their'} ready-made graphic built (marked built), timed to the words. Snapshot them; edit a file to add what the words call for (a second state, a screenshot the user gave).`
+        ]
+      : []),
+    empty
+      ? `Build each empty slot's graphic in its file (compositions/beats/<id>.html), inside #<id>-area, with the Sunroom kit from .luca/TEMPLATE.md; times in a slot start at 0 at its beat. Items land on the words that name them (word time − beat start). Or give its beat a graphic and call short_layout again.`
+      : res.slots.length
+        ? ''
+        : 'No slots: every beat is full.',
     colors,
     ...lines
-  ]
+  ].filter(Boolean)
   if (res.kept.length)
     out.push(`Kept the graphics already in ${res.kept.join(', ')} (same beat numbers).`)
   if (res.moved.length)
