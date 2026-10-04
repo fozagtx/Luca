@@ -19,8 +19,10 @@ const MARK_GAP = 0.2
 /** The longest line, in ems: a pull quote reads in short lines even in a wide zone. */
 const MEASURE = 12.5
 
-/** Advance widths in em per character class (spaces with the word spacing): Instrument Serif
- * Italic, Playfair Display Italic. */
+/**
+ * Advance widths in em per character class (spaces with the word spacing): Instrument Serif
+ * Italic, Playfair Display Italic.
+ */
 const WIDTHS = {
   paper: { lower: 0.4, upper: 0.5, digit: 0.4, punct: 0.22, space: 0.22, other: 0.46 },
   serif: { lower: 0.47, upper: 0.68, digit: 0.5, punct: 0.27, space: 0.3, other: 0.55 }
@@ -31,7 +33,8 @@ type Widths = (typeof WIDTHS)['paper']
 function wordWidth(word: string, w: Widths): number {
   let n = 0
   for (const c of word) {
-    if (/[a-z]/.test(c)) n += c === 'm' || c === 'w' ? 0.72 : c === 'i' || c === 'l' ? 0.24 : w.lower
+    if (/[a-z]/.test(c))
+      n += c === 'm' || c === 'w' ? 0.72 : c === 'i' || c === 'l' ? 0.24 : w.lower
     else if (/[A-Z]/.test(c)) n += c === 'M' || c === 'W' ? w.upper * 1.6 : w.upper
     else if (/[0-9]/.test(c)) n += w.digit
     else if (/[.,;:!?'’"“”()-]/.test(c)) n += w.punct
@@ -95,7 +98,9 @@ export const quote: KindModule<'quote'> = {
     const text = tidy(g.text, look.id === 'paper')
     const words = text.split(/\s+/).filter(Boolean)
     const widths = words.map((x) => wordWidth(x, w))
-    const byFs = g.by ? Math.min(34 * k, zone.h * 0.05) : 0
+    // the rule is the dash, so a dash the plan wrote goes
+    const who = (g.by ?? '').replace(/^[\s—–-]+/, '')
+    const byFs = who ? Math.min(34 * k, Math.max(20 * k, zone.h * 0.05)) : 0
 
     // the biggest size (~110 at 1080, a little more for a few words) that wraps to four lines and
     // fits the zone's height
@@ -105,7 +110,7 @@ export const quote: KindModule<'quote'> = {
       for (; size > 28 * k; size *= 0.97) {
         const width = Math.min(zone.w * 0.92, size * MEASURE)
         const lines = lineCount(widths, w.space, width / size)
-        const by = g.by ? size * 0.42 + byFs * 1.25 : 0
+        const by = who ? size * 0.42 + byFs * 1.25 : 0
         const height = lines * size * LINE + (mark ? size * (MARK_H + MARK_GAP) : 0) + by
         if (lines <= MAX_LINES && height <= zone.h * 0.94) break
       }
@@ -117,7 +122,7 @@ export const quote: KindModule<'quote'> = {
     const mark = marked.size >= plain.size * 0.86
     const { size, width } = mark ? marked : plain
     const byGap = size * 0.42
-    const bodyMax = zone.h * 0.94 - (g.by ? byGap + byFs * 1.25 : 0)
+    const bodyMax = zone.h * 0.94 - (who ? byGap + byFs * 1.25 : 0)
 
     const at = when(g.at, ctx.start, ctx.start)
     const first = at + (mark ? 0.14 : 0)
@@ -127,8 +132,8 @@ export const quote: KindModule<'quote'> = {
     const markColor = look.nameColor ?? 'var(--dim)'
 
     const body = `<div class="ls-qbody" style="font-size:${r1(size)}px">${mark ? `<div class="ls-qmark" style="color:${markColor}">${MARK_SVG}</div>` : ''}<div class="ls-qt" style="width:${r1(width)}px">${words.map((x) => `<span class="ls-qw">${esc(x)}</span>`).join(' ')}</div></div>`
-    const by = g.by
-      ? `<div class="ls-qby-w" style="width:${r1(width)}px;margin-top:${r1(byGap)}px"><div class="ls-qby" data-fit="parent" style="font-size:${r1(byFs)}px"><i class="ls-qrule"></i><span class="ls-qname">${esc(g.by)}</span></div></div>`
+    const by = who
+      ? `<div class="ls-qby-w" style="width:${r1(width)}px;margin-top:${r1(byGap)}px"><div class="ls-qby" data-fit="parent" style="font-size:${r1(byFs)}px"><i class="ls-qrule"></i><span class="ls-qname">${esc(who)}</span></div></div>`
       : ''
 
     const js = [
@@ -146,10 +151,8 @@ export const quote: KindModule<'quote'> = {
         ? `H.blurIn(H.q('.ls-qmark', G), ${t(at)}, { y: 16, blur: 14, scale: 0.86, dur: 0.7 });`
         : '',
       `H.qa('.ls-qw', G).forEach(function (el, i) { H.blurIn(el, ${t(first)} + i * ${t(step)}, { y: 26, blur: 12, dur: 0.6 }); });`,
-      g.by ? `H.draw(H.q('.ls-qrule', G), ${t(byAt)}, { dur: 0.4, ease: 'power3.out' });` : '',
-      g.by
-        ? `H.blurIn(H.q('.ls-qname', G), ${t(byAt + 0.1)}, { y: 10, blur: 8, dur: 0.5 });`
-        : ''
+      who ? `H.draw(H.q('.ls-qrule', G), ${t(byAt)}, { dur: 0.4, ease: 'power3.out' });` : '',
+      who ? `H.blurIn(H.q('.ls-qname', G), ${t(byAt + 0.1)}, { y: 10, blur: 8, dur: 0.5 });` : ''
     ]
     return {
       html: `<div class="ls-k-quote">${body}${by}</div>`,

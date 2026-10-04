@@ -46,7 +46,7 @@ You never draw it by hand. The whole picture is one scene plan you pass to studi
 - number: label, strikeAt, value, valueAt, sub.
 - cta: kicker (default COMMENT BELOW), word, typeAt, sub.
 - image: image, caption. quote: text, by.
-- rank: rank, name, stat, mark, value; terminal: command, typeAt, output, outputAt (both made for the serif look).
+- rank: rank, name, stat, mark, value, valueAt; terminal: command, typeAt, output, outputAt (both made for the serif look).
 - A beat's graphic can be a list of up to 3 kinds stacked top to bottom (the hook's title over its icons).
 
 ## Looks

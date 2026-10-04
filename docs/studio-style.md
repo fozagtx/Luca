@@ -111,7 +111,7 @@ The key noun of a beat switches to an italic serif.
 | 22.4–24.3 | none · ink           | **invokeai**, its tile, "local image generation / with a full editing canvas"                        | `app`              |
 | 24.3–26.3 | inset · paper        | The Midjourney tile; a red X strikes it on "every month"                                             | `icons` (cross)    |
 | 26.3–27.5 | full                 | Face                                                                                                 | —                  |
-| 27.5–29.4 | none · paper         | Two app screenshots; a black label steps "tools → masks → layers" while a box moves over the UI      | `window` (images)  |
+| 27.5–29.4 | none · paper         | Two app screenshots; a white label steps "tools → masks → layers" while a box moves over the UI      | `window` (images)  |
 | 29.8–32.0 | none · ink           | **f5-tts**, F5 tile, "voice cloning / from a short clip"                                             | `app`              |
 | 32.0–33.0 | full                 | Face                                                                                                 | —                  |
 | 33.0–35.0 | inset · paper        | A white waveform card, then a lime "cloned" waveform under it                                        | `wave`             |

@@ -35,12 +35,12 @@ export const terminal: KindModule<'terminal'> = {
       ${s} .ls-k-terminal { display: flex; align-items: center; justify-content: center; width: 100%; }
       ${s} .ls-k-terminal .ls-tm-win {
         box-sizing: border-box; background: #0E0E10; color: var(--card-fg);
-        font-family: var(--mono), monospace; font-weight: 400; line-height: ${LINE}; text-align: left;
+        font-family: var(--mono), monospace; font-weight: 500; line-height: ${LINE}; text-align: left;
         box-shadow: inset 0 0 0 ${r1(Math.max(1, 1.5 * k))}px rgba(255,255,255,0.06),
           0 ${r1(24 * k)}px ${r1(56 * k)}px var(--shadow), 0 ${r1(5 * k)}px ${r1(12 * k)}px var(--shadow);
       }
       ${s} .ls-k-terminal .ls-tm-dots { display: flex; margin-left: -${r1(8 * k)}px; }
-      ${s} .ls-k-terminal .ls-tm-dots i { width: ${r1(16 * k)}px; height: ${r1(16 * k)}px; border-radius: 50%; margin-right: ${r1(10 * k)}px; }
+      ${s} .ls-k-terminal .ls-tm-dots i { width: ${r1(18 * k)}px; height: ${r1(18 * k)}px; border-radius: 50%; margin-right: ${r1(13 * k)}px; }
       ${s} .ls-k-terminal .ls-tm-dots i:nth-child(1) { background: #FF5F57; }
       ${s} .ls-k-terminal .ls-tm-dots i:nth-child(2) { background: #FEBC2E; }
       ${s} .ls-k-terminal .ls-tm-dots i:nth-child(3) { background: #28C840; }
@@ -61,17 +61,18 @@ export const terminal: KindModule<'terminal'> = {
     const width = Math.min(zone.w * 0.92, 1040 * k)
     const padX = 40 * k
     const padTop = 26 * k
-    const dot = 16 * k
+    const dot = 18 * k
     const inner = width - padX * 2
     // the caret rides at the end of the command, then of the last output line
     const lines = [cmd + '_', ...out.map((o, i) => (i === out.length - 1 ? o + '_' : o))]
     const heightAt = (fs: number): number => {
       const cols = Math.max(8, Math.floor(inner / (fs * ADVANCE)))
       const rows = lines.reduce((n, l) => n + rowsOf(l, cols), 0)
-      return padTop + dot + fs * 1.25 + rows * fs * LINE + (out.length ? fs * 0.3 : 0) + fs * 1.15
+      return padTop + dot + fs * 1.5 + rows * fs * LINE + (out.length ? fs * 0.3 : 0) + fs * 1.35
     }
-    // the command on one line when it can be, then smaller until the window fits the zone
-    let fs = Math.min(38 * k, Math.max(26 * k, inner / ((cmd.length + 1) * ADVANCE)))
+    // every line on one row when it can be, then smaller until the window fits the zone
+    const longest = Math.max(...lines.map((l) => [...l].length))
+    let fs = Math.min(46 * k, Math.max(26 * k, inner / (longest * ADVANCE)))
     while (heightAt(fs) > zone.h * 0.94 && fs > 14 * k) fs *= 0.94
     const caretColor = look.nameColor ?? 'var(--accent)'
     const caret = (cls = ''): string =>
@@ -84,7 +85,7 @@ export const terminal: KindModule<'terminal'> = {
           `<div class="ls-tm-line ls-tm-out ls-tm-o${i}"${i === 0 ? ` style="margin-top:${r1(fs * 0.3)}px"` : ''}>${esc(o)}${i === out.length - 1 ? caret(' ls-tm-c1') : ''}</div>`
       )
       .join('')
-    const html = `<div class="ls-k-terminal"><div class="ls-tm-win" style="width:${r1(width)}px;padding:${r1(padTop)}px ${r1(padX)}px ${r1(fs * 1.15)}px;border-radius:${r1(18 * k)}px;font-size:${r1(fs)}px"><div class="ls-tm-dots" style="margin-bottom:${r1(fs * 1.25)}px"><i></i><i></i><i></i></div>${cmdHtml}${outHtml}</div></div>`
+    const html = `<div class="ls-k-terminal"><div class="ls-tm-win" style="width:${r1(width)}px;padding:${r1(padTop)}px ${r1(padX)}px ${r1(fs * 1.35)}px;border-radius:${r1(18 * k)}px;font-size:${r1(fs)}px"><div class="ls-tm-dots" style="margin-bottom:${r1(fs * 1.5)}px"><i></i><i></i><i></i></div>${cmdHtml}${outHtml}</div></div>`
 
     const at = when(g.at, ctx.start, ctx.start)
     const typeAt = when(g.typeAt, at + 0.3, ctx.start)

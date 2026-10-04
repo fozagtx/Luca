@@ -130,7 +130,7 @@ export const graphicSchema = z.discriminatedUnion('kind', [
       .max(6)
       .optional()
       .describe(
-        'a small black label under the window that steps through features: tools → masks → layers'
+        'a small white label under the window that steps through features: tools → masks → layers'
       ),
     boxes: z
       .array(
@@ -229,6 +229,7 @@ export const graphicSchema = z.discriminatedUnion('kind', [
     stat: text(24).optional().describe('"161.8k stars"'),
     mark: markSchema.optional(),
     value: text(16).optional().describe('a big number under the icon: "180,000"'),
+    valueAt: at.optional().describe('when the number lands, on its word'),
     at: at.optional()
   }),
   z.object({

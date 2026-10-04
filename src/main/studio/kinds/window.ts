@@ -73,11 +73,15 @@ function images(g: Win, ctx: KindCtx): KindOut {
   const attr = (b: { x: number; y: number; w: number; h: number }): string =>
     `attr: { x: ${r1(b.x * 1000)}, y: ${r1(b.y * 1000)}, width: ${r1(b.w * 1000)}, height: ${r1(b.h * 1000)} }`
   const cards = shots.map((s, i) => {
+    // the image's own shape when Luca read it from the file; else a 16:10 guess the js corrects
+    const size = ctx.imageSize(s.image)
+    const r = size && size[0] > 0 && size[1] > 0 ? size[0] / size[1] : 1.6
+    const w = size ? Math.min(maxW, maxH * r) : w0
     const box =
       i === 0 && boxes.length
-        ? `<svg class="ls-wbox" viewBox="0 0 1000 1000" preserveAspectRatio="none"><rect x="${r1(boxes[0].x * 1000)}" y="${r1(boxes[0].y * 1000)}" width="${r1(boxes[0].w * 1000)}" height="${r1(boxes[0].h * 1000)}" rx="${r1((radius * 1000) / w0)}" ry="${r1((radius * 1600) / w0)}" vector-effect="non-scaling-stroke" /></svg>`
+        ? `<svg class="ls-wbox" viewBox="0 0 1000 1000" preserveAspectRatio="none"><rect x="${r1(boxes[0].x * 1000)}" y="${r1(boxes[0].y * 1000)}" width="${r1(boxes[0].w * 1000)}" height="${r1(boxes[0].h * 1000)}" rx="${r1((radius * 1000) / w)}" ry="${r1((radius * 1000 * r) / w)}" vector-effect="non-scaling-stroke" /></svg>`
         : ''
-    return `<div class="ls-wcard ls-wcard-${i}" data-mw="${r1(maxW)}" data-mh="${r1(maxH)}" style="width:${r1(w0)}px;height:${r1(w0 / 1.6)}px"><div class="ls-wshot"><img src="${esc(s.image)}" alt="" /></div>${box}</div>`
+    return `<div class="ls-wcard ls-wcard-${i}"${size ? '' : ` data-mw="${r1(maxW)}" data-mh="${r1(maxH)}"`} style="width:${r1(w)}px;height:${r1(w / r)}px"><div class="ls-wshot"><img src="${esc(s.image)}" alt="" /></div>${box}</div>`
   })
   const lab = labelBlock(labels, tagFs, `margin:${r1(gap)}px 0;height:${r1(tagFs * 1.5)}px`)
   let body: string
@@ -89,8 +93,8 @@ function images(g: Win, ctx: KindCtx): KindOut {
   else body = cards[0] + lab
 
   const js = [
-    // each card takes its image's shape inside the room it has
-    `H.qa('.ls-wcard', G).forEach(function (c) {
+    // a card whose image size wasn't known takes the image's shape once it has loaded
+    `H.qa('.ls-wcard[data-mw]', G).forEach(function (c) {
   var img = H.q('img', c);
   function fit() {
     var r = img.naturalWidth / img.naturalHeight;
