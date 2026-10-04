@@ -118,16 +118,16 @@ export const EDIT_STEPS: EditStep[] = [
     needsWords: true,
     needsPicture: true,
     guide:
-      'The layout, as .luca/TEMPLATE.md says: choose the beats from the word times (full, split or graphic, a new one every 1.5–4 s, cut at the start of a word), choose the palette, and lay them out with short_layout, which moves the speaker and puts the paper and a slot for each graphic on the timeline.'
+      'The layout, as .luca/TEMPLATE.md says: choose the beats from the word times (full, split or graphic, a new one every 1.5–4 s, about 4 in 10 seconds graphic, cut at the start of a word), give each split and graphic beat its graphic, choose the palette, and lay them out with short_layout, which moves the speaker, puts the paper on the timeline and builds the graphics.'
   },
   {
     id: 'graphics',
     name: 'Clean graphics',
-    blurb: 'A mock-up or headline for every point',
+    blurb: 'A clean mock-up for every point',
     needsWords: true,
     needsPicture: false,
     guide:
-      'The graphics: build each slot short_layout returned, from the template’s kit, colored only with its theme tokens, each item landing on the word that names it.'
+      'The graphics: every split and graphic beat gets one, a ready-made graphic short_layout builds from its kind and the words you give it (on a graphic beat a headline and a graphic, never a headline alone), and the full beats of the ending get stickers. Build any slot left empty from the template’s kit, colored only with its theme tokens, each item landing on the word that names it.'
   },
   {
     id: 'critique',
@@ -261,7 +261,7 @@ export const VIDEO_TYPES: VideoType[] = [
     guide:
       'A tutorial short: a person explains a tool or a how-to to camera, vertical, 30–90 s, edited exactly in the Sunroom template (.luca/TEMPLATE.md): the speaker full frame, in a card under a graphic, or off screen for a graphic, cut on the words, with clean UI graphics and serif-accented captions.',
     stepGuides: {
-      hook: 'The hook is the first beat: from 0 s, a split (or graphic) beat whose graphic shows what the video is about within half a second.',
+      hook: 'The hook is the first beat: from 0 s, a split (or graphic) beat whose graphic shows what the video is about within half a second (the app on a phone, the site in a browser, the result); no title over the footage.',
       captions:
         'Captions last, with captions_apply style "sunroom" and 3–8 emphasis words (the word of a sentence that carries it, with the time it is said); they follow the layout by themselves.'
     },

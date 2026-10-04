@@ -219,6 +219,13 @@ export function checkBeats(raw: ShortBeat[], duration: number): CheckedBeats {
       )
     beats.push(beat)
   }
+  // the reference cuts to the paper often: about 4 in 10 seconds are graphic beats
+  const time = (l: ShortLayout): number =>
+    beats.filter((b) => b.layout === l).reduce((t, b) => t + b.end - b.start, 0)
+  if (duration > 12 && time('graphic') < duration * 0.25)
+    warnings.push(
+      `Only ${Math.round((time('graphic') / duration) * 100)} % of the video is graphic beats; the template runs about 40 % graphic, 30 % split and 30 % full. Turn a few explaining beats into graphic ones (a headline and a graphic).`
+    )
   const last = beats[beats.length - 1]
   if (duration - last.end > 0.5)
     notes.push(`From ${at(last.end)} to the end the speaker fills the frame (no beat covers it).`)
@@ -547,71 +554,55 @@ export function themeCss(theme: ShortTheme): string {
  */
 export const SUNROOM_GUIDE = `# Sunroom: the tutorial-short template
 
-This video is a Sunroom short: a person explains a tool or a how-to to camera, and the edit cuts, on the words, between three layouts. The structure (where the speaker is, the paper, a slot for each graphic, where captions sit) is made by the short_layout tool; you choose the beats, the palette and build each beat's graphic. Keep every edit in this template unless the user asks otherwise.
+This video is a Sunroom short: a person explains a tool or a how-to to camera, and the edit cuts, on the words, between three layouts, with a clean UI graphic for nearly every point. The short_layout tool makes the structure (where the speaker is, the paper, a slot per graphic, where captions sit) and builds ready-made graphics in the slots; you choose the beats, the palette and each beat's graphic and its words. Keep every edit in this template unless the user asks otherwise.
 
 ## The look
 - Paper: one flat paper color with soft leaf shadows drifting across it, like dappled window light. The stage draws it; never draw a background of your own.
 - Type: a bold, tightly set sans for captions and UI words; a large italic serif for headlines and the one key word of a sentence; a monospace for small labels, file names and code.
-- Graphics: flat, clean, light UI mock-ups (cards with thin borders and soft shadows, pills, a phone, a browser, a terminal, an editor), one accent color for badges, playheads, progress bars, check marks and stickers. No gradients on UI, no glows, no 3D, no emoji.
-- Captions: 1–4 words at a time, each line blurring into focus as it is said; the key word in the italic serif on its own row, coming in on its own word.
-
-## The palette is a theme
-- short_layout's palette sets the colors as tokens, which the paper, every graphic and the captions read. Presets: ${PALETTES.map((p) => `${p.id} (${p.blurb.toLowerCase()})`).join('; ')}. Or pass your own hex colors on top of one: paper, ink (text on the paper), accent, card (UI surfaces).
-- Choose it from the user: a color they name, their brief, their product, logo or screenshots (look at them: their brand color becomes the accent; keep the paper light unless the brand is dark). Use ${DEFAULT_PALETTE} only when nothing suggests a color. The reference this template came from showed its creator's green product: that was their branding, not the format, so never pick a color because of it.
-- In a graphic every color is a token, never a hex value: var(--sr-paper), var(--sr-ink), var(--sr-ink-soft) (lighter text, a headline's second line), var(--sr-accent), var(--sr-on-accent) (text on the accent), var(--sr-card) and var(--sr-card-ink) (UI surfaces and their text), var(--sr-line) (hairlines), and the fonts var(--sr-sans), var(--sr-serif), var(--sr-mono). Mixes are fine: color-mix(in srgb, var(--sr-accent) 30%, var(--sr-card)). Screenshots and logos the user gave keep their own colors.
-- When the user asks later ("make it blue", "use my brand color #6C5CE7", "a darker background"), call short_layout with only palette (and fonts if asked): the beats and graphics stay and everything recolors. Darker means the night preset or a dark paper with a light ink. The tool keeps text readable and says what it adjusted.
-- fonts: {sans, serif} swaps the pairing for any font that comes with Luca or a Google Fonts family (default Inter and Instrument Serif italic). Keep a bold sans with an italic serif.
+- Graphics: big, flat, clean, light UI mock-ups (a phone, a browser, a terminal, file chips and folders, a progress bar, checklist cards, a clock, a share sheet, a Follow button) that fill the paper, one accent color for badges, playheads, progress bars, check marks and stickers. No gradients on UI, no glows, no 3D, no emoji.
+- Captions: 1–4 words at a time, each line blurring into focus as it is said; the key word in the italic serif on its own row.
 
 ## The three layouts
-- full: the speaker fills the frame, punched in a little (1.15× and 1× in turn, or zoom), drifting in slowly, with a warm vignette. White captions about 70 % down. A sticker beside the head when the words call for one (sticker: true): a price tag, a /keyword pill, a bookmark that fills and says Saved, a "New message" notification sliding in at the top. Never over the face or the caption line.
-- split: the paper covers the top half; the speaker is in a full-width card below it with rounded top corners. One graphic showing what is being said fills the paper above the caption, which sits on the paper just above the card, in the ink color.
-- graphic: no speaker, the whole frame is paper: a big kinetic headline in the italic serif at the top (the main words in ink, a lighter second line in ink-soft) and the UI graphic under it. Captions sit low (about 75–80 % down); pass caption: false when the headline already says the words.
+- full: the speaker fills the frame, punched in a little (1.15× and 1× in turn, or zoom), drifting in slowly. White captions about 70 % down. Stickers beside the head when the words call for one.
+- split: the paper covers the top half with one graphic of what is being said; the speaker is in a full-width card below it with rounded top corners; the caption sits on the paper just above the card, in the ink color.
+- graphic: no speaker, the whole frame is paper: a big italic-serif headline at the top (1–4 key words in lowercase, as they are said: “the crazy part”, “no idea”; a lighter second line under it with the words said next) AND a graphic under it. Never a headline alone on empty paper. Captions sit low (about 75–80 % down); pass caption: false when the headline already says the words.
 - Layouts change with a hard cut on a word; nothing slides between them. What is new animates in just after the cut.
 
 ## Pacing
-- A new beat every 1.5–4 s (never over 5 s: split a long thought into two beats or two graphics); roughly a third each of full, split and graphic; the speaker never off screen for more than about 6 s at a time.
-- Cut at the start of a word, using the word times transcribe gave (after the clean edit), never mid-word. Beats run back to back from 0 s to the end of the video.
-- Full for feelings, asides, jokes and the call to action; split for explaining something that has a picture; graphic for a concept, a list, a number, a before and after, "the crazy part".
+- A new beat every 1.5–4 s (never over 5 s), so a new graphic lands every 1.5–3 s. Cut at the start of a word, using the word times transcribe gave (after the clean edit). Beats run back to back from 0 s to the end of the video.
+- About 4 in 10 seconds graphic, 3 split, 3 full. Graphic for a concept, a list, a number, a before and after, "the crazy part"; split for explaining something that has a picture; full for feelings, asides, jokes and the call to action. The speaker is never off screen for more than about 6 s.
 - The hook: the first beat starts at 0 s and is a split (or graphic) beat whose graphic shows what the video is about within half a second (the app on a phone, the site in a browser, the result).
-- The ending: the last 3–8 s are full beats with stickers for what is asked: a /keyword pill on "comment …", a "New message" notification on "I'll send it to you", a Follow button a cursor clicks into "Following ✓" (a split beat), a bookmark that fills and says Saved on "save this". It ends on the last word: no outro card.
+- The ending: the last 3–8 s are mostly full beats with stickers for what is asked: comment on "comment …", notify on "I'll send it", a follow beat (split) on "follow", bookmark on "save this". It ends on the last word: no outro card.
+
+## Ready-made graphics
+Give every split and graphic beat a graphic in short_layout: {kind, headline?, sub?, label?, items?, at?}. The tool builds it in the beat's slot, sized for the layout, in the theme's colors, every item landing on the word that starts it (or at the times in at). The words are yours: take them from what is said and from the brief (the product's name, its address, the command, the files, the points). headline and sub are for graphic beats.
+${Object.entries(GRAPHICS)
+  .map(([k, v]) => `- ${k}: ${v}`)
+  .join('\n')}
+The ones marked sticker go on full beats (sticker: true is implied); the others on split and graphic beats. A slot without a graphic is empty for you to build in. A built slot is yours to edit (add a second state, a screenshot the user gave); once edited, calling short_layout again keeps it.
+
+## The palette is a theme
+- short_layout's palette sets the colors as tokens, which the paper, every graphic and the captions read. Presets: ${PALETTES.map((p) => `${p.id} (${p.blurb.toLowerCase()})`).join('; ')}. Or pass your own hex colors on top of one: paper, ink (text on the paper), accent, card (UI surfaces).
+- Choose it from the user: a color they name, their brief, their product, logo or screenshots (their brand color becomes the accent; keep the paper light unless the brand is dark). Use ${DEFAULT_PALETTE} only when nothing suggests a color. The reference this template came from showed its creator's green product: that was their branding, not the format, so never pick a color because of it.
+- In a graphic you write yourself every color is a token, never a hex value: var(--sr-paper), var(--sr-ink), var(--sr-ink-soft) (lighter text, a headline's second line), var(--sr-accent), var(--sr-on-accent) (text on the accent), var(--sr-card) and var(--sr-card-ink) (UI surfaces and their text), var(--sr-line) (hairlines), and the fonts var(--sr-sans), var(--sr-serif), var(--sr-mono). Mixes are fine: color-mix(in srgb, var(--sr-accent) 30%, var(--sr-card)). Screenshots and logos the user gave keep their own colors.
+- When the user asks later ("make it blue", "use my brand color #6C5CE7", "a darker background"), call short_layout with only palette (and fonts if asked): the beats and graphics stay and everything recolors. Darker means the night preset or a dark paper with a light ink. The tool keeps text readable and says what it adjusted.
+- fonts: {sans, serif} swaps the pairing for any font that comes with Luca or a Google Fonts family (default Inter and Instrument Serif italic). Keep a bold sans with an italic serif.
 
 ## Order of work
 1. transcribe (and clean_edit when the plan asks for it), so the words and their times are final.
 2. Look at the footage (\`npx ${HYPERFRAMES} snapshot --at 1\`) and note where the face is: its center (about the nose) as fractions of the frame's width and height.
-3. Read the words and choose the beats: [{start, end, layout, caption?, zoom?, sticker?, note}], writing in note what each graphic will show.
+3. Read the words and choose the beats, each with its graphic: [{start, end, layout, caption?, zoom?, graphic: {kind, headline?, sub?, label?, items?}}].
 4. Choose the palette (above).
-5. Call short_layout {beats, face, palette}. It returns one slot per split and graphic beat (and per full beat with a sticker), with what is said during it.
-6. Call catalog_search once for the kinds of graphics you need ("phone mockup", "terminal", "progress bar", "checklist"); use an item only if it fits this paper look and can take the tokens. Otherwise build from the Sunroom kit below.
-7. Build each slot's graphic in compositions/beats/<slot>.html, inside #<slot>-area, timed to the words: in a slot, time 0 is its beat's start (word time − beat start).
-8. captions_apply {style: "sunroom", emphasis: [3–8 key words or short phrases, with the time each is said]}. The captions follow the layout by themselves; never move them by hand.
-9. Lint, then snapshot a frame of each layout and the first 0.3 s after two cuts; fix cut-off text, overlaps with the face or the caption, empty paper, text too small to read on a phone.
-10. Reply in 2–4 lines: what you made, the palette and why, and that they can ask for another palette or font.
+5. Call short_layout {beats, face, palette}. It returns the slots: built ones, and empty ones (a beat without a graphic) for you to build.
+6. Build the empty slots, if any (Building a beat, below). These graphics come from this template, not the catalog: use catalog_search only for something none of them shows (a chart, a map).
+7. captions_apply {style: "sunroom", emphasis: [3–8 key words or short phrases, with the time each is said]}. The captions follow the layout by themselves; never move them by hand.
+8. Lint, then snapshot a frame of each layout and the first 0.3 s after two cuts; fix cut-off text, overlaps with the face or the caption, empty paper, text too small to read on a phone.
+9. Reply in 2–4 short lines, no lists: what you made, the palette and why, and that they can ask for another palette or font.
 
 ## Building a beat
-- A slot file is a small composition Luca made for you: the root, #<slot>-area (its content box) and one paused timeline already registered. Put the markup inside the area and the tweens on that timeline; prefix every id with the slot id (#beat-03-card). Never move, crop or hide the footage or draw a background: the layout does that.
-- Motion, all with fromTo on the slot's timeline:
-  - a card or mock-up enters just after the cut: {opacity: 0, y: 40, scale: 0.96, filter: 'blur(8px)'} → {opacity: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: 0.38, ease: 'power3.out'} at 0.04.
-  - headline words blur in on the word that says them: {opacity: 0, filter: 'blur(14px)'} → {opacity: 1, filter: 'blur(0px)', duration: 0.4, ease: 'power2.out'}; the second line 0.3–0.6 s later.
-  - things build up on the words that name them: list rows, chips, checks, nodes, files flying into a folder.
-  - typing: a .sr-type span from width '0ch' to 'Nch' with ease 'steps(N)'.
-  - stickers pop: {opacity: 0, scale: 0.6, rotation: -10} → {opacity: 1, scale: 1, rotation: 0, duration: 0.32, ease: 'back.out(1.8)'}.
-  - a stroke draws across words or a card: .sr-strike scaleX 0 → 1 from the left in 0.25 s.
-  - nothing freezes: a held graphic drifts (scale 1 → 1.02 over the beat). No exits: the cut ends the beat.
-- Sizes are for a 1080 px wide frame: headlines 120–160 px, card text 30–44 px, labels at least 24 px.
-
-## The Sunroom kit
-Classes ready in index.html; combine them, size and place them inline (left, top, width), and color only with the tokens.
-- Layout: .sr-stack (centers its children in a column), .sr-row-center (a centered row).
-- Type: .sr-headline (big italic serif; a .sr-sub span for the lighter second line, .sr-word spans to animate word by word), .sr-serif, .sr-bold, .sr-label (small monospace; .accent), .sr-code (monospace block; b and .dim inside).
-- Cards: .sr-card, .sr-ph (a placeholder text line; .box for an outlined field), .sr-slide (a deck slide), .sr-step (a row card: .sr-thumb picture, then a .sr-label number and .sr-serif words; add a .sr-check at its corner when its point is made), .sr-tile (a tall numbered card: .sr-label "01/04", a picture, .sr-serif title).
-- Pills and buttons: .sr-pill (.dark, .accent, .big), .sr-button (a big Follow-style button; .dark for its pressed state), .sr-check, .sr-tag ("$0"), .sr-bookmark (.on), .sr-avatar (.c2 .c3 .c4), .sr-cursor (place it with left/top; tween x/y and a scale tap), .sr-strike.
-- Devices: .sr-phone > .sr-screen (img inside), .sr-browser > .sr-bar (three <i></i> and a .sr-url) + .sr-page, .sr-terminal > .sr-bar + .sr-term (.sr-prompt, .sr-type, .sr-caret, .ok, .dim).
-- Files: .sr-chip (a file name), .sr-folder, .sr-card.sr-list > .sr-file rows (a .sr-icon; .soft, .ink, .pale).
-- Editor: .sr-editor > .sr-viewer + .sr-tracks > .sr-track (<b>V1</b> and .sr-clip blocks placed with left/width in %; .strong .ink .pale) + .sr-key diamonds; a .sr-playhead over the tracks.
-- Progress: .sr-progress > .sr-progress-row (two spans: the file and the percent) + .sr-bar-track > .sr-fill (scaleX 0 → 1).
-- Clock: .sr-clock > .sr-hand.h + .sr-hand.m (tween rotation).
-- Phone UI: .sr-notify (<i></i> then a div with <b>title</b><span>line</span>), .sr-share (spans of <i></i>Label), .sr-input (<i></i><span>BRAG</span><i></i>).
-- Graphs: an svg.sr-links over the area with <line>/<path> between nodes; .sr-sticker gives anything over the footage a soft shadow.`
+- A slot file is a small composition: the root, #<slot>-area (its content box) and one paused timeline already registered. Put the markup inside the area and the tweens on that timeline; prefix every id with the slot id (#beat-03-card). Never move, crop or hide the footage or draw a background: the layout does that. Fill the area: a graphic 860–960 px wide, nothing smaller than 24 px text.
+- Motion, all with fromTo on the slot's timeline, times from the beat's start (word time − beat start): a card enters {opacity: 0, y: 40, scale: 0.96, filter: 'blur(8px)'} → {opacity: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: 0.38, ease: 'power3.out'} at 0.04; headline words blur in ({opacity: 0, filter: 'blur(14px)'} → clear, 0.4 s) on the word that says them; things build up on the words that name them; stickers pop ({opacity: 0, scale: 0.6, rotation: -10} → 1, 0.32 s, 'back.out(1.8)'); a held graphic drifts (scale 1 → 1.02 over the beat). No exits: the cut ends the beat.
+- The kit's classes (sr-…) are in index.html: .sr-stack, .sr-headline (.sr-sub, .sr-word), .sr-serif, .sr-bold, .sr-label, .sr-code; .sr-card, .sr-ph, .sr-slide, .sr-step (.sr-thumb), .sr-tile; .sr-pill (.dark .accent .big), .sr-button, .sr-check, .sr-tag, .sr-bookmark (.on), .sr-avatar, .sr-cursor, .sr-strike; .sr-phone > .sr-screen, .sr-browser > .sr-bar (three <i></i>, .sr-url) + .sr-page, .sr-terminal > .sr-bar + .sr-term (.sr-prompt, .sr-type, .sr-caret, .ok); .sr-app (a small app screen: .sr-app-top, .sr-app-hero with b and .sr-app-bars, .sr-app-row; size it with font-size), .sr-video (.sr-play), .sr-film > .sr-frame; .sr-chip, .sr-folder, .sr-list > .sr-file (.sr-icon); .sr-editor > .sr-viewer + .sr-tracks > .sr-track (.sr-clip, .sr-key) + .sr-playhead; .sr-progress > .sr-progress-row + .sr-bar-track > .sr-fill; .sr-clock > .sr-hand.h + .sr-hand.m; .sr-notify, .sr-share, .sr-input; svg.sr-links; .sr-sticker. A built slot shows how they fit together.`
 
 /** A beat's slot id and file: beat-01 … in the order of the beats. */
 export const slotId = (index: number): string => `beat-${String(index + 1).padStart(2, '0')}`
