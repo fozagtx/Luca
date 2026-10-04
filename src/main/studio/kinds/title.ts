@@ -18,7 +18,7 @@ export const title: KindModule<'title'> = {
     const longest = Math.max(...g.lines.map((l) => l.text.length))
     // ~0.62 em a character in the wide grotesk; the fit pass shrinks anything still too wide
     const byWidth = (zone.w * 0.96) / Math.max(3, longest * (look.id === 'serif' ? 0.5 : 0.64))
-    const size = Math.min(byWidth, (zone.h * 0.9) / (n * 1.05), 190 * ctx.k)
+    const size = Math.min(byWidth, (zone.h * 0.9) / (n * 1.05), (n > 1 ? 156 : 150) * ctx.k)
     const lines = g.lines.map((l, i) => {
       const weight = look.weights[l.weight ?? (n > 1 ? (i === 0 ? 'black' : 'light') : 'bold')]
       const color =

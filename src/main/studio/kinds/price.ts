@@ -23,7 +23,10 @@ const EM: [RegExp, number][] = [
   [/[A-Z]/, 0.86]
 ]
 const figEm = (s: string): number =>
-  Math.max(1.4, [...s].reduce((n, c) => n + (EM.find(([re]) => re.test(c))?.[1] ?? 0.76), 0))
+  Math.max(
+    1.4,
+    [...s].reduce((n, c) => n + (EM.find(([re]) => re.test(c))?.[1] ?? 0.76), 0)
+  )
 
 /** A frosted glass tile with the tool's name written small inside it, under the logo. */
 function paidTile(m: StudioMark, size: number, i: number): string {
@@ -77,10 +80,14 @@ export const price: KindModule<'price'> = {
     let gapA = (n ? 170 : 84) * k
     let gapB = 30 * k
     const label0 = g.label ?? ''
+    const labelEm = Math.max(5, label0.length) * LOW
+    const tagEm = (g.tag ?? '').length * TAG + 1
+    // the serif look's italic figures run much narrower
+    const figW = (s: string): number => figEm(s) * (look.id === 'serif' ? 0.7 : 1)
     const oldW = n
       ? n * tileS + (n - 1) * tileGap
-      : Math.max(label * Math.max(5, label0.length) * LOW, from * figEm(g.from ?? ''))
-    const newW = Math.max(to * figEm(g.to), tagS * ((g.tag ?? '').length * TAG + 1))
+      : Math.max(label * labelEm, from * figW(g.from ?? ''))
+    const newW = Math.max(to * figW(g.to), tagS * tagEm)
     const oldH = (label ? label * 1.2 + gapL : 0) + from + tileS
     const newH = (tagS ? tagS * 1.5 + gapB : 0) + to
     const gapMid = zone.w * 0.1
@@ -90,10 +97,12 @@ export const price: KindModule<'price'> = {
       wide ? (zone.w * 0.9 - gapMid) / (oldW + newW) : (zone.w * 0.9) / Math.max(oldW, newW),
       (zone.h * (wide ? 0.86 : 0.9)) / height
     )
-    label *= fit
+    // small text keeps a readable size while it has the room
+    const share = wide ? 0.42 : 0.9
+    if (label) label = Math.min(Math.max(label * fit, 32 * k), (zone.w * share) / labelEm)
+    if (tagS) tagS = Math.min(Math.max(tagS * fit, 34 * k), (zone.w * share) / tagEm)
     from *= fit
     to *= fit
-    tagS *= fit
     tileS *= fit
     tileGap *= fit
     gapL *= fit
@@ -143,7 +152,8 @@ export const price: KindModule<'price'> = {
     if (n) {
       marks.forEach((_, i) => {
         js.push(`pop(H.q('.ls-pr-t-${i}', G), ${t(at + i * 0.08)}, 0.7);`)
-        const c = strikeAt + i * step
+        const c =
+          marks[i].at !== undefined ? Math.max(at + 0.25, marks[i].at!) : strikeAt + i * step
         js.push(
           `(function (x) { var b = H.qa('b', x); H.draw(b[0], ${t(c)}, { dur: 0.18 }); H.draw(b[1], ${t(c + 0.13)}, { dur: 0.18 }); })(H.q('.ls-pr-t-${i} .ls-x', G));`
         )

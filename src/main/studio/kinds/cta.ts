@@ -7,11 +7,18 @@
 import { esc, r1, SEND_SVG, typed } from '../parts'
 import { t, when, type KindModule } from './types'
 
+// average advance per character class, in em
+const EM: [RegExp, number][] = [
+  [/\s/, 0.32],
+  [/[A-Z]/, 0.9],
+  [/\d/, 0.76],
+  [/[a-z]/, 0.68]
+]
+
 /** Rough advance in em of the wide grotesk at bold. */
 function ems(s: string): number {
   let n = 0
-  for (const c of s)
-    n += c === ' ' ? 0.32 : /[A-Z]/.test(c) ? 0.9 : /[0-9]/.test(c) ? 0.76 : /[a-z]/.test(c) ? 0.68 : 0.5
+  for (const c of s) n += EM.find(([re]) => re.test(c))?.[1] ?? 0.5
   return n
 }
 
@@ -26,6 +33,13 @@ const WORD = 48
 const AVATAR = 62
 const SEND = 66
 const CPS = 12
+
+/**
+ * A pop whose overshoot stays on the scale: H.pop eases the blur with back.out too, which takes
+ * it below 0 (an invalid filter the browser ignores, so a seeked frame can keep a stale blur).
+ */
+const popIn = (sel: string, at: number, from: number, k: number): string =>
+  `(function (el) { tl.fromTo(el, { opacity: 0, scale: ${from} }, { opacity: 1, scale: 1, duration: 0.42, ease: 'back.out(1.6)' }, ${t(at)}); tl.fromTo(el, { filter: 'blur(${r1(8 * k)}px)' }, { filter: 'blur(0px)', duration: 0.3, ease: 'power2.out' }, ${t(at)}); })(H.q('${sel}', G));`
 
 export const cta: KindModule<'cta'> = {
   css: (s, k) => `
@@ -95,14 +109,16 @@ export const cta: KindModule<'cta'> = {
     const js = [
       `H.blurIn(H.q('.ls-kick', G), ${t(at)}, { blur: 10, dur: 0.4 });`,
       `H.blurIn(H.q('.ls-field', G), ${t(at + 0.06)}, { y: 18, scale: 0.97, blur: 14, dur: 0.5, ease: 'expo.out' });`,
-      `H.pop(H.q('.ls-avatar', G), ${t(at + 0.16)}, { from: 0.4 });`,
+      popIn('.ls-avatar', at + 0.16, 0.4, k),
       `var caret = H.q('.ls-caret', G);`,
       `H.blink(caret, ${t(at + 0.06)}, ${t(typeAt)});`,
       `tl.set(caret, { opacity: 1 }, ${t(typeAt)});`,
       `H.type(H.q('.ls-word', G), ${t(typeAt)}, ${CPS});`,
       `H.blink(caret, ${t(typeEnd + 0.45)}, ${t(ctx.end)});`,
-      `H.pop(H.q('.ls-send-on', G), ${t(typeEnd + 0.04)}, { from: 0.5, dur: 0.4 });`,
-      g.sub ? `H.blurIn(H.q('.ls-cta-sub', G), ${t(typeEnd + 0.22)}, { y: 10, blur: 10, dur: 0.45 });` : ''
+      popIn('.ls-send-on', typeEnd + 0.04, 0.5, k),
+      g.sub
+        ? `H.blurIn(H.q('.ls-cta-sub', G), ${t(typeEnd + 0.22)}, { y: 10, blur: 10, dur: 0.45 });`
+        : ''
     ]
     return {
       html: `<div class="ls-k-cta" style="width:${r1(width)}px">${kick}${field}${sub}</div>`,

@@ -49,6 +49,8 @@ export type StudioCtx = {
   texture: string | null
   /** Pixel sizes of the images the plan names, by project path. */
   images?: Record<string, [number, number]>
+  /** Stylesheets for built-in fonts the look uses (the preview needs them; renders embed them). */
+  fontLinks?: string[]
 }
 
 type Pose = SpeakerPose & { plainClip: string; cutClip: string; cut: boolean }
@@ -203,14 +205,18 @@ export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string 
     .map((kind) => (KINDS[kind] as KindModule<typeof kind>).css?.(SCOPE, k) ?? '')
     .join('')
   const tex = ctx.texture && look.texture && plan.texture > 0
+  // every face the kinds use, loaded before fitAll measures any text
   const fontsToLoad = [
     ...new Set([
-      `900 100px "${look.fonts.display}"`,
-      `700 100px "${look.fonts.display}"`,
-      `500 100px "${look.fonts.display}"`,
-      `300 100px "${look.fonts.display}"`,
-      `500 50px "${look.fonts.text}"`,
-      `italic 400 50px "${look.fonts.serif}"`
+      ...[300, 400, 500, 600, 700, 800, 900].map((w) => `${w} 100px "${look.fonts.display}"`),
+      ...(look.displayItalic
+        ? [800, 900].map((w) => `italic ${w} 100px "${look.fonts.display}"`)
+        : []),
+      ...[400, 500, 600, 700].map((w) => `${w} 50px "${look.fonts.text}"`),
+      `400 50px "${look.fonts.serif}"`,
+      `italic 400 50px "${look.fonts.serif}"`,
+      `400 50px "${look.fonts.mono}"`,
+      `500 50px "${look.fonts.mono}"`
     ])
   ]
   const card = geo.card
@@ -267,7 +273,7 @@ ${partsCss(SCOPE, k)}${kindCss}`
       ${boxes.join('\n      ')}
     </div>
 
-    <style>${css}
+${(ctx.fontLinks ?? []).map((u) => `    <link rel="stylesheet" href="${esc(u)}" />\n`).join('')}    <style>${css}
     </style>
 
     <script src="${GSAP}"></script>

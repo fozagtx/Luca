@@ -17,7 +17,8 @@ export const icons: KindModule<'icons'> = {
     const n = g.items.length
     const labels = g.items.some((i) => i.label) && g.focus === false
     const gap = 26 * k
-    const size = Math.min(290 * k, (zone.w - gap * (n - 1)) / n, zone.h * (labels ? 0.7 : 0.85))
+    const cap = (n === 1 ? 430 : n === 2 ? 360 : 290) * k
+    const size = Math.min(cap, (zone.w - gap * (n - 1)) / n, zone.h * (labels ? 0.7 : 0.85))
     const focus = g.focus !== false
     const start = when(g.at, ctx.start, ctx.start)
     // names said later snap in on their word; without times, one after another

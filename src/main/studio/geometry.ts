@@ -69,11 +69,11 @@ export function studioGeometry(w: number, h: number): StudioGeometry {
     card: rounded(card),
     zones: {
       inset: rounded({ x: pad, y: zoneTop, w: w - pad * 2, h: insetBottom - zoneTop }),
-      none: rounded({ x: pad, y: h * 0.08, w: w - pad * 2, h: h * lerp(0.6, 0.66, t) }),
+      none: rounded({ x: pad, y: h * 0.06, w: w - pad * 2, h: h * lerp(0.58, 0.66, t) }),
       full: rounded({ x: pad, y: h * 0.06, w: w - pad * 2, h: h * 0.3 })
     },
     captions: {
-      inset: { x: round(w / 2), y: round(cardTop - h * lerp(0.1, 0.085, t)), w: round(w * 0.8) },
+      inset: { x: round(w / 2), y: round(cardTop - h * lerp(0.13, 0.1, t)), w: round(w * 0.8) },
       none: { x: round(w / 2), y: round(h * lerp(0.74, 0.84, t)), w: round(w * 0.8) },
       full: { x: round(w / 2), y: round(h * lerp(0.74, 0.84, t)), w: round(w * 0.8) }
     }
@@ -115,9 +115,9 @@ export function insetPose(
   const visibleH = Math.min(card.y + card.h, g.h) - card.y
   const cover = Math.max(card.w / g.w, visibleH / g.h)
   // the face lands in the card's middle (cover) or just below its top edge (pop-out)
-  const scale = popout ? cover * (g.side ? 0.78 : 0.62) : cover
+  const scale = popout ? cover * (g.side ? 0.78 : 0.6) : cover
   const tx = card.x + card.w / 2
-  const ty = popout ? card.y + visibleH * (g.side ? 0.2 : 0.3) : card.y + visibleH * 0.48
+  const ty = popout ? card.y + visibleH * (g.side ? 0.2 : 0.36) : card.y + visibleH * 0.48
   let x = tx - face.x * g.w * scale
   let y = ty - face.y * g.h * scale
   if (!popout) {

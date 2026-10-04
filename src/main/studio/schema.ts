@@ -164,7 +164,9 @@ export const graphicSchema = z.discriminatedUnion('kind', [
     from: text(10).optional().describe('what it costs: "$60"'),
     strikeAt: at.optional(),
     crossed: z
-      .array(markSchema)
+      .array(
+        markSchema.extend({ at: at.optional().describe('crossed out on the word that names it') })
+      )
       .max(3)
       .optional()
       .describe('paid tools shown as tiles and crossed out in red, instead of label and from'),

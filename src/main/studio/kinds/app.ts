@@ -9,12 +9,12 @@ import { t, when, type KindModule } from './types'
 
 /** Where satellites sit around the main tile: offset in tile sizes, and size as a share of it. */
 const ORBIT: [number, number, number][] = [
-  [-0.9, 0.5, 0.6],
-  [0.92, 0.55, 0.58],
-  [-0.82, -0.52, 0.36],
-  [0.86, -0.58, 0.34],
-  [1.28, 0.02, 0.4],
-  [-1.3, 0.04, 0.38]
+  [-0.66, 0.52, 0.62],
+  [0.52, 0.6, 0.64],
+  [-0.56, -0.62, 0.32],
+  [0.72, -0.46, 0.3],
+  [1.14, 0.04, 0.36],
+  [-1.14, -0.08, 0.36]
 ]
 
 export const app: KindModule<'app'> = {
@@ -24,6 +24,7 @@ export const app: KindModule<'app'> = {
       ${s} .ls-k-app .ls-hub { position: relative; display: flex; justify-content: center; }
       ${s} .ls-k-app .ls-sat { position: absolute; display: flex; flex-direction: column; align-items: center; }
       ${s} .ls-k-app .ls-sat-label { margin-top: 0.4em; font-family: var(--text), sans-serif; font-weight: 500; color: var(--fg); white-space: nowrap; }
+      ${s} .ls-k-app .ls-foot { display: flex; flex-direction: column; align-items: center; max-width: 100%; }
       ${s} .ls-k-app .ls-wire { width: 0; border-left: 2px solid var(--line); transform-origin: top center; }
       ${s} .ls-k-app .ls-stat { font-family: var(--display), sans-serif; font-weight: 500; color: var(--fg); line-height: 1.1; letter-spacing: -0.02em; text-align: center; }
       ${s} .ls-k-app .ls-subline { font-family: var(--text), sans-serif; font-weight: 500; color: var(--dim); line-height: 1.2; text-align: center; white-space: nowrap; }
@@ -70,19 +71,23 @@ export const app: KindModule<'app'> = {
       `H.rise(H.q('.ls-name', G), ${t(at)});`,
       `H.pop(H.q('.ls-main', G), ${t(at + 0.14)}, { from: 0.7 });`,
       g.stat || g.lines?.length
-        ? `tl.fromTo(H.q('.ls-wire', G), { scaleY: 0 }, { scaleY: 1, duration: 0.3, ease: 'power2.out' }, ${t(footAt)});`
+        ? `tl.fromTo(H.q('.ls-wire', G), { scaleY: 0 }, { scaleY: 1, duration: 0.2, ease: 'power2.out' }, ${t(footAt)});`
         : '',
-      g.stat ? `H.rise(H.q('.ls-stat', G), ${t(footAt + 0.18)});` : '',
-      g.stat?.label ? `H.blurIn(H.q('.ls-stat-label', G), ${t(footAt + 0.4)}, { y: 10 });` : '',
-      g.lines?.length ? `H.blurIn(H.q('.ls-l0', G), ${t(footAt + 0.15)}, { y: 12 });` : '',
-      g.lines?.[1] ? `H.blurIn(H.q('.ls-l1', G), ${t(footAt + 0.32)}, { y: 12 });` : '',
+      g.stat ? `H.rise(H.q('.ls-stat', G), ${t(footAt + 0.08)});` : '',
+      g.stat?.label ? `H.blurIn(H.q('.ls-stat-label', G), ${t(footAt + 0.24)}, { y: 10 });` : '',
+      g.lines?.length ? `H.blurIn(H.q('.ls-l0', G), ${t(footAt + 0.08)}, { y: 12 });` : '',
+      g.lines?.[1] ? `H.blurIn(H.q('.ls-l1', G), ${t(footAt + 0.22)}, { y: 12 });` : '',
+      // the satellites take the room: what was under the tile clears as the first arrives
+      hasFoot && sats.length
+        ? `tl.fromTo(H.q('.ls-foot', G), { opacity: 1 }, { opacity: 0, duration: 0.25, ease: 'power2.in', immediateRender: false }, ${t(Math.max(footAt + 0.6, Math.min(...satTimes) - 0.1))});`
+        : '',
       ...sats.slice(0, ORBIT.length).map((_, i) => {
         const [dx, dy] = ORBIT[i]
         return `tl.fromTo(H.q('.ls-sat-${i}', G), { opacity: 0, x: ${r1(dx * tileSize * 0.7)}, y: ${r1(dy * tileSize * 0.7)}, scale: 0.6, filter: 'blur(${r1(10 * k)}px)' }, { opacity: 1, x: 0, y: 0, scale: 1, filter: 'blur(0px)', duration: 0.6, ease: 'expo.out' }, ${t(satTimes[i])});`
       })
     ]
     return {
-      html: `<div class="ls-k-app">${name}${hub}${foot}</div>`,
+      html: `<div class="ls-k-app">${name}${hub}${foot ? `<div class="ls-foot">${foot}</div>` : ''}</div>`,
       js: js.filter(Boolean).join('\n')
     }
   }

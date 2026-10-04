@@ -7,11 +7,18 @@
 import { esc, r1 } from '../parts'
 import { t, when, type KindModule } from './types'
 
+// average advance per character class, in em
+const EM: [RegExp, number][] = [
+  [/\s/, 0.32],
+  [/[A-Z]/, 0.9],
+  [/\d/, 0.76],
+  [/[a-z]/, 0.68]
+]
+
 /** Rough advance of a line in em, for the wide grotesk at bold; data-fit catches the rest. */
 function ems(s: string): number {
   let n = 0
-  for (const c of s)
-    n += c === ' ' ? 0.32 : /[A-Z]/.test(c) ? 0.9 : /[0-9]/.test(c) ? 0.76 : /[a-z]/.test(c) ? 0.68 : 0.5
+  for (const c of s) n += EM.find(([re]) => re.test(c))?.[1] ?? 0.5
   return n
 }
 
@@ -46,6 +53,7 @@ export const pills: KindModule<'pills'> = {
         flex: none; font-family: var(--serif), serif; font-style: italic; font-weight: 400; color: var(--dim);
         line-height: 1.2; white-space: nowrap; text-align: center;
       }
+      ${s} .ls-k-pills .ls-join-sym { font-family: var(--display), sans-serif; font-style: normal; font-weight: 500; }
 `,
   render: (g, ctx) => {
     const { zone, k, look } = ctx
@@ -68,19 +76,32 @@ export const pills: KindModule<'pills'> = {
 
     const pillStyle = `font-size:${r1(f)}px;font-weight:${look.weights.bold};${look.displayItalic ? 'font-style:italic;' : ''}`
     const introFont =
-      look.id === 'serif' ? 'font-family:var(--text),sans-serif;font-weight:500' : 'font-family:var(--display),sans-serif;font-weight:400'
-    const introSize = g.intro ? Math.min(f * INTRO, (zone.w * 0.94) / ([...g.intro].length * 0.62)) : 0
+      look.id === 'serif'
+        ? 'font-family:var(--text),sans-serif;font-weight:500'
+        : 'font-family:var(--display),sans-serif;font-weight:400'
+    const introSize = g.intro
+      ? Math.min(f * INTRO, (zone.w * 0.94) / ([...g.intro].length * 0.62))
+      : 0
     const intro = g.intro
       ? `<div class="ls-intro-box" style="margin-bottom:${r1(f * 0.5)}px"><div class="ls-intro" data-fit="parent" style="font-size:${r1(introSize)}px;${introFont}">${esc(g.intro)}</div></div>`
       : ''
-    const joinSize = f * JOIN
+    // a word ("or") in the italic serif; a symbol ("+", "/") in the grotesk, where it has weight
+    const sym = !!g.joiner && !/\p{L}/u.test(g.joiner)
+    const joinSize = f * JOIN * (sym ? 1.15 : 1)
     const joiner = (i: number): string => {
       if (!g.joiner) return ''
-      const space = row ? `margin:0 ${r1(f * 0.35)}px` : `margin:${r1((f * joinGap - joinSize * 1.2) / 2)}px 0`
-      return `<div class="ls-join ls-j-${i}" style="font-size:${r1(joinSize)}px;${space}">${esc(g.joiner)}</div>`
+      const space = row
+        ? `margin:0 ${r1(f * 0.35)}px`
+        : `margin:${r1((f * joinGap - joinSize * 1.2) / 2)}px 0`
+      return `<div class="ls-join${sym ? ' ls-join-sym' : ''} ls-j-${i}" style="font-size:${r1(joinSize)}px;${space}">${esc(g.joiner)}</div>`
     }
     const items = g.items.map((it, i) => {
-      const space = i && !g.joiner ? (row ? `margin-left:${r1(f * rowGap)}px` : `margin-top:${r1(f * joinGap)}px`) : ''
+      const space =
+        i && !g.joiner
+          ? row
+            ? `margin-left:${r1(f * rowGap)}px`
+            : `margin-top:${r1(f * joinGap)}px`
+          : ''
       const pill = `<div class="ls-pill-w ls-p-${i}" style="${space}"><div class="ls-pill"${row ? '' : ' data-fit="parent"'} style="${pillStyle}">${esc(it.text)}</div></div>`
       return (i ? joiner(i - 1) : '') + pill
     })

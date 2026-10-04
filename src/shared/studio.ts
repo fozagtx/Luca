@@ -40,7 +40,7 @@ You never draw it by hand. The whole picture is one scene plan you pass to studi
 - list: items [{ text, at }], mark github|check|number|dot|none, blur, highlight { index, badge, at }.
 - window: images [{ image, at }] with labels [{ text, at }] and boxes [{ x, y, w, h, at }] over the first image, or chat { title, greeting, prompt, typeAt, reply, replyAt }.
 - wave: cards [{ label, accent, at }] (accent is the result: the cloned voice, the cleaned audio).
-- price: label and from (the paid tool and its price) or crossed (paid tools as tiles), strikeAt, tag (the free one), to, toAt.
+- price: label and from (the paid tool and its price) or crossed (paid tools as tiles, each crossed at its own at), strikeAt, tag (the free one), to, toAt.
 - compare: image, before, after, afterAt (it turns sharp and the tag flips to the accent).
 - pills: intro, items [{ text, at }], joiner.
 - number: label, strikeAt, value, valueAt, sub.

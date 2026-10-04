@@ -44,6 +44,14 @@ export const BUNDLED_FONTS: { family: string; note: string; faces: ProjectFontFa
     ]
   },
   {
+    family: 'DM Mono',
+    note: 'Clean monospace for small caps labels, kickers and terminals (the Studio look)',
+    faces: [
+      { file: 'DMMono-Regular.ttf', weight: 400, italic: false },
+      { file: 'DMMono-Medium.ttf', weight: 500, italic: false }
+    ]
+  },
+  {
     family: 'Gellisto',
     note: 'Friendly rounded script, hand-lettered feel',
     faces: [{ file: 'Gellisto.ttf', weight: 400, italic: false }]

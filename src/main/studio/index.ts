@@ -16,6 +16,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { basename, extname, join } from 'node:path'
+import { googleFontUrl } from '../../shared/captions'
 import { STUDIO_GUIDE } from '../../shared/studio'
 import type { Project } from '../../shared/types'
 import { fontFaceRules, installBundledFont, refreshCaptions } from '../captions'
@@ -162,7 +163,10 @@ function build(
     cutouts,
     fontFaces: fontFaceRules(p.dir, look.bundled),
     texture: look.texture ? TEXTURE : null,
-    images: imageSizes(p.dir, norm)
+    images: imageSizes(p.dir, norm),
+    fontLinks: Object.values(look.fonts)
+      .filter((f) => !look.bundled.includes(f))
+      .flatMap((f) => googleFontUrl(f) ?? [])
   })
   // as compose.ts decides: the head rises out of a card along the bottom, not a side card
   const popout =

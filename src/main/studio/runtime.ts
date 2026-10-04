@@ -16,7 +16,7 @@ export const RUNTIME = `
           rise: function (el, at, o) {
             o = o || {};
             if (!el) return;
-            tl.fromTo(el, { yPercent: 108 }, { yPercent: 0, duration: o.dur || 0.55, ease: o.ease || 'expo.out' }, at);
+            tl.fromTo(el, { yPercent: 108 }, { yPercent: 0, duration: o.dur || 0.48, ease: o.ease || 'expo.out' }, at);
           },
           /** fades in out of a blur, optionally rising a little */
           blurIn: function (el, at, o) {
@@ -24,7 +24,7 @@ export const RUNTIME = `
             if (!el) return;
             tl.fromTo(el,
               { opacity: 0, filter: 'blur(' + px(o.blur || 14) + ')', y: (o.y || 0) * K, scale: o.scale || 1 },
-              { opacity: 1, filter: 'blur(0px)', y: 0, scale: 1, duration: o.dur || 0.45, ease: o.ease || 'power3.out' },
+              { opacity: 1, filter: 'blur(0px)', y: 0, scale: 1, duration: o.dur || 0.38, ease: o.ease || 'power3.out' },
               at);
           },
           /** scales up from small with a soft overshoot */
@@ -32,9 +32,16 @@ export const RUNTIME = `
             o = o || {};
             if (!el) return;
             tl.fromTo(el,
-              { opacity: 0, scale: o.from || 0.62, filter: 'blur(' + px(o.blur || 8) + ')' },
-              { opacity: 1, scale: 1, filter: 'blur(0px)', duration: o.dur || 0.5, ease: o.ease || 'back.out(1.5)' },
+              { opacity: 0, scale: o.from || 0.62 },
+              { opacity: 1, scale: 1, duration: o.dur || 0.5, ease: o.ease || 'back.out(1.5)' },
               at);
+            // the blur clears on its own ease: an overshoot would take it below zero, which CSS
+            // rejects, and the frame would keep the blurred start
+            if (o.blur !== 0)
+              tl.fromTo(el,
+                { filter: 'blur(' + px(o.blur || 8) + ')' },
+                { filter: 'blur(0px)', duration: Math.min(0.32, o.dur || 0.5), ease: 'power2.out' },
+                at);
           },
           /** slides in from the right (dx > 0) or left with a motion blur */
           slideIn: function (el, at, o) {
