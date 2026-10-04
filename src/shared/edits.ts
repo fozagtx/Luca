@@ -4,6 +4,7 @@
  * .luca/EDIT.md).
  */
 import { MOTION_GUIDE } from './motion'
+import { STUDIO_GUIDE } from './studio'
 import type { EditStepId, StartEdit, StyleId, VideoTypeId } from './types'
 
 export type EditStep = {
@@ -111,6 +112,24 @@ export const EDIT_STEPS: EditStep[] = [
       'Sound: the music the user gave is the clock (find its BPM and its drop; the biggest change lands on the drop). A sound effect for every event (a click on the press, a whoosh with the move, an impact on a reveal), placed by its peak, from the files the user gave; never synthesize one. Mix music under speech with sound_mix. If there is no music or no sound effects, say so in one line and ask the user to drop them in the chat.'
   },
   {
+    id: 'cutout',
+    name: 'Pop-out frame',
+    blurb: 'You, cut out, rising out of your card',
+    needsWords: false,
+    needsPicture: true,
+    guide:
+      'Right after the clean edit, call speaker_cutout: it cuts the speaker out of their background (a few minutes; say so in one line), so in the Studio look their head rises out of the card instead of being boxed in.'
+  },
+  {
+    id: 'scenes',
+    name: 'Studio scenes',
+    blurb: 'A card, title or list on every point',
+    needsWords: true,
+    needsPicture: false,
+    guide:
+      'Plan the Studio beats from the words as .luca/STUDIO.md says (a hook, a card on every point, the face between them), get each logo with logo_add, and put the plan on with studio_apply. Fix what it lists, then look at 3–4 beats with snapshot.'
+  },
+  {
     id: 'critique',
     name: 'Director’s review',
     blurb: 'Checks its own work frame by frame before you see it',
@@ -143,6 +162,12 @@ export const STYLES: Style[] = [
     blurb: 'A clean edit: cuts, captions, zooms and B-roll',
     guide:
       'A classic edit of the footage or voiceover: clean cuts, punch-in zooms, titles, B-roll and captions. Polished and readable, never flashy.'
+  },
+  {
+    id: 'studio',
+    name: 'Studio',
+    blurb: 'Paper and ink: you in a pop-out card, a bold card on every point, tiny captions',
+    guide: STUDIO_GUIDE
   }
 ]
 
@@ -173,7 +198,8 @@ export const VIDEO_TYPES: VideoType[] = [
     example: 'e.g. “Acme, an AI that orders food for you — acme.app. 15 seconds, lime accent”',
     steps: {
       motion: ['plan', 'motion', 'sound', 'ending', 'critique'],
-      classic: ['cut', 'zooms', 'ending', 'captions']
+      classic: ['cut', 'zooms', 'ending', 'captions'],
+      studio: ['cut', 'cutout', 'scenes', 'captions']
     },
     guide:
       'A product launch film: show the product doing its one thing. A user’s request goes in, the result comes out, the product’s real screens or a clean UI you draw in HTML stand in for it, and it ends on the product name and one call to action. Short (15–30 s unless asked), one idea per beat.'
@@ -186,7 +212,8 @@ export const VIDEO_TYPES: VideoType[] = [
     example: 'e.g. “how compound interest works, for beginners, keep it simple”',
     steps: {
       motion: ['plan', 'motion', 'broll', 'sound', 'captions', 'critique'],
-      classic: ['cut', 'hook', 'broll', 'captions']
+      classic: ['cut', 'hook', 'broll', 'captions'],
+      studio: ['cut', 'cutout', 'scenes', 'broll', 'captions']
     },
     guide:
       'A concept explainer: the picture follows the idea. Key words and numbers as animated text, simple diagrams and charts for comparisons and steps, B-roll of what is named, one visual per idea and a new one every 3–6 s; never an empty frame. With a voiceover the voice carries it; without one the words on screen do.'
@@ -199,7 +226,8 @@ export const VIDEO_TYPES: VideoType[] = [
     example: 'e.g. “how to set up the export button, 3 steps, number them”',
     steps: {
       motion: ['plan', 'zooms', 'motion', 'sound', 'ending', 'critique'],
-      classic: ['cut', 'zooms', 'hook', 'ending', 'captions']
+      classic: ['cut', 'zooms', 'hook', 'ending', 'captions'],
+      studio: ['cut', 'scenes', 'captions']
     },
     guide:
       'A tutorial over a screen recording: zoom into the part of the screen being used, a short callout for each step (“1. Pick a file”), numbered steps, the cursor’s clicks made visible, and an ending card with what the viewer can now do.'
@@ -212,7 +240,8 @@ export const VIDEO_TYPES: VideoType[] = [
     example: 'e.g. “I’m Sam, founder of Acme, this is our launch update”',
     steps: {
       motion: ['cut', 'hook', 'motion', 'name', 'captions'],
-      classic: ['cut', 'hook', 'zooms', 'name', 'captions']
+      classic: ['cut', 'hook', 'zooms', 'name', 'captions'],
+      studio: ['cut', 'cutout', 'scenes', 'captions']
     },
     guide:
       'A person talking to camera: a creator’s take, a founder’s update or pitch. Tight pacing with no dead air, a hook in the first 2 seconds, the speaker’s name and role on screen, the product or logo shown when it is named, captions that stay clear of the face.'
@@ -263,8 +292,8 @@ export function editRequest(
     .map(editStep)
     .filter((s) => !(s.needsPicture && opts.voiceOnly))
     .map((s) => s.name.toLowerCase())
-  // Luca builds motion films and briefs; it edits classic footage and voiceovers
-  const what = `${edit.style === 'motion' || opts.brief ? 'Make' : 'Edit'} my ${type.name.toLowerCase()}`
+  // Luca builds motion films and briefs; it edits classic and Studio footage and voiceovers
+  const what = `${edit.style === 'motion' || opts.brief ? 'Make' : 'Edit'} my ${type.name.toLowerCase()}${edit.style === 'studio' ? ' in the Studio look' : ''}`
   return steps.length ? `${what}: ${steps.join(', ')}` : what
 }
 
@@ -315,8 +344,12 @@ export function editGuide(
   out.push(
     '## Rules',
     opts.voiceOnly
-      ? '- There is no footage to play: every frame needs a visual that follows what is said or asked (B-roll, animated key words, simple diagrams, clean UI drawn in code). No intro or outro they didn’t ask for.'
-      : '- The user’s footage is the video: it fills the frame. No stock or animated backgrounds behind it, no intro or outro they didn’t ask for.',
+      ? edit.style === 'studio'
+        ? '- There is no footage of a speaker: every beat has speaker "none" and a graphic, back to back, so the frame is never empty. No intro or outro they didn’t ask for.'
+        : '- There is no footage to play: every frame needs a visual that follows what is said or asked (B-roll, animated key words, simple diagrams, clean UI drawn in code). No intro or outro they didn’t ask for.'
+      : edit.style === 'studio'
+        ? '- The user’s footage is the speaker: the Studio plan decides where it goes (full frame, in the card, or away while a card fills the frame). No stock backgrounds, no intro or outro they didn’t ask for.'
+        : '- The user’s footage is the video: it fills the frame. No stock or animated backgrounds behind it, no intro or outro they didn’t ask for.',
     '- Keep what they said and the order they said it in; cut only what the steps above ask for.',
     '- When you’re done, reply in 2–4 short lines: what you did, with times, and one thing they could ask for next.'
   )

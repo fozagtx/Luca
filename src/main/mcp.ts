@@ -14,6 +14,7 @@ import {
 import { CATEGORIES, categoryLabel, searchLibrary, type LibraryItem } from '../shared/catalog'
 import { DEFAULT_ASPECT, sizeOf } from '../shared/aspect'
 import { REFERENCE_STUDY } from '../shared/motion'
+import { STUDIO_GUIDE } from '../shared/studio'
 import { BUNDLED_LUTS } from '../shared/luts'
 import type { CaptionConfig, Cut, CutReason } from '../shared/types'
 import { applyColor, footageVideos, removeColor } from './color'
@@ -44,6 +45,7 @@ import { readProject, safeJoin, VIDEO_EXT } from './projects'
 import { studyReference } from './reference'
 import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
 import { addTreatment } from './treatments'
+import { addLogo, applyStudio, makeCutouts, planSchema, readStudio, removeStudio } from './studio'
 
 const text = (data: unknown): { content: { type: 'text'; text: string }[] } => ({
   content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data) }]
@@ -282,8 +284,12 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'font_add adds a font that comes with Luca, or downloads a Google Fonts font, into the project ' +
       'so any text can use it offline. ' +
       'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it. ' +
-      'treatment_add installs one of Luca’s own footage treatments (mosaic-reveal) into the project ' +
-      'and returns the snippet to place it over the footage.',
+      'treatment_add installs one of Luca’s own footage treatments (mosaic-reveal, before-after) into the project ' +
+      'and returns the snippet to place it over the footage. ' +
+      'studio_apply puts the Studio look on a talking video from a scene plan (beats timed to the ' +
+      'words: paper or ink background, the speaker full, in a card or gone, and a graphic per beat); ' +
+      'speaker_cutout cuts the speaker out of their background once, so their head rises out of the ' +
+      'card; logo_add fetches an app or brand logo for its tile.',
     tools: [
       tool(
         'transcribe',
@@ -403,9 +409,9 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       ),
       tool(
         'treatment_add',
-        'Add one of Luca’s footage treatments to the project and get the snippet to place it. mosaic-reveal shows the footage through a grid of cells — some intact, some black, some a displaced crop of the same frame — with hairline gridlines and scanlines; a face or product stays intact in the focus region. Use it for a hook, a cold open or one punch moment on the a-roll, never the whole video.',
+        'Add one of Luca’s footage treatments to the project and get the snippet to place it. mosaic-reveal shows the footage through a grid of cells — some intact, some black, some a displaced crop of the same frame — with hairline gridlines and scanlines; a face or product stays intact in the focus region. Use it for a hook, a cold open or one punch moment on the a-roll, never the whole video. before-after shows two versions of a video side by side under BEFORE / AFTER labels on a drifting gradient: for comparing an edit with the raw footage.',
         {
-          name: z.enum(['mosaic-reveal']).describe('the treatment to add')
+          name: z.enum(['mosaic-reveal', 'before-after']).describe('the treatment to add')
         },
         async ({ name }) => {
           const p = readProject(projectDir)
@@ -424,6 +430,126 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
             return text({ ok: true, snippet })
           } catch (err) {
             return text({ ok: false, error: refusal(err) })
+          }
+        }
+      ),
+      tool(
+        'studio_apply',
+        [
+          'Put the Studio look on the video, change it, or take it off (remove: true). The Studio look is the paper-and-ink talking-head edit: cream and dark crumpled-paper backgrounds, the speaker full frame, in a card along the bottom (their head rising out of it once speaker_cutout has run) or gone, and on every point a graphic (a big title, app tiles snapping into focus as they are named, an app card with its stat, a list of repos, a price struck through, a before/after, a chat window, a waveform, a comment call to action…). Read .luca/STUDIO.md for how to plan it.',
+          'Pass the whole plan each time (it replaces the one on the video); call it with no plan to get the plan on the video now. Times are timeline seconds from transcribe/clean_edit; every beat starts and ends on a word. Luca builds the picture from the plan at this video’s size, keeps it in step with the footage, and moves the captions to fit it (put captions on with captions_apply style "studio"), so never write or edit compositions/luca-studio.html by hand.',
+          'Returns what Luca adjusted and anything to fix. Then look at 3–4 beats with snapshot and fix what reads badly.'
+        ].join('\n'),
+        {
+          plan: planSchema
+            .optional()
+            .describe('the whole scene plan; leave out to read the current one'),
+          remove: z.boolean().optional().describe('take the Studio look off the video')
+        },
+        async ({ plan, remove }) => {
+          const p = readProject(projectDir)
+          if (!p) return text({ ok: false, error: 'No project is open.' })
+          try {
+            if (remove) {
+              await removeStudio(p, { checkpoint: false })
+              return text({ ok: true, removed: true })
+            }
+            if (!plan) {
+              const saved = readStudio(projectDir)
+              return text({
+                ok: true,
+                plan: saved?.plan ?? null,
+                ...(saved ? {} : { tell: 'The Studio look is not on this video yet.' }),
+                guide: STUDIO_GUIDE
+              })
+            }
+            const r = await applyStudio(p, plan, { checkpoint: false })
+            return text({
+              ok: true,
+              beats: r.beats,
+              popout: r.popout
+                ? 'on: the speaker’s head rises out of the card'
+                : r.side
+                  ? 'off: in a wide frame the speaker’s card on the right shows the footage itself'
+                  : 'off: the card shows the footage itself (speaker_cutout makes the cut-out that lets the head rise out of it)',
+              ...(r.notes.length ? { adjusted: r.notes } : {}),
+              ...(r.warnings.length ? { fix: r.warnings } : {})
+            })
+          } catch (err) {
+            return text({ ok: false, error: message(err) })
+          }
+        }
+      ),
+      tool(
+        'speaker_cutout',
+        'Cut the speaker out of their background (a transparent copy of the footage, made on this Mac). The Studio look uses it so the speaker’s head rises out of the card instead of being boxed in. Run it once, after the clean edit (it follows the footage the a-roll plays; run it again after a new clean edit). It takes a few minutes for a minute of video; tell the user in one line that it is running.',
+        {},
+        async (_args, extra) => {
+          const p = readProject(projectDir)
+          if (!p) return text({ ok: false, error: 'No project is open.' })
+          const signal = (extra as { signal?: AbortSignal } | undefined)?.signal
+          try {
+            const r = await makeCutouts(p, signal)
+            return text({
+              ok: true,
+              made: r.made,
+              kept: r.kept,
+              ...(r.face
+                ? {
+                    face: r.face,
+                    faceNote:
+                      'Where the face is, found in the cut-out; the plan uses it unless it sets face.'
+                  }
+                : {}),
+              tell: readStudio(projectDir)
+                ? 'The Studio look on the video now uses it.'
+                : 'studio_apply will use it.'
+            })
+          } catch (err) {
+            return text({ ok: false, error: message(err) })
+          }
+        }
+      ),
+      tool(
+        'logo_add',
+        'Get the logo of an app, product or brand for its tile in the Studio look: the GitHub owner’s avatar for an open-source project, the brand mark from Simple Icons, or the website’s icon. Returns the project path to use as mark.logo, whether to tint it, and the image to check it is the right one. When nothing is found, use 1–3 letters on the tile (mark.mono).',
+        {
+          name: z.string().min(1).describe('what it is called, e.g. "Ollama", "ChatGPT"'),
+          github: z
+            .string()
+            .optional()
+            .describe(
+              'for open-source projects: the GitHub owner or owner/repo, e.g. "ollama/ollama"'
+            ),
+          brand: z
+            .string()
+            .optional()
+            .describe(
+              'the brand’s Simple Icons name if it differs from name, e.g. "openai" for ChatGPT'
+            ),
+          site: z.string().optional().describe('its website, e.g. "upscayl.org"')
+        },
+        async (q) => {
+          const p = readProject(projectDir)
+          if (!p) return text({ ok: false, error: 'No project is open.' })
+          try {
+            const r = await addLogo(p, q)
+            const content: Content[] = [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  ok: true,
+                  path: r.path,
+                  from: r.from,
+                  tint: r.tint,
+                  use: `mark: { "logo": "${r.path}"${r.tint ? ', "tint": true' : ''} }`
+                })
+              }
+            ]
+            if (r.preview) content.push({ type: 'image', ...r.preview })
+            return { content }
+          } catch (err) {
+            return text({ ok: false, error: message(err) })
           }
         }
       ),

@@ -31,6 +31,7 @@ import { Channels, broadcast } from './ipc'
 import { hasSecret } from './secrets'
 import { getSettings } from './settings'
 import { extractAudio, hasAudioStream, isFiller, transcribe } from './transcribe'
+import { refreshStudio } from './studio'
 import { checkpoint } from './versions'
 
 const MAX_PAUSE = 0.6
@@ -526,7 +527,13 @@ export async function applyEdl(
     writeFileSync(join(p.dir, 'edl.json'), JSON.stringify({ ...edl, cuts }, null, 2))
     relink(p, cleanRel, cuts, newDuration)
     writeFileSync(appliedFile(p.dir), JSON.stringify({ file: cleanRel, cuts }, null, 2))
-    // captions on the timeline follow the cut words; saved in the same version as the cut
+    // the Studio look plays the cut video too, and captions follow the cut words; saved in the
+    // same version as the cut
+    try {
+      refreshStudio(p)
+    } catch (err) {
+      console.warn('[clean] following the cut with the Studio look failed', err)
+    }
     try {
       refreshCaptions(p)
     } catch (err) {

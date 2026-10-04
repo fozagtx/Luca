@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-export function bundledResourcesDir(sub: 'fonts' | 'luts' | 'components'): string {
+export function bundledResourcesDir(sub: 'fonts' | 'luts' | 'components' | 'textures'): string {
   const unpacked = join(process.resourcesPath ?? '', 'app.asar.unpacked', 'resources', sub)
   return process.resourcesPath && existsSync(unpacked)
     ? unpacked

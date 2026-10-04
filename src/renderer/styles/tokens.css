@@ -970,6 +970,10 @@ input.volume {
   animation-timing-function: cubic-bezier(0.34, 1.8, 0.64, 1);
   animation-duration: 220ms;
 }
+.cap-enter-blur {
+  animation-name: cap-blur;
+  animation-duration: 300ms;
+}
 .cap-enter-bounce {
   animation-name: cap-bounce;
   animation-duration: 520ms;
@@ -990,6 +994,13 @@ input.volume {
   from {
     opacity: 0;
     transform: scale(0.86);
+  }
+}
+@keyframes cap-blur {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: translateY(6px);
   }
 }
 @keyframes cap-bounce {

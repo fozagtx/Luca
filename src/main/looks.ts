@@ -15,6 +15,7 @@ import { activeAgent, agentFor } from './agent'
 import { addCatalogItem, snapshot } from './hyperframes'
 import { readProject, slugify, writeProject } from './projects'
 import { appDataDir } from './settings'
+import { STUDIO_FILE } from './studio/compose'
 
 export function looksDir(): string {
   const d = join(appDataDir(), 'looks')
@@ -79,7 +80,13 @@ function customCompositions(dir: string): string[] {
     for (const name of readdirSync(d)) {
       const f = join(d, name)
       if (statSync(f).isDirectory()) walk(f)
-      else if (/\.html?$/i.test(name) && !registered.has(relative(dir, f))) out.push(f)
+      // the Studio look's file is built from one video's plan and footage: the plan travels instead
+      else if (
+        /\.html?$/i.test(name) &&
+        !registered.has(relative(dir, f)) &&
+        relative(dir, f) !== STUDIO_FILE
+      )
+        out.push(f)
     }
   }
   walk(comps)
@@ -95,6 +102,7 @@ async function writeLookMd(p: Project, dest: string): Promise<void> {
       `Write a Look style guide to \`${target}\` (Write tool, absolute path) so this project's editing style can be reproduced on a different video. ` +
       'Cover: fonts, sizes and weights; colors as hex; caption style (words per group, position, entrance, emphasis); ' +
       'transitions and motion graphics by catalog name and when to use them; pacing (pause length, how aggressive cuts are); music level and ducking. ' +
+      'If the Studio look is on (.luca/studio.json), describe its plan as rules: the look and accent, which kind of beat goes with which kind of line, where the speaker goes, how often the picture changes. ' +
       'Refer to files and rules, never to timecodes of this video. Reply with one line when done.',
     chips: [],
     context: { look: true }
@@ -134,6 +142,10 @@ async function saveInto(p: Project, slug: string, name: string, at: number): Pro
     mkdirSync(join(comps, rel, '..'), { recursive: true })
     copyFileSync(f, join(comps, rel))
   }
+  const studioGuide = join(p.dir, '.luca', 'STUDIO.md')
+  if (existsSync(join(p.dir, '.luca', 'studio.json')) && existsSync(studioGuide))
+    copyFileSync(studioGuide, join(dest, 'STUDIO.md'))
+  else rmSync(join(dest, 'STUDIO.md'), { force: true })
   const prev = readLook(slug)
   const look: Look = {
     name,
@@ -188,6 +200,8 @@ export async function applyLook(p: Project, slug: string): Promise<void> {
   const md = join(dir, 'LOOK.md')
   mkdirSync(join(p.dir, '.luca'), { recursive: true })
   if (existsSync(md)) copyFileSync(md, join(p.dir, '.luca', 'LOOK.md'))
+  if (existsSync(join(dir, 'STUDIO.md')))
+    copyFileSync(join(dir, 'STUDIO.md'), join(p.dir, '.luca', 'STUDIO.md'))
   writeFileSync(
     join(p.dir, '.luca', 'look.json'),
     JSON.stringify({ slug, keyterms: look.keyterms }, null, 2)

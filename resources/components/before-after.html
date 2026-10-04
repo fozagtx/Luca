@@ -1,0 +1,324 @@
+<!doctype html>
+<!--
+  before-after: HyperFrames comparison frame (the "BEFORE / AFTER" promo)
+
+  Two edits of the same video side by side, each in a rounded phone-shaped
+  panel under a bold label, on a slowly drifting mesh gradient. Made for
+  showing an edit against the raw footage (or an old edit against a new
+  one) in a 16:9 or square frame; in a tall frame the panels stack.
+
+  The media are SLOTS, like mosaic-reveal's: inert templates anywhere in the
+  HOST page (templates never render, and the runtime wipes the host clip's
+  own children on mount):
+
+    <template data-slot="before-after-left"> <video ...> </template>
+    <template data-slot="before-after-right"> <video ...> </template>
+
+  Their img/video is moved into the panel, cover-fit, with its own
+  data-start/data-duration (the runtime drives every timed video it finds).
+  Videos should be muted: give the sound to one <audio> clip in the host.
+
+  Variables:
+    - left_label / right_label: the labels over the panels.
+    - panel ("9:16" | "4:5" | "1:1" | "16:9"): the panels' shape.
+    - palette ("sunset" | "ocean" | "lime" | "mono"): the gradient.
+    - drift (0–1): how much the gradient's light moves.
+    - reveal ("rise" | "none"): panels and labels rise in at reveal_at.
+
+  Determinism: layout is measured once at mount; every motion is a tween on
+  one paused GSAP timeline (the gradient blobs drift on fixed sine eases),
+  never per-frame state, Math.random or the wall clock.
+-->
+<html
+  lang="en"
+  data-composition-id="before-after"
+  data-composition-duration="10"
+  data-composition-variables='[
+    { "id": "left_label", "type": "string", "role": "content", "label": "Left label", "description": "Over the left panel.", "default": "BEFORE" },
+    { "id": "right_label", "type": "string", "role": "content", "label": "Right label", "description": "Over the right panel.", "default": "AFTER" },
+    { "id": "panel", "type": "enum", "role": "style", "label": "Panel shape", "description": "The shape of the two panels.", "default": "9:16", "options": [{ "value": "9:16", "label": "Vertical" }, { "value": "4:5", "label": "Portrait" }, { "value": "1:1", "label": "Square" }, { "value": "16:9", "label": "Landscape" }] },
+    { "id": "palette", "type": "enum", "role": "style", "label": "Gradient", "description": "The background gradient.", "default": "sunset", "options": [{ "value": "sunset", "label": "Sunset" }, { "value": "ocean", "label": "Ocean" }, { "value": "lime", "label": "Lime" }, { "value": "mono", "label": "Mono" }] },
+    { "id": "drift", "type": "number", "role": "style", "label": "Drift", "description": "How much the gradient light moves.", "default": 0.6, "min": 0, "max": 1, "step": 0.05 },
+    { "id": "reveal", "type": "enum", "role": "timing", "label": "Reveal", "description": "rise: panels and labels rise in; none: they are there from the first frame.", "default": "rise", "options": [{ "value": "rise", "label": "Rise" }, { "value": "none", "label": "None" }] },
+    { "id": "reveal_at", "type": "number", "role": "timing", "label": "Reveal at", "description": "Seconds from the clip start when the panels rise in.", "default": 0, "min": 0, "max": 10, "step": 0.1, "unit": "s" }
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Before After</title>
+  </head>
+  <body>
+    <template>
+      <div
+        id="before-after-root"
+        data-composition-id="before-after"
+        data-duration="10"
+        data-fps="30"
+      >
+        <style>
+          @font-face {
+            font-family: 'Archivo Expanded';
+            src: url('fonts/ArchivoExpanded-Black.ttf') format('truetype');
+            font-weight: 900;
+            font-style: normal;
+            font-display: block;
+          }
+          #before-after-root {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            background: #2a1f5c;
+          }
+          .bfa-clip,
+          .bfa-sky {
+            position: absolute;
+            inset: 0;
+          }
+          .bfa-blob {
+            position: absolute;
+            border-radius: 50%;
+            will-change: transform;
+          }
+          .bfa-grain {
+            position: absolute;
+            inset: 0;
+            opacity: 0.08;
+            background: repeating-linear-gradient(
+              0deg,
+              rgba(255, 255, 255, 0.5) 0 1px,
+              transparent 1px 3px
+            );
+            mix-blend-mode: soft-light;
+          }
+          .bfa-col {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+          }
+          .bfa-label {
+            font-family: 'Archivo Expanded', 'Inter', sans-serif;
+            font-weight: 900;
+            color: #fff;
+            letter-spacing: 0.02em;
+            line-height: 1;
+            white-space: nowrap;
+            text-shadow: 0 2px 18px rgba(20, 10, 60, 0.35);
+          }
+          .bfa-panel {
+            position: relative;
+            overflow: hidden;
+            background: #111;
+            box-shadow:
+              0 0 0 1px rgba(255, 255, 255, 0.35),
+              0 30px 70px rgba(15, 5, 40, 0.45),
+              0 8px 20px rgba(15, 5, 40, 0.3);
+          }
+          .bfa-media {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
+          .bfa-empty {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(160deg, #3a3a40, #17171b);
+          }
+        </style>
+
+        <div
+          id="before-after-clip"
+          class="bfa-clip clip"
+          data-start="0"
+          data-duration="10"
+          data-track-index="0"
+        >
+          <div class="bfa-sky"></div>
+          <div class="bfa-grain"></div>
+          <div class="bfa-col bfa-col-l">
+            <div class="bfa-label bfa-label-l"></div>
+            <div class="bfa-panel bfa-panel-l"></div>
+          </div>
+          <div class="bfa-col bfa-col-r">
+            <div class="bfa-label bfa-label-r"></div>
+            <div class="bfa-panel bfa-panel-r"></div>
+          </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+        <script>
+          ;(function () {
+            'use strict'
+
+            var root = document.getElementById('before-after-root')
+            var vars =
+              window.__hyperframes && window.__hyperframes.getVariables
+                ? window.__hyperframes.getVariables()
+                : {}
+            function num(v, f, min, max) {
+              var n = Number(v)
+              if (!isFinite(n)) n = f
+              return Math.max(min, Math.min(max, n))
+            }
+            var duration = Math.max(0.001, parseFloat(root.dataset.duration || '10'))
+            var box = root.getBoundingClientRect()
+            var W = Math.max(1, Math.round(box.width) || 1920)
+            var H = Math.max(1, Math.round(box.height) || 1080)
+            var K = Math.min(W, H) / 1080
+
+            var PALETTES = {
+              sunset: ['#2F6BE0', '#6A3BD8', '#B0368E', '#E0703A', '#3b2a8f'],
+              ocean: ['#1B6FD8', '#16A0B8', '#2B3FB0', '#4FD1C5', '#13306b'],
+              lime: ['#B5F23A', '#2FBF71', '#1C6E4B', '#E8F59A', '#173d2c'],
+              mono: ['#3a3a40', '#5a5a62', '#202024', '#77777f', '#18181b']
+            }
+            var pal = PALETTES[vars.palette] || PALETTES.sunset
+            var drift = num(vars.drift, 0.6, 0, 1)
+            var shapes = { '9:16': 9 / 16, '4:5': 4 / 5, '1:1': 1, '16:9': 16 / 9 }
+            var aspect = shapes[vars.panel] || 9 / 16
+            var reveal = vars.reveal === 'none' ? 'none' : 'rise'
+            var revealAt = num(vars.reveal_at, 0, 0, Math.max(0, duration - 0.8))
+
+            // the sky: four soft lights in the corners over a deep base
+            root.style.background = pal[4]
+            var sky = root.querySelector('.bfa-sky')
+            var corners = [
+              [-0.15, -0.25],
+              [0.75, -0.3],
+              [-0.2, 0.55],
+              [0.7, 0.5]
+            ]
+            var blobs = corners.map(function (c, i) {
+              var b = document.createElement('div')
+              b.className = 'bfa-blob'
+              var size = Math.max(W, H) * 0.95
+              b.style.width = size + 'px'
+              b.style.height = size + 'px'
+              b.style.left = c[0] * W + 'px'
+              b.style.top = c[1] * H + 'px'
+              b.style.background =
+                'radial-gradient(circle at 50% 50%, ' +
+                pal[i] +
+                ' 0%, ' +
+                pal[i] +
+                'cc 30%, transparent 70%)'
+              sky.appendChild(b)
+              return b
+            })
+
+            // the panels: side by side in a wide or square frame, stacked in a tall one
+            var side = W / H >= 0.9
+            var labelSize = Math.round(44 * K)
+            var gapLabel = Math.round(22 * K)
+            var ph, pw
+            if (side) {
+              ph = Math.min(H * 0.86, H * 0.93 - labelSize - gapLabel)
+              pw = ph * aspect
+              var maxW = W * 0.4
+              if (pw > maxW) {
+                pw = maxW
+                ph = pw / aspect
+              }
+            } else {
+              pw = W * 0.8
+              ph = pw / aspect
+              var maxH = H * 0.4 - labelSize - gapLabel
+              if (ph > maxH) {
+                ph = maxH
+                pw = ph * aspect
+              }
+            }
+            var colH = labelSize + gapLabel + ph
+            var cols = [root.querySelector('.bfa-col-l'), root.querySelector('.bfa-col-r')]
+            cols.forEach(function (col, i) {
+              var x, y
+              if (side) {
+                var gap = Math.max(W * 0.06, pw * 0.22)
+                x = W / 2 + (i === 0 ? -gap / 2 - pw : gap / 2)
+                y = (H - colH) / 2 + H * 0.01
+              } else {
+                x = (W - pw) / 2
+                var gapV = H * 0.05
+                y = (H - (colH * 2 + gapV)) / 2 + i * (colH + gapV)
+              }
+              col.style.left = Math.round(x) + 'px'
+              col.style.top = Math.round(y) + 'px'
+              col.style.width = Math.round(pw) + 'px'
+              col.style.gap = gapLabel + 'px'
+            })
+            var labels = [root.querySelector('.bfa-label-l'), root.querySelector('.bfa-label-r')]
+            labels[0].textContent = String(vars.left_label || 'BEFORE')
+            labels[1].textContent = String(vars.right_label || 'AFTER')
+            labels.forEach(function (l) {
+              l.style.fontSize = labelSize + 'px'
+            })
+            var panels = [root.querySelector('.bfa-panel-l'), root.querySelector('.bfa-panel-r')]
+            panels.forEach(function (p) {
+              p.style.width = Math.round(pw) + 'px'
+              p.style.height = Math.round(ph) + 'px'
+              p.style.borderRadius = Math.round(Math.min(pw, ph) * 0.07) + 'px'
+            })
+
+            // MEDIA: each slot's img/video goes into its panel
+            var hostDoc = root.ownerDocument
+            ;['left', 'right'].forEach(function (side, i) {
+              var media = null
+              try {
+                var t = hostDoc.querySelector('template[data-slot="before-after-' + side + '"]')
+                if (t) media = hostDoc.importNode(t.content, true).querySelector('img, video')
+              } catch (e) {
+                media = null
+              }
+              if (media) {
+                media.classList.add('bfa-media')
+                panels[i].appendChild(media)
+              } else {
+                var empty = hostDoc.createElement('div')
+                empty.className = 'bfa-empty'
+                panels[i].appendChild(empty)
+              }
+            })
+
+            var tl = gsap.timeline({ paused: true })
+            tl.to({ v: 0 }, { v: 1, duration: duration, ease: 'none' }, 0)
+            // the light drifts: each blob sways on its own slow sine, a fixed number of times
+            blobs.forEach(function (b, i) {
+              var period = 7 + i * 1.7
+              var n = Math.max(1, Math.ceil(duration / period))
+              var dx = (i % 2 ? -1 : 1) * W * 0.08 * drift
+              var dy = (i < 2 ? 1 : -1) * H * 0.1 * drift
+              tl.fromTo(
+                b,
+                { x: 0, y: 0, scale: 1 },
+                {
+                  x: dx,
+                  y: dy,
+                  scale: 1 + 0.12 * drift,
+                  duration: period / 2,
+                  ease: 'sine.inOut',
+                  yoyo: true,
+                  repeat: n * 2 - 1
+                },
+                0
+              )
+            })
+            if (reveal === 'rise') {
+              cols.forEach(function (col, i) {
+                tl.fromTo(
+                  col,
+                  { y: 60 * K, opacity: 0 },
+                  { y: 0, opacity: 1, duration: 0.7, ease: 'expo.out' },
+                  revealAt + i * 0.12
+                )
+              })
+            }
+            tl.seek(0)
+            window.__timelines['before-after'] = tl
+          })()
+        </script>
+      </div>
+    </template>
+  </body>
+</html>

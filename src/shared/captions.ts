@@ -29,6 +29,13 @@ export type CaptionStyle = {
   /** Font size in px for a 1080 px short side. */
   size: number
   uppercase: boolean
+  /** Lowercase when the config isn't set to uppercase (the Studio look's quiet captions). */
+  lowercase?: boolean
+  /**
+   * Follows the Studio look's backgrounds when it is on: dark on paper, light on ink and on the
+   * face (its own colors otherwise).
+   */
+  adaptive?: boolean
   letterSpacing?: number
   color: string
   /** Active word color, or the pill behind it when `wordBox` is set. */
@@ -237,6 +244,41 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     words: 'short'
   },
   {
+    id: 'studio',
+    name: 'Studio',
+    blurb:
+      'Small lowercase words that come into focus, a few at a time. Dark on paper, light on you.',
+    font: 'Archivo',
+    weight: 500,
+    size: 44,
+    uppercase: false,
+    lowercase: true,
+    adaptive: true,
+    letterSpacing: -0.01,
+    color: '#FFFFFF',
+    accent: '#FFFFFF',
+    shadow: '0 2px 10px rgba(0,0,0,0.45)',
+    anim: 'blur',
+    words: 'short'
+  },
+  {
+    id: 'serif-caps',
+    name: 'Serif caps',
+    blurb: 'Heavy italic serif capitals, two or three words at a time. The listicle classic.',
+    font: 'Playfair Display',
+    weight: 800,
+    italic: true,
+    size: 62,
+    uppercase: true,
+    adaptive: true,
+    letterSpacing: 0.01,
+    color: '#FFFFFF',
+    accent: '#FFFFFF',
+    shadow: '0 3px 14px rgba(0,0,0,0.55)',
+    anim: 'fade',
+    words: 'short'
+  },
+  {
     id: 'slam',
     name: 'Slam',
     blurb: 'Tall condensed caps that slam in word by word.',
@@ -281,7 +323,8 @@ export const CAPTION_ANIMATIONS: { id: CaptionAnim; blurb: string }[] = [
   { id: 'typewriter', blurb: 'words appear one at a time; the spoken word in the highlight color' },
   { id: 'slam', blurb: 'words slam in big, one at a time' },
   { id: 'glow', blurb: 'lines fade in; the spoken word lights up in the highlight color' },
-  { id: 'bounce', blurb: 'lines bounce up' }
+  { id: 'bounce', blurb: 'lines bounce up' },
+  { id: 'blur', blurb: 'lines come into focus out of a soft blur' }
 ]
 
 export const CAPTION_SIZES: Record<CaptionConfig['size'], number> = { sm: 0.82, md: 1, lg: 1.22 }
@@ -314,6 +357,10 @@ export type CaptionLook = {
   layout: CaptionLayout
   /** The hero word's resolved look for a scatter layout; null means no hero. */
   hero: CaptionHero | null
+  /** Lowercase unless the config asks for uppercase. */
+  lowercase: boolean
+  /** Takes the Studio look's colors where it runs (dark on paper, light on ink and the face). */
+  adaptive: boolean
 }
 
 const OUTLINE = 'rgba(0,0,0,0.92)'
@@ -363,8 +410,15 @@ export function captionLook(
         : (s.shadow ?? null),
     box,
     layout: o.layout ?? s.layout ?? 'line',
-    hero
+    hero,
+    lowercase: !!s.lowercase,
+    adaptive: !!s.adaptive && o.color === undefined
   }
+}
+
+/** CSS text-transform for a config in its look. */
+export function captionCase(cfg: Pick<CaptionConfig, 'uppercase'>, look: CaptionLook): string {
+  return cfg.uppercase ? 'uppercase' : look.lowercase ? 'lowercase' : 'none'
 }
 
 /** The outline and shadow as one CSS text-shadow, at `k` times the 1080 px scale. */

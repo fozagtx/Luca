@@ -10,6 +10,7 @@ import { bundledLut, type ColorGrade } from '../shared/luts'
 import type { ColorState, Project } from '../shared/types'
 import { bundledLutsDir } from './resources'
 import { findTags, replaceTag, setAttrs, type TagMatch } from './html'
+import { refreshStudio } from './studio'
 import { checkpoint } from './versions'
 
 const GRADING_ATTR = 'data-color-grading'
@@ -96,6 +97,8 @@ export async function applyColor(
     html = replaceTag(html, tag, setAttrs(tag, { [GRADING_ATTR]: JSON.stringify(grading) }))
   }
   writeFileSync(file, html)
+  // the Studio look frames this footage itself, so it takes the grade too
+  refreshStudio(p)
   if (opts.checkpoint !== false) await checkpoint(p.dir, `Color: ${lut.name}`)
   return colorState(p)
 }
@@ -112,6 +115,8 @@ export async function removeColor(p: Pick<Project, 'dir'>): Promise<ColorState> 
     html = replaceTag(html, tag, setAttrs(tag, { [GRADING_ATTR]: rest }))
   }
   writeFileSync(file, html)
+  // the Studio look frames this footage itself, so it takes the grade too
+  refreshStudio(p)
   await checkpoint(p.dir, 'Remove color')
   return colorState(p)
 }

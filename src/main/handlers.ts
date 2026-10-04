@@ -73,6 +73,7 @@ import type { LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, requireProject, setCurrentProject } from './state'
 import { applyEdit, applyTransform, editLabel, peaks, thumbnails } from './media'
+import { refreshStudio } from './studio'
 import { checkpoint, ensureRepo, history, restore, undo } from './versions'
 import { cancelVoice, micAccess, pushVoiceAudio, startVoice, stopVoice } from './voice'
 import { stopWatching, watchProject } from './watcher'
@@ -86,6 +87,12 @@ const warnCheckpoint = (err: unknown): void => console.warn('[luca] checkpoint f
  * caller's checkpoint saves the change and the captions as one version.
  */
 function followCaptions(p: Project): void {
+  // the Studio look mirrors the footage, so it follows a trim or split too
+  try {
+    refreshStudio(p)
+  } catch (err) {
+    console.warn('[luca] following the footage with the Studio look failed', err)
+  }
   try {
     refreshCaptions(p)
   } catch (err) {
