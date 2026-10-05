@@ -385,10 +385,13 @@ export function normalizePlan(
     const last = scenes[scenes.length - 1]
     if (last && start < last.end) {
       if (start - last.start >= 0.2) {
-        notes.push(`Beat at ${last.start}s now ends at ${start}s, where the next one starts.`)
-        last.end = start
-        // its changes were checked against the old end
-        last.changes = last.changes.filter((c) => c.at < start - 0.05)
+        // the beat before gives way only to a beat that is kept
+        if (stop - start >= 0.2) {
+          notes.push(`Beat at ${last.start}s now ends at ${start}s, where the next one starts.`)
+          last.end = start
+          // its changes were checked against the old end
+          last.changes = last.changes.filter((c) => c.at < start - 0.05)
+        }
       } else {
         notes.push(
           `Beat at ${s.start}s started within 0.2 s of the one before; it now starts at ${last.end}s.`

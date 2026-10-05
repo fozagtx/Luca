@@ -138,7 +138,8 @@ function beforeAfterSnippet(
     palette: 'sunset',
     drift: 0.6,
     reveal: 'rise',
-    reveal_at: 0
+    reveal_at: 0,
+    duration: Number(length) || 10
   })
   return [
     ...host(t, ctx.size, values, length),

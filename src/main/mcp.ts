@@ -1,5 +1,5 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { extname, isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import {
@@ -423,9 +423,15 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
               'a-roll'
             )
             const footage = VIDEO_EXT.has(extname(p?.source ?? '').toLowerCase()) ? p?.source : null
+            const raw = footage
+              ? ([footage, `media/${footage}`].find((f) => existsSync(join(projectDir, f))) ??
+                footage)
+              : null
+            const playing = (aRoll?.name === 'video' && aRoll.attrs.src) || null
+            // before/after compares the edit with the recording as it came in
             const snippet = addTreatment(projectDir, name, {
               size: sizeOf(p?.aspect ?? DEFAULT_ASPECT),
-              source: (aRoll?.name === 'video' && aRoll.attrs.src) || footage || null
+              source: (name === 'before-after' ? raw || playing : playing || raw) || null
             })
             return text({ ok: true, snippet })
           } catch (err) {

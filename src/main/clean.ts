@@ -31,7 +31,7 @@ import { Channels, broadcast } from './ipc'
 import { hasSecret } from './secrets'
 import { getSettings } from './settings'
 import { extractAudio, hasAudioStream, isFiller, transcribe } from './transcribe'
-import { refreshStudio } from './studio'
+import { refreshStudio, retimeStudio } from './studio'
 import { checkpoint } from './versions'
 
 const MAX_PAUSE = 0.6
@@ -298,7 +298,13 @@ const num = (v: string | undefined, fallback: number): number => {
  * after a piece (chained footage, music, outros) move earlier by the time that piece lost, so the
  * video shortens by exactly the cuts.
  */
-function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): void {
+/** Returns where each moment of the timeline went, or null when nothing on it played the speech. */
+function relink(
+  p: Project,
+  cleanRel: string,
+  cuts: Cut[],
+  duration: number
+): ((t: number) => number) | null {
   const indexFile = join(p.dir, 'index.html')
   let html = readFileSync(indexFile, 'utf8')
   const tags = findTags(html)
@@ -345,7 +351,7 @@ function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): vo
     // an earlier master whose cuts weren't recorded (cleaned before they were) becomes the whole new one
     pieces.push({ tag, start, end: start + length, mediaStart, before, newMediaStart, newLength })
   }
-  if (!pieces.length) return
+  if (!pieces.length) return null
 
   // a video and its own audio (even trimmed a little differently) are one stretch of time
   type Stretch = { start: number; end: number; rep: Piece; delta: number }
@@ -402,6 +408,7 @@ function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): vo
     (_, a: string, d: string, b: string) => `${a}${r3(Math.max(0.1, num(d, duration) + total))}${b}`
   )
   writeFileSync(indexFile, html)
+  return moved
 }
 
 const readIndex = (dir: string): string => readFileSync(join(dir, 'index.html'), 'utf8')
@@ -525,11 +532,12 @@ export async function applyEdl(
       writeFileSync(join(p.dir, 'transcript.json'), JSON.stringify(remap(original, cuts), null, 2))
     setStatus({ stage: 'relinking' })
     writeFileSync(join(p.dir, 'edl.json'), JSON.stringify({ ...edl, cuts }, null, 2))
-    relink(p, cleanRel, cuts, newDuration)
+    const move = relink(p, cleanRel, cuts, newDuration)
     writeFileSync(appliedFile(p.dir), JSON.stringify({ file: cleanRel, cuts }, null, 2))
-    // the Studio look plays the cut video too, and captions follow the cut words; saved in the
-    // same version as the cut
+    // the Studio look plays the cut video too, its beats move with the words they were timed
+    // to, and captions follow the cut words; saved in the same version as the cut
     try {
+      if (move) retimeStudio(p, move)
       refreshStudio(p)
     } catch (err) {
       console.warn('[clean] following the cut with the Studio look failed', err)

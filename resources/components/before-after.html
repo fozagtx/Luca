@@ -40,7 +40,8 @@
     { "id": "palette", "type": "enum", "role": "style", "label": "Gradient", "description": "The background gradient.", "default": "sunset", "options": [{ "value": "sunset", "label": "Sunset" }, { "value": "ocean", "label": "Ocean" }, { "value": "lime", "label": "Lime" }, { "value": "mono", "label": "Mono" }] },
     { "id": "drift", "type": "number", "role": "style", "label": "Drift", "description": "How much the gradient light moves.", "default": 0.6, "min": 0, "max": 1, "step": 0.05 },
     { "id": "reveal", "type": "enum", "role": "timing", "label": "Reveal", "description": "rise: panels and labels rise in; none: they are there from the first frame.", "default": "rise", "options": [{ "value": "rise", "label": "Rise" }, { "value": "none", "label": "None" }] },
-    { "id": "reveal_at", "type": "number", "role": "timing", "label": "Reveal at", "description": "Seconds from the clip start when the panels rise in.", "default": 0, "min": 0, "max": 10, "step": 0.1, "unit": "s" }
+    { "id": "reveal_at", "type": "number", "role": "timing", "label": "Reveal at", "description": "Seconds from the clip start when the panels rise in.", "default": 0, "min": 0, "max": 10, "step": 0.1, "unit": "s" },
+    { "id": "duration", "type": "number", "role": "timing", "label": "Length", "description": "The length of the host clip in seconds (the gradient drifts across all of it).", "default": 10, "min": 0.1, "max": 36000, "step": 0.1, "unit": "s" }
   ]'
 >
   <head>
@@ -128,13 +129,7 @@
           }
         </style>
 
-        <div
-          id="before-after-clip"
-          class="bfa-clip clip"
-          data-start="0"
-          data-duration="10"
-          data-track-index="0"
-        >
+        <div id="before-after-clip" class="bfa-clip">
           <div class="bfa-sky"></div>
           <div class="bfa-grain"></div>
           <div class="bfa-col bfa-col-l">
@@ -162,7 +157,8 @@
               if (!isFinite(n)) n = f
               return Math.max(min, Math.min(max, n))
             }
-            var duration = Math.max(0.001, parseFloat(root.dataset.duration || '10'))
+            // the host's length comes in as a variable: the frame lasts as long as the comparison
+            var duration = num(vars.duration, 10, 0.001, 36000)
             var box = root.getBoundingClientRect()
             var W = Math.max(1, Math.round(box.width) || 1920)
             var H = Math.max(1, Math.round(box.height) || 1080)

@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import type { CaptionPlacement, CaptionZone } from '../captions-html'
 import { findTagById } from '../html'
 import { STUDIO_ID } from './compose'
+import { checkFiles } from './files'
 import { studioGeometry } from './geometry'
 import { lookOf } from './look'
 import { normalizePlan, planSchema, segments, type StudioPlan } from './schema'
@@ -43,7 +44,8 @@ export function studioCaptionPlacement(
   if (!findTagById(html, STUDIO_ID)) return null
   const saved = readStudio(dir)
   if (!saved) return null
-  const { plan } = normalizePlan(saved.plan, d.duration)
+  // the plan as the picture was built from it: beats whose files are gone are gone here too
+  const { plan } = normalizePlan(checkFiles(dir, saved.plan).plan, d.duration)
   const look = lookOf(plan.look)
   const geo = studioGeometry(d.w, d.h, look.id)
   const zones: CaptionZone[] = segments(plan, d.duration).map((s) => {

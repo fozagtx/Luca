@@ -412,7 +412,8 @@ export function captionLook(
     layout: o.layout ?? s.layout ?? 'line',
     hero,
     lowercase: !!s.lowercase,
-    adaptive: !!s.adaptive && o.color === undefined
+    // a box keeps its own background, so its text keeps the color made for it
+    adaptive: !!s.adaptive && o.color === undefined && !box
   }
 }
 
@@ -969,7 +970,7 @@ export function splitAtBreaks(groups: CaptionGroup[], breaks: number[]): Caption
     let start = g.start
     for (const w of g.words) {
       const prev = cur[cur.length - 1]
-      if (prev && cuts.some((b) => prev.start < b - 0.02 && w.start >= b - 0.05)) {
+      if (prev && cuts.some((b) => prev.start < b - 0.05 && w.start >= b - 0.05)) {
         out.push(line(cur, start, w.start))
         cur = []
         start = w.start

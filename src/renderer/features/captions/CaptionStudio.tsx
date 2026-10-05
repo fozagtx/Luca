@@ -519,7 +519,10 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
             }
           />
           <span className="text-[11px] text-text-3">
-            {look.anim === 'fade' || look.anim === 'slide' || look.anim === 'bounce'
+            {look.anim === 'fade' ||
+            look.anim === 'slide' ||
+            look.anim === 'bounce' ||
+            look.anim === 'blur'
               ? 'This style animates whole lines'
               : 'Colors the word being spoken'}
           </span>

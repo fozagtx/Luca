@@ -28,9 +28,10 @@ import { checkpoint } from '../versions'
 import { studioComposition, STUDIO_FILE, STUDIO_ID, type FootageClip } from './compose'
 import { placeStudioHost, removeStudioHost, speakerClips } from './host'
 import { popoutFits, studioGeometry } from './geometry'
+import { checkFiles } from './files'
 import { imageSize } from './imagesize'
 import { lookOf } from './look'
-import { normalizePlan, planWarnings, type StudioGraphic, type StudioPlan } from './schema'
+import { normalizePlan, planWarnings, type StudioPlan } from './schema'
 import { readStudio, studioFile, type SavedStudio } from './zones'
 
 export { readStudio } from './zones'
@@ -71,68 +72,6 @@ function footagePrint(dir: string, html: string, source: string | null): string 
     .update(JSON.stringify([clips, dims(html), cutoutsFor(dir, clips)]))
     .digest('hex')
     .slice(0, 16)
-}
-
-/**
- * The plan with every file it names checked: a logo that isn't in the project falls back to
- * letters on its tile, and a missing picture is left out (a window keeps the screenshots it has,
- * a compare or image goes), so the composition never references a file that isn't there.
- */
-function checkFiles(dir: string, plan: StudioPlan): { plan: StudioPlan; notes: string[] } {
-  const notes: string[] = []
-  const missing = (rel: string): boolean => {
-    try {
-      return !existsSync(safeJoin(dir, rel))
-    } catch {
-      return true
-    }
-  }
-  const fix = (v: unknown): unknown => {
-    if (Array.isArray(v)) return v.map(fix)
-    if (!v || typeof v !== 'object') return v
-    const out: Record<string, unknown> = {}
-    for (const [k, x] of Object.entries(v as Record<string, unknown>)) out[k] = fix(x)
-    if (typeof out.logo === 'string' && missing(out.logo)) {
-      notes.push(
-        `${out.logo} isn't in the project: its tile shows letters instead. Get it with logo_add.`
-      )
-      delete out.logo
-      delete out.tint
-    }
-    return out
-  }
-  const fixed = fix(plan) as StudioPlan
-  const scenes = fixed.scenes.map((s) => {
-    if (!s.graphic) return s
-    const list = Array.isArray(s.graphic) ? s.graphic : [s.graphic]
-    const kept = list.flatMap((g): StudioGraphic[] => {
-      if (g.kind === 'window' && g.images?.length) {
-        const gone = g.images.filter((i) => missing(i.image))
-        if (!gone.length) return [g]
-        const images = g.images.filter((i) => !missing(i.image))
-        notes.push(
-          `${gone.map((i) => i.image).join(', ')} isn't in the project: the window at ${s.start}s ${images.length ? 'leaves it out' : 'draws a chat app instead'}. Use a path that exists.`
-        )
-        if (images.length) return [{ ...g, images }]
-        const { images: _gone, ...rest } = g
-        void _gone
-        return [rest]
-      }
-      if ((g.kind === 'compare' || g.kind === 'image') && missing(g.image)) {
-        notes.push(
-          `${g.image} isn't in the project: the ${g.kind} at ${s.start}s was left out. Use a path that exists.`
-        )
-        return []
-      }
-      return [g]
-    })
-    if (kept.length === list.length && kept.every((g, i) => g === list[i])) return s
-    const { graphic: _old, ...rest } = s
-    void _old
-    if (!kept.length) return rest
-    return { ...rest, graphic: Array.isArray(s.graphic) ? kept : kept[0] }
-  })
-  return { plan: { ...fixed, scenes }, notes }
 }
 
 /** The size of every picture and logo the plan names that is in the project. */
@@ -276,6 +215,25 @@ export function refreshStudio(p: StudioProject): boolean {
   const built = build(p, saved.plan, html)
   write(p, built, { ...saved, footage: footagePrint(p.dir, built.index, p.source ?? null) })
   return true
+}
+
+/**
+ * Moves every time in the saved plan through `move` (where a moment of the timeline went after a
+ * cut), so each beat stays on the words it was timed to. The caller rebuilds.
+ */
+export function retimeStudio(p: StudioProject, move: (t: number) => number): void {
+  const saved = readStudio(p.dir)
+  if (!saved) return
+  const isTime = (k: string): boolean => k === 'start' || k === 'end' || k === 'at' || /At$/.test(k)
+  const walk = (v: unknown, key?: string): unknown =>
+    typeof v === 'number' && key && isTime(key)
+      ? Math.round(Math.max(0, move(v)) * 1000) / 1000
+      : Array.isArray(v)
+        ? v.map((x) => walk(x))
+        : v && typeof v === 'object'
+          ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]))
+          : v
+  writeFileSync(studioFile(p.dir), JSON.stringify({ ...saved, plan: walk(saved.plan) }, null, 2))
 }
 
 export async function removeStudio(p: Project, opts: { checkpoint?: boolean } = {}): Promise<void> {
@@ -475,6 +433,21 @@ const slugOf = (s: string): string =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 40) || 'logo'
 
+/**
+ * The logo's file name: its name as a slug when that loses nothing, else the slug plus a short
+ * hash, so "C++" and "C#", or two names in another script, never overwrite each other.
+ */
+function logoFileName(name: string): string {
+  const base = name
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+  if (base && base === name.toLowerCase()) return base
+  return `${base || 'logo'}-${createHash('sha1').update(name).digest('hex').slice(0, 6)}`
+}
+
 export type LogoResult = {
   path: string
   from: 'github' | 'simple-icons' | 'website'
@@ -510,7 +483,7 @@ export async function addLogo(
   p: Project,
   q: { name: string; github?: string; brand?: string; site?: string }
 ): Promise<LogoResult> {
-  const slug = slugOf(q.name)
+  const slug = logoFileName(q.name)
   const dir = join(p.dir, 'media', 'logos')
   mkdirSync(dir, { recursive: true })
   const tries: { from: LogoResult['from']; url: string }[] = []

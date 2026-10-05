@@ -14,6 +14,17 @@ const num = (v: string | undefined, fallback = 0): number => {
   return Number.isFinite(n) ? n : fallback
 }
 
+/**
+ * index.html with every <template>'s contents blanked and offsets kept: a treatment's slot (the
+ * a-roll's own file, inert until the treatment clones it) is neither the speaker's footage nor a
+ * place to put the host.
+ */
+const outsideTemplates = (html: string): string =>
+  html.replace(
+    /(<template\b[^>]*>)([\s\S]*?)(<\/template>)/gi,
+    (_m, open: string, body: string, close: string) => open + ' '.repeat(body.length) + close
+  )
+
 const srcOf = (t: TagMatch): string => (t.attrs.src ?? '').replace(/^\.\//, '').split(/[?#]/)[0]
 
 /**
@@ -27,7 +38,7 @@ export function speakerClips(
 ): (FootageClip & { grading?: string })[] {
   const root = findTags(html).find((t) => t.attrs['data-composition-id'] !== undefined)
   const total = num(root?.attrs['data-duration'])
-  return findTags(html, 'video')
+  return findTags(outsideTemplates(html), 'video')
     .filter((t) => {
       const src = srcOf(t)
       if (!src) return false
@@ -63,7 +74,7 @@ function hostTag(duration: number, track: number): string {
  * speaker's clips, so the a-roll is under it and everything else in the file stays on top.
  */
 export function placeStudioHost(html: string, duration: number, source: string | null): string {
-  const host = findTagById(html, STUDIO_ID)
+  const host = findTagById(outsideTemplates(html), STUDIO_ID)
   if (host)
     return replaceTag(
       html,
@@ -75,7 +86,7 @@ export function placeStudioHost(html: string, duration: number, source: string |
     )
   const speaker = new Set(speakerClips(html, source).map((c) => c.src))
   // after the last tag of the a-roll (its audio included), at that tag's indentation
-  const anchors = findTags(html).filter(
+  const anchors = findTags(outsideTemplates(html)).filter(
     (t) =>
       /^a-roll/.test(t.attrs.id ?? '') ||
       ((t.name === 'video' || t.name === 'audio') && speaker.has(srcOf(t)))

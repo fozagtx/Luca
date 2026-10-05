@@ -165,16 +165,24 @@ function scatterCss(look: CaptionLook, cfg: CaptionConfig, d: { w: number; h: nu
 /** A line restyled mid-way, when the picture cuts while it is still up: at, group CSS, line CSS. */
 type Restyle = [number, Record<string, string>, Record<string, string>]
 
+/**
+ * `colorAt`: the line's color at a moment when an adaptive style takes the picture's colors there,
+ * so a marked word goes back to it (not to the style's own color) when the next word comes.
+ */
 function script(
   groups: CaptionGroup[],
   look: CaptionLook,
   d: { w: number; h: number },
-  restyles: Restyle[][] = []
+  restyles: Restyle[][] = [],
+  colorAt: (t: number) => string | undefined = () => undefined
 ): string {
   const data = groups.map((g, i) => [
     g.start,
     g.end,
-    g.words.map((w) => [w.start, w.end]),
+    g.words.map((w, j) => {
+      const back = j + 1 < g.words.length ? colorAt(g.words[j + 1].start) : undefined
+      return back ? [w.start, w.end, back] : [w.start, w.end]
+    }),
     restyles[i] ?? []
   ])
   const opts = {
@@ -202,7 +210,7 @@ function script(
             if (!words[j]) return;
             tl.to(words[j], Object.assign({ duration: 0.06, ease: 'power1.out' }, on), w[0]);
             if (j + 1 < g[2].length)
-              tl.to(words[j], Object.assign({ duration: 0.08, ease: 'power1.out' }, off), g[2][j + 1][0]);
+              tl.to(words[j], Object.assign({ duration: 0.08, ease: 'power1.out' }, off, w[2] && off.color ? { color: w[2] } : {}), g[2][j + 1][0]);
           });
         }
         function reveal(words, g, from, to) {
@@ -372,7 +380,7 @@ ${fontLink ? `    <link rel="stylesheet" href="${esc(fontLink)}" />\n` : ''}    
     </style>
 
     <script src="${GSAP}"></script>
-    <script>${script(groups, look, d, restyles)}
+    <script>${script(groups, look, d, restyles, (t) => (look.adaptive ? zoneAt(t)?.color : undefined))}
     </script>
   </div>
 </template>
