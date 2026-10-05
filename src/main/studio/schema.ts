@@ -130,7 +130,7 @@ export const graphicSchema = z.discriminatedUnion('kind', [
       .max(6)
       .optional()
       .describe(
-        'a small black label under the window that steps through features: tools → masks → layers'
+        'a small white label under the window that steps through features: tools → masks → layers'
       ),
     boxes: z
       .array(
@@ -164,7 +164,9 @@ export const graphicSchema = z.discriminatedUnion('kind', [
     from: text(10).optional().describe('what it costs: "$60"'),
     strikeAt: at.optional(),
     crossed: z
-      .array(markSchema)
+      .array(
+        markSchema.extend({ at: at.optional().describe('crossed out on the word that names it') })
+      )
       .max(3)
       .optional()
       .describe('paid tools shown as tiles and crossed out in red, instead of label and from'),
@@ -227,6 +229,7 @@ export const graphicSchema = z.discriminatedUnion('kind', [
     stat: text(24).optional().describe('"161.8k stars"'),
     mark: markSchema.optional(),
     value: text(16).optional().describe('a big number under the icon: "180,000"'),
+    valueAt: at.optional().describe('when the number lands, on its word'),
     at: at.optional()
   }),
   z.object({
@@ -360,10 +363,13 @@ export type NormalizedPlan = Omit<StudioPlan, 'scenes'> & {
 const r3 = (n: number): number => Math.round(n * 1000) / 1000
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 
+/** The shortest the face may show between two beats: less reads as a flash of two cuts. */
+const MIN_FACE = 0.5
+
 /**
  * Sorted, clipped to [0, duration], overlaps resolved (a later beat starts where the one before
- * it ends), beats under 0.2 s dropped, defaults filled in. Returns what was changed in plain words
- * so the agent can see what Luca did to its plan.
+ * it ends), beats under 0.2 s dropped, gaps too short for the face closed, defaults filled in.
+ * Returns what was changed in plain words so the agent can see what Luca did to its plan.
  */
 export function normalizePlan(
   plan: StudioPlan,
@@ -373,7 +379,6 @@ export function normalizePlan(
   const end = duration > 0 ? duration : Infinity
   const sorted = [...plan.scenes].sort((a, b) => a.start - b.start)
   const scenes: NormalizedScene[] = []
-  let prevBg: StudioBg = 'paper'
   for (const s of sorted) {
     let start = r3(Math.max(0, s.start))
     const stop = r3(Math.min(end, s.end))
@@ -382,7 +387,12 @@ export function normalizePlan(
       if (start - last.start >= 0.2) {
         notes.push(`Beat at ${last.start}s now ends at ${start}s, where the next one starts.`)
         last.end = start
+        // its changes were checked against the old end
+        last.changes = last.changes.filter((c) => c.at < start - 0.05)
       } else {
+        notes.push(
+          `Beat at ${s.start}s started within 0.2 s of the one before; it now starts at ${last.end}s.`
+        )
         start = last.end
       }
     }
@@ -390,7 +400,9 @@ export function normalizePlan(
       notes.push(`Dropped a beat at ${s.start}s: shorter than 0.2 s once it fit the timeline.`)
       continue
     }
-    const bg = s.bg ?? prevBg
+    // a beat that doesn't say keeps the background the one before it ended on
+    const prevEnd = last?.changes[last.changes.length - 1] ?? last
+    const bg = s.bg ?? prevEnd?.bg ?? 'paper'
     const graphics = s.graphic ? (Array.isArray(s.graphic) ? s.graphic : [s.graphic]) : []
     const speaker = s.speaker ?? (graphics.length ? DEFAULT_SPEAKER[graphics[0].kind] : 'full')
     let cur = { bg, speaker }
@@ -401,10 +413,24 @@ export function normalizePlan(
         cur = { bg: c.bg ?? cur.bg, speaker: c.speaker ?? cur.speaker }
         return { at: r3(c.at), ...cur }
       })
-    prevBg = cur.bg
     const { graphic: _graphic, ...rest } = s
     void _graphic
     scenes.push({ ...rest, start, end: stop, bg, speaker, changes, graphics })
+  }
+  // the reference holds the picture through the pause between items and cuts on the next word:
+  // a gap too short for the face goes to the beat before it
+  if (scenes.length && scenes[0].start > 0 && scenes[0].start < MIN_FACE) {
+    notes.push(`Beat at ${scenes[0].start}s now starts at 0s: the face would flash before it.`)
+    scenes[0].start = 0
+  }
+  for (let i = 0; i + 1 < scenes.length; i++) {
+    const gap = r3(scenes[i + 1].start - scenes[i].end)
+    if (gap > 0 && gap < MIN_FACE) {
+      notes.push(
+        `Beat at ${scenes[i].start}s now runs to ${scenes[i + 1].start}s: a ${gap.toFixed(2)} s gap would flash the face.`
+      )
+      scenes[i].end = scenes[i + 1].start
+    }
   }
   const accent = plan.accent && HEX.test(plan.accent.trim()) ? plan.accent.trim() : '#C8F23A'
   if (plan.accent && accent !== plan.accent.trim())
@@ -456,7 +482,7 @@ export function segments(plan: NormalizedPlan, duration: number): Segment[] {
     if (s.start > t) push({ start: t, end: s.start, bg, speaker: 'full', scene: -1 })
     const marks = [{ at: s.start, bg: s.bg, speaker: s.speaker }, ...s.changes]
     marks.forEach((m, j) => {
-      const stop = j + 1 < marks.length ? marks[j + 1].at : s.end
+      const stop = Math.min(j + 1 < marks.length ? marks[j + 1].at : s.end, s.end)
       push({ start: m.at, end: stop, bg: m.bg, speaker: m.speaker, scene: i, zoom: s.zoom })
       bg = m.bg
     })
@@ -484,12 +510,64 @@ export function planWarnings(plan: NormalizedPlan, duration: number): string[] {
       out.push(
         `The beat at ${s.start}s has no graphic but the speaker is ${s.speaker}: the frame will look empty.`
       )
-    for (const g of s.graphics)
+    if (s.graphics.length && len < 0.8)
+      out.push(
+        `The beat at ${s.start}s lasts ${len.toFixed(2)} s: a graphic needs ~0.8 s to land and be read; merge it with a neighbour or lengthen it.`
+      )
+    if (s.graphics.length === 3 && s.speaker !== 'none')
+      out.push(
+        `The beat at ${s.start}s stacks three graphics above the speaker's card: at 1:1 or in a wide frame each gets under ~150 px, so split the beat.`
+      )
+    s.changes.forEach((c, j) => {
+      const before = j ? s.changes[j - 1] : s
+      if (c.bg === before.bg && c.speaker === before.speaker)
+        out.push(
+          `The change at ${c.at}s in the beat at ${s.start}s switches neither the background nor the speaker: give it a bg or a speaker.`
+        )
+    })
+    for (const g of s.graphics) {
       for (const t of timesOf(g))
         if (t < s.start - 0.01 || t > s.end + 0.01)
           out.push(
             `A ${g.kind} at ${s.start}–${s.end}s has a moment at ${t}s, outside its beat: it won't show.`
           )
+      for (const w of kindWarnings(g)) out.push(`The ${g.kind} at ${s.start}s ${w}.`)
+    }
+  }
+  return out
+}
+
+/** Fields a graphic names that won't show, or show differently than asked. */
+function kindWarnings(g: StudioGraphic): string[] {
+  const out: string[] = []
+  switch (g.kind) {
+    case 'app':
+      if (g.stat && g.lines?.length)
+        out.push('shows the stat or the two lines, not both: the lines are dropped')
+      break
+    case 'price':
+      if (g.crossed?.length && (g.label || g.from))
+        out.push('has crossed tiles, so its label and from are ignored')
+      break
+    case 'icons':
+      for (const c of g.cross ?? [])
+        if (c.index >= g.items.length)
+          out.push(`crosses tile ${c.index}, but it has ${g.items.length} (they count from 0)`)
+      if (g.focus !== false && g.items.some((i) => i.label))
+        out.push('has labels, which show only with focus: false')
+      break
+    case 'list':
+      if (g.highlight && g.highlight.index >= g.items.length)
+        out.push(
+          `highlights row ${g.highlight.index}, but it has ${g.items.length} (they count from 0)`
+        )
+      break
+    case 'window':
+      if (!g.images?.length && !g.chat)
+        out.push('has neither images nor a chat: it draws an empty chat app')
+      if (g.boxes?.length && !g.images?.length)
+        out.push('has boxes but no image: boxes move over the first screenshot only')
+      break
   }
   return out
 }

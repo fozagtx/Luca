@@ -44,8 +44,8 @@ export function studioCaptionPlacement(
   const saved = readStudio(dir)
   if (!saved) return null
   const { plan } = normalizePlan(saved.plan, d.duration)
-  const geo = studioGeometry(d.w, d.h)
   const look = lookOf(plan.look)
+  const geo = studioGeometry(d.w, d.h, look.id)
   const zones: CaptionZone[] = segments(plan, d.duration).map((s) => {
     const c = geo.captions[s.speaker]
     const light = s.bg === 'paper' && s.speaker !== 'full'

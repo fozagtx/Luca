@@ -11,7 +11,7 @@ export const number: KindModule<'number'> = {
       ${s} .ls-k-number { display: flex; flex-direction: column; align-items: center; width: 100%; }
       ${s} .ls-k-number .ls-nb-line { position: relative; max-width: 100%; }
       ${s} .ls-k-number .ls-nb-label { font-family: var(--display), sans-serif; line-height: 1.08; letter-spacing: -0.035em; color: var(--fg); text-align: center; }
-      ${s} .ls-k-number .ls-nb-line .ls-strike { top: 56%; }
+      ${s} .ls-k-number .ls-nb-line .ls-strike { top: 56%; color: var(--fg); }
       ${s} .ls-k-number .ls-nb-vmask { overflow: hidden; max-width: 100%; padding: 0.1em 0.2em 0.03em; margin: -0.1em -0.2em -0.03em; box-sizing: content-box; }
       ${s} .ls-k-number .ls-nb-value {
         font-family: var(--display), sans-serif; line-height: 1; letter-spacing: -0.045em; color: var(--fg);
@@ -48,7 +48,7 @@ export const number: KindModule<'number'> = {
     const html: string[] = []
     if (g.label)
       html.push(
-        `<div class="ls-nb-line" style="font-size:${r1(label)}px;margin-bottom:${r1(value * 0.15)}px"><div class="ls-mask"><div class="ls-rise ls-nb-label" data-fit="parent" style="font-size:${r1(label)}px;font-weight:${look.weights.medium};${italic}">${esc(g.label)}</div></div>${strikeAt !== undefined ? `<i class="ls-strike" style="height:${r1(Math.max(3 * k, label * 0.055))}px"></i>` : ''}</div>`
+        `<div class="ls-nb-line" style="font-size:${r1(label)}px;margin-bottom:${r1(value * 0.15)}px"><div class="ls-mask"><div class="ls-rise ls-nb-label" data-fit="parent" style="font-size:${r1(label)}px;font-weight:${look.weights.medium};${italic}">${esc(g.label)}</div></div>${strikeAt !== undefined ? `<i class="ls-strike" style="height:${r1(Math.max(4 * k, label * 0.075))}px"></i>` : ''}</div>`
       )
     html.push(
       `<div class="ls-nb-vmask" style="font-size:${r1(value)}px"><div class="ls-nb-vrise"><div class="ls-nb-value" data-fit="parent" style="font-size:${r1(value)}px;font-weight:${look.weights.black};${italic}">${esc(g.value)}</div></div></div>`

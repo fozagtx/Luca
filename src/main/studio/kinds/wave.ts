@@ -1,8 +1,9 @@
 /**
  * wave: one to three dark audio cards, each a tiny mono caps label over a voice waveform of
  * rounded bars. A plain card arrives with dim ghost bars that light up left to right, as if
- * played; an accent card (the cloned voice) arrives empty and its lime bars grow out of the
- * center line. Settled bars keep a soft ripple. For "your voice" → "the clone", before → after.
+ * played; an accent card (the cloned voice) arrives empty, then its lime bars rise from a flat
+ * center line all together. Settled bars keep a soft ripple. For "your voice" → "the clone",
+ * before → after.
  */
 import { esc, r1, waveBars } from '../parts'
 import { t, when, type KindModule } from './types'
@@ -18,7 +19,9 @@ export const wave: KindModule<'wave'> = {
       ${s} .ls-k-wave { display: flex; flex-direction: column; align-items: center; justify-content: center; }
       ${s} .ls-k-wave.ls-wv-side { flex-direction: row; }
       ${s} .ls-k-wave .ls-wv {
-        position: relative; flex: none; box-sizing: border-box; background: var(--card);
+        position: relative; flex: none; box-sizing: border-box;
+        /* the reference's audio cards are near-black, a step darker than the other cards */
+        background: color-mix(in srgb, var(--card) 62%, #000);
         box-shadow:
           inset 0 ${r1(1.5 * k)}px 0 rgba(255,255,255,0.08),
           inset 0 -${r1(2 * k)}px ${r1(6 * k)}px rgba(0,0,0,0.3),
@@ -52,20 +55,22 @@ export const wave: KindModule<'wave'> = {
     const gap = side ? w * 0.06 : h * GAP
     const padX = w * 0.04
     const labelSize = Math.max(13 * k, h * 0.085)
-    const count = Math.max(28, Math.min(60, Math.round((w - padX * 2) / (14.5 * k))))
+    // dense enough (about 90 bars on a portrait card) to read as one envelope, not a spike plot
+    const count = Math.max(48, Math.min(110, Math.round((w - padX * 2) / (9 * k))))
     const pitch = (w - padX * 2) / count
-    const barW = pitch * 0.56
+    const barW = pitch * 0.5
     const start = when(g.at, ctx.start, ctx.start)
     const spacing = Math.min(0.9, Math.max(0.45, (ctx.end - start - 0.8) / n))
     const times = g.cards.map((c, i) => when(c.at, start + i * spacing, ctx.start))
 
     const cards = g.cards.map((c, i) => {
       const labelled = !!c.label
-      const maxH = h * (labelled ? 0.5 : 0.62)
+      const maxH = h * (labelled ? 0.56 : 0.62)
       const mid = labelled ? h * 0.6 : h * 0.5
       const bars = waveBars(count, SEEDS[i % SEEDS.length])
         .map((v) => {
-          const bh = Math.max(barW, maxH * Math.max(0.07, Math.pow(v, 1.8)))
+          // a voice never drops to silence mid-phrase: the quietest bar keeps about a third
+          const bh = Math.max(barW, maxH * (0.3 + 0.7 * v))
           return `<i class="ls-wv-bar" style="width:${r1(barW)}px;height:${r1(bh)}px"><b style="border-radius:${r1(barW / 2)}px"></b></i>`
         })
         .join('')
@@ -84,12 +89,18 @@ export const wave: KindModule<'wave'> = {
       js.push(
         `H.blurIn(H.q('.ls-wv-${i}', G), ${t(at)}, { y: 46, blur: 16, scale: 0.97, dur: 0.5 });`
       )
-      // the source plays: ghost bars light up left to right; the clone is generated: bars grow
-      const sweep = c.accent ? 0.36 : 0.42
-      const from = at + (c.accent ? 0.32 : 0.1)
+      // the source plays: ghost bars light up left to right. The clone is generated: its card
+      // sits empty a beat, then a flat lime line appears and swells to full all at once (no
+      // sweep), early enough to be seen complete before the beat cuts
+      const sweep = c.accent ? 0.06 : 0.42
+      const from = c.accent ? Math.max(at + 0.1, Math.min(at + 0.3, ctx.end - 0.7)) : at + 0.1
+      if (c.accent)
+        js.push(
+          `tl.fromTo(H.q('.ls-wv-${i} .ls-wv-bars', G), { opacity: 0 }, { opacity: 1, duration: 0.05, ease: 'none' }, ${t(from)});`
+        )
       js.push(
         c.accent
-          ? `H.qa(${sel}, G).forEach(function (el, j, a) { tl.fromTo(el, { scaleY: 0, opacity: 0 }, { scaleY: 1, opacity: 1, duration: 0.34, ease: 'power3.out' }, ${t(from)} + (j / a.length) * ${sweep}); });`
+          ? `H.qa(${sel}, G).forEach(function (el, j, a) { tl.fromTo(el, { scaleY: 0.06, opacity: 1 }, { scaleY: 1, opacity: 1, duration: 0.28, ease: 'power2.out' }, ${t(from)} + (j / a.length) * ${sweep}); });`
           : `H.qa(${sel}, G).forEach(function (el, j, a) { tl.fromTo(el, { scaleY: 0.5, opacity: 0.2 }, { scaleY: 1, opacity: 1, duration: 0.3, ease: 'power2.out' }, ${t(from)} + (j / a.length) * ${sweep}); });`
       )
       // a settled card keeps breathing: a slow ripple travels along its bars until the beat ends

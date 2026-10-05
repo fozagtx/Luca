@@ -9,14 +9,21 @@ import {
   clipFor,
   fullPose,
   insetPose,
+  popoutFits,
   studioGeometry,
   type Rect,
   type SpeakerPose
 } from './geometry'
-import { lookOf, themeStyle } from './look'
+import { lookOf, type StudioLook } from './look'
 import { esc, partsCss, r1 } from './parts'
 import { RUNTIME } from './runtime'
-import { segments, type NormalizedPlan, type StudioKind } from './schema'
+import {
+  segments,
+  type NormalizedPlan,
+  type StudioBg,
+  type StudioKind,
+  type StudioSpeaker
+} from './schema'
 import { KINDS } from './kinds'
 import { t, type KindCtx, type KindModule } from './kinds/types'
 
@@ -49,11 +56,35 @@ export type StudioCtx = {
   texture: string | null
   /** Pixel sizes of the images the plan names, by project path. */
   images?: Record<string, [number, number]>
+  /** Stylesheets for built-in fonts the look uses (the preview needs them; renders embed them). */
+  fontLinks?: string[]
 }
 
 type Pose = SpeakerPose & { plainClip: string; cutClip: string; cut: boolean }
 
 const PLAIN_OPEN = 'inset(0px 0px 0px 0px)'
+
+/** How long the outgoing graphic takes to whip out of the frame on a layout change. */
+const WHIP = 0.16
+
+/** A box's colors: its background's theme, or over the face the ink theme with a soft shadow. */
+function themeVars(
+  look: StudioLook,
+  bg: StudioBg,
+  speaker: StudioSpeaker,
+  k: number
+): Record<string, string> {
+  const face = speaker === 'full'
+  return {
+    ...look.themes[face ? 'ink' : bg],
+    '--glow': face ? `0 ${r1(2 * k)}px ${r1(18 * k)}px rgba(0,0,0,0.45)` : 'none'
+  }
+}
+
+const styleOf = (vars: Record<string, string>): string =>
+  Object.entries(vars)
+    .map(([k, v]) => `${k}:${v}`)
+    .join(';')
 
 function videoTags(clips: FootageClip[], cls: string, src: (c: FootageClip) => string): string {
   return clips
@@ -85,8 +116,8 @@ function stack(zone: Rect, graphics: { kind: StudioKind }[]): Rect[] {
 
 export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string {
   const { w, h, duration } = ctx
-  const geo = studioGeometry(w, h)
   const look = lookOf(plan.look)
+  const geo = studioGeometry(w, h, look.id)
   const k = geo.k
   const segs = segments(plan, duration)
   // the head rises out of a card along the bottom; a tall side card (landscape) shows the
@@ -94,7 +125,7 @@ export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string 
   const hasCut =
     plan.popout &&
     look.id === 'paper' &&
-    !geo.side &&
+    popoutFits(geo, plan.face) &&
     ctx.footage.length > 0 &&
     ctx.footage.every((c) => !!ctx.cutouts[c.src])
   const insetP = insetPose(geo, plan.face, hasCut)
@@ -114,6 +145,8 @@ export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string 
   // ---- the stage's timeline: backgrounds and the speaker, cut on every segment
   const stage: string[] = []
   const poseJs = (p: Pose): string => `{ x: ${r1(p.x)}, y: ${r1(p.y)}, scale: ${p.scale} }`
+  // how far the card travels to clear the bottom edge, the popped-out head with it
+  const offY = r1(h - geo.card.y + h * 0.16)
   segs.forEach((s, i) => {
     const prev = segs[i - 1]
     const at = t(s.start)
@@ -121,6 +154,19 @@ export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string 
       stage.push(i === 0 ? `gsap.set(${sel}, ${vars});` : `tl.set(${sel}, ${vars}, ${at});`)
     }
     if (!prev || prev.bg !== s.bg) set('bgInk', `{ opacity: ${s.bg === 'ink' ? 1 : 0} }`)
+    if (s.speaker === 'none' && prev?.speaker === 'inset') {
+      // the card drops out of the frame, then the speaker is gone
+      const d = Math.min(0.16, s.end - s.start)
+      const gone = t(s.start + d)
+      stage.push(
+        `tl.fromTo(card, { y: 0 }, { y: ${offY}, duration: ${t(d)}, ease: 'power2.in', immediateRender: false }, ${at});`,
+        `tl.fromTo(speaker, { y: ${r1(inset.y)} }, { y: ${r1(inset.y + offY)}, duration: ${t(d)}, ease: 'power2.in', immediateRender: false }, ${at});`,
+        `tl.set(speaker, { opacity: 0 }, ${gone});`,
+        `tl.set(card, { opacity: 0 }, ${gone});`,
+        `tl.set(texFace, { opacity: 0 }, ${gone});`
+      )
+      return
+    }
     if (s.speaker === 'none') {
       set('speaker', '{ opacity: 0 }')
       set('card', '{ opacity: 0 }')
@@ -139,12 +185,11 @@ export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string 
       stage.push(
         `tl.fromTo(speaker, ${poseJs(p)}, { x: ${r1(to.x)}, y: ${r1(to.y)}, scale: ${to.scale}, duration: ${t(s.end - s.start)}, ease: 'none', immediateRender: false }, ${at});`
       )
-    } else if (i > 0 && prev.speaker !== 'inset') {
-      // the card arrives from below
-      const lift = r1(h * 0.07)
+    } else if (i > 0 && prev.speaker === 'none') {
+      // the card rises in from below the frame, head first; from the full face it's a hard cut
       stage.push(
-        `tl.fromTo(speaker, { y: ${r1(p.y + lift)} }, { y: ${r1(p.y)}, duration: 0.5, ease: 'expo.out', immediateRender: false }, ${at});`,
-        `tl.fromTo(card, { y: ${lift} }, { y: 0, duration: 0.5, ease: 'expo.out', immediateRender: false }, ${at});`
+        `tl.fromTo(speaker, { y: ${r1(p.y + offY)} }, { y: ${r1(p.y)}, duration: 0.35, ease: 'expo.out', immediateRender: false }, ${at});`,
+        `tl.fromTo(card, { y: ${offY} }, { y: 0, duration: 0.35, ease: 'expo.out', immediateRender: false }, ${at});`
       )
     }
   })
@@ -153,14 +198,44 @@ export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string 
   const used = new Set<StudioKind>()
   const boxes: string[] = []
   const kindJs: string[] = []
+  const endOf = (i: number): { bg: StudioBg; speaker: StudioSpeaker } => {
+    const s = plan.scenes[i]
+    return s.changes[s.changes.length - 1] ?? s
+  }
+  // when the card leaves or comes back over the same background, the outgoing graphic whips out
+  // of the frame (to the left as the speaker leaves, up as the card rises in) while the next one
+  // comes in; a background change or the full face is a hard cut
+  const whips = plan.scenes.map((scene, i) => {
+    const next = plan.scenes[i + 1]
+    const end = endOf(i)
+    const pair = [end.speaker, next?.speaker]
+    return (
+      !!next &&
+      pair.includes('inset') &&
+      pair.includes('none') &&
+      scene.graphics.length > 0 &&
+      next.start - scene.end < 0.02 &&
+      next.bg === end.bg
+    )
+  })
   plan.scenes.forEach((scene, i) => {
     if (!scene.graphics.length) return
-    const zone = geo.zones[scene.speaker]
+    // a beat whose speaker moves mid-way lays out for the tightest position it visits, so the
+    // card and the popped-out head never land on its graphic
+    const visited = [scene.speaker, ...scene.changes.map((c) => c.speaker)]
+    const pos: StudioSpeaker = visited.includes('inset')
+      ? 'inset'
+      : (visited.find((v) => v !== 'full') ?? 'full')
+    const zone = geo.zones[pos]
     const id = `ls-g${i}`
     const parts = stack(zone, scene.graphics)
     const subs: string[] = []
     const subJs: string[] = []
-    scene.graphics.forEach((g, j) => {
+    // after a whip, what has no time of its own enters as the old graphic clears
+    const graphics = whips[i - 1]
+      ? scene.graphics.map((g) => (g.at === undefined ? { ...g, at: scene.start + 0.12 } : g))
+      : scene.graphics
+    graphics.forEach((g, j) => {
       const sub = parts[j]
       const kctx: KindCtx = {
         id: `${id}-${j}`,
@@ -172,7 +247,7 @@ export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string 
         start: scene.start,
         end: scene.end,
         bg: scene.bg,
-        speaker: scene.speaker,
+        speaker: pos,
         imageSize: (path) => ctx.images?.[path] ?? null
       }
       const mod = KINDS[g.kind] as KindModule<typeof g.kind>
@@ -185,15 +260,26 @@ export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string 
         `(function (G) {\n          ${out.js.split('\n').join('\n          ')}\n        })(H.q('#${id}-${j}'));`
       )
     })
+    const whip = whips[i]
+    const next = plan.scenes[i + 1]
+    // a whipping box outlives its beat by the whip; the alternating tracks allow the overlap
+    const shown = scene.end - scene.start + (whip ? WHIP : 0)
     boxes.push(
-      `<div id="${id}" class="clip ls-g" data-start="${t(scene.start)}" data-duration="${t(scene.end - scene.start)}" data-track-index="${2 + (i % 2)}" style="left:${zone.x}px;top:${zone.y}px;width:${zone.w}px;height:${zone.h}px;${themeStyle(look, scene.bg)}"><div class="ls-gi">${subs.join('')}</div></div>`
+      `<div id="${id}" class="clip ls-g" data-start="${t(scene.start)}" data-duration="${t(shown)}" data-track-index="${2 + (i % 2)}" style="left:${zone.x}px;top:${zone.y}px;width:${zone.w}px;height:${zone.h}px;${styleOf(themeVars(look, scene.bg, scene.speaker, k))}"><div class="ls-gi">${subs.join('')}</div></div>`
     )
+    // recolored when the background changes, and when the face comes in under it or leaves
+    const themeKey = (c: { bg: StudioBg; speaker: StudioSpeaker }): string =>
+      c.speaker === 'full' ? 'face' : c.bg
     const recolor = scene.changes
-      .filter((c, j) => c.bg !== (j ? scene.changes[j - 1].bg : scene.bg))
-      .map(
-        (c) =>
-          `H.theme(G, ${t(c.at)}, ${JSON.stringify(Object.fromEntries(Object.entries(look.themes[c.bg])))});`
+      .filter((c, j) => themeKey(c) !== themeKey(j ? scene.changes[j - 1] : scene))
+      .map((c) => `H.theme(G, ${t(c.at)}, ${JSON.stringify(themeVars(look, c.bg, c.speaker, k))});`)
+    if (whip && next) {
+      const to =
+        next.speaker === 'inset' ? `y: ${-r1(zone.y + zone.h)}` : `x: ${-r1(zone.x + zone.w)}`
+      recolor.push(
+        `tl.fromTo(G, { x: 0, y: 0, filter: 'blur(0px)' }, { ${to}, filter: 'blur(${r1(16 * k)}px)', duration: ${WHIP}, ease: 'power2.in', immediateRender: false }, ${t(scene.end)});`
       )
+    }
     kindJs.push(
       `      (function (G) {\n        if (!G) return;\n        H.drift(H.q('.ls-gi', G), ${t(scene.start)}, ${t(scene.end)}, 0.022);\n        ${[...subJs, ...recolor].join('\n        ')}\n      })(H.q('#${id}'));`
     )
@@ -203,14 +289,18 @@ export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string 
     .map((kind) => (KINDS[kind] as KindModule<typeof kind>).css?.(SCOPE, k) ?? '')
     .join('')
   const tex = ctx.texture && look.texture && plan.texture > 0
+  // every face the kinds use, loaded before fitAll measures any text
   const fontsToLoad = [
     ...new Set([
-      `900 100px "${look.fonts.display}"`,
-      `700 100px "${look.fonts.display}"`,
-      `500 100px "${look.fonts.display}"`,
-      `300 100px "${look.fonts.display}"`,
-      `500 50px "${look.fonts.text}"`,
-      `italic 400 50px "${look.fonts.serif}"`
+      ...[300, 400, 500, 600, 700, 800, 900].map((w) => `${w} 100px "${look.fonts.display}"`),
+      ...(look.displayItalic
+        ? [800, 900].map((w) => `italic ${w} 100px "${look.fonts.display}"`)
+        : []),
+      ...[400, 500, 600, 700].map((w) => `${w} 50px "${look.fonts.text}"`),
+      `400 50px "${look.fonts.serif}"`,
+      `italic 400 50px "${look.fonts.serif}"`,
+      `400 50px "${look.fonts.mono}"`,
+      `500 50px "${look.fonts.mono}"`
     ])
   ]
   const card = geo.card
@@ -218,6 +308,7 @@ export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string 
       ${SCOPE} {
         --accent: ${plan.accent}; --alarm: ${look.alarm};
         --display: '${look.fonts.display}'; --text: '${look.fonts.text}'; --serif: '${look.fonts.serif}'; --mono: '${look.fonts.mono}';
+        --small: ${look.id === 'paper' ? 'var(--display)' : 'var(--text)'};
       }
       ${SCOPE} .ls-stage { position: absolute; inset: 0; overflow: hidden; background: ${look.themes.paper['--bg']}; }
       ${SCOPE} .ls-bg { position: absolute; inset: 0; }
@@ -230,14 +321,14 @@ export function studioComposition(plan: NormalizedPlan, ctx: StudioCtx): string 
       ${SCOPE} .ls-tex-face .ls-tex { opacity: ${r1(0.3 * plan.texture * 100) / 100}; }
       ${SCOPE} .ls-card {
         position: absolute; left: ${card.x}px; top: ${card.y}px; width: ${card.w}px; height: ${card.h}px;
-        border-radius: ${card.r}px ${card.r}px 0 0; opacity: 0;
+        border-radius: ${card.closed ? `${card.r}px` : `${card.r}px ${card.r}px 0 0`}; opacity: 0;
         background: linear-gradient(180deg, #2a2926 0%, #191816 100%);
         box-shadow: inset 0 ${r1(1.5 * k)}px 0 rgba(255,255,255,0.07), 0 -${r1(10 * k)}px ${r1(40 * k)}px rgba(40,30,15,0.12);
       }
       ${SCOPE} .ls-speaker { position: absolute; left: 0; top: 0; width: ${w}px; height: ${h}px; transform-origin: 0 0; }
       ${SCOPE} .ls-layer { position: absolute; inset: 0; }
       ${SCOPE} .ls-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-      ${SCOPE} .ls-g { position: absolute; display: flex; align-items: center; justify-content: center; }
+      ${SCOPE} .ls-g { position: absolute; display: flex; align-items: center; justify-content: center; text-shadow: var(--glow, none); }
       ${SCOPE} .ls-gi { position: absolute; inset: 0; transform-origin: 50% 50%; }
       ${SCOPE} .ls-sub { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 ${partsCss(SCOPE, k)}${kindCss}`
@@ -267,7 +358,7 @@ ${partsCss(SCOPE, k)}${kindCss}`
       ${boxes.join('\n      ')}
     </div>
 
-    <style>${css}
+${(ctx.fontLinks ?? []).map((u) => `    <link rel="stylesheet" href="${esc(u)}" />\n`).join('')}    <style>${css}
     </style>
 
     <script src="${GSAP}"></script>

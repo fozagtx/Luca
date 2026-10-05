@@ -32,13 +32,14 @@ export type TileOpts = {
 }
 
 /**
- * A glass app tile: a rounded square with a bevel and a soft drop shadow, the logo (or 1–3
+ * A glass app tile: a frosted mid-grey slab with a crisp top bevel, a thin dark edge and a soft
+ * drop shadow (or frosted grey-beige when light), the logo (or 1–3
  * letters) inside. Outer .ls-tile-wrap is for entrance tweens, inner .ls-tile for focus tweens,
  * so the two never fight over the same property.
  */
 export function tile(mark: StudioMark, o: TileOpts): string {
   const s = r1(o.size)
-  const radius = r1(s * 0.24)
+  const radius = r1(s * 0.16)
   const inner = mark.logo
     ? `<img class="ls-logo${mark.tint ? ' ls-tint' : ''}" src="${esc(mark.logo)}" alt="" style="width:${r1(s * 0.6)}px;height:${r1(s * 0.6)}px" />`
     : `<span class="ls-mono" style="font-size:${r1(s * (mark.mono && mark.mono.length > 2 ? 0.3 : 0.38))}px">${esc(mark.mono ?? initials(mark.label ?? ''))}</span>`
@@ -100,22 +101,23 @@ export function partsCss(scope: string, k: number): string {
       ${scope} .ls-tile-wrap { position: relative; flex: none; }
       ${scope} .ls-tile {
         position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-        background: linear-gradient(158deg, #6f6c68 0%, #46443f 38%, #2b2a27 100%);
+        background: linear-gradient(158deg, #807c77 0%, #64605b 42%, #4e4b47 100%);
         box-shadow:
-          inset 0 ${px(2.5)} 0 rgba(255,255,255,0.32),
-          inset 0 -${px(4)} ${px(8)} rgba(0,0,0,0.45),
+          inset 0 ${px(2.5)} 0 rgba(255,255,255,0.34),
+          inset 0 -${px(3)} 0 rgba(0,0,0,0.32),
           inset ${px(2)} 0 0 rgba(255,255,255,0.1),
           inset -${px(2)} 0 0 rgba(0,0,0,0.25),
+          0 0 0 ${px(1.5)} rgba(0,0,0,0.35),
           0 ${px(22)} ${px(44)} rgba(0,0,0,0.34),
           0 ${px(6)} ${px(12)} rgba(0,0,0,0.24);
         color: #F7F5F0;
       }
       ${scope} .ls-tile::after {
         content: ''; position: absolute; inset: ${px(5)}; border-radius: inherit;
-        border: ${px(1.5)} solid rgba(255,255,255,0.12); pointer-events: none;
+        border: ${px(1.5)} solid rgba(255,255,255,0.16); pointer-events: none;
       }
       ${scope} .ls-tile-light {
-        background: linear-gradient(158deg, #ffffff 0%, #f1eee8 45%, #dcd8cf 100%);
+        background: linear-gradient(158deg, #e2dfd6 0%, #cdcabe 48%, #bab6aa 100%);
         box-shadow:
           inset 0 ${px(2.5)} 0 rgba(255,255,255,0.9),
           inset 0 -${px(4)} ${px(8)} rgba(120,110,90,0.25),
@@ -145,14 +147,14 @@ export function partsCss(scope: string, k: number): string {
         position: absolute; left: -4%; right: -4%; top: 52%; height: 0.075em; min-height: ${px(4)};
         background: currentColor; transform-origin: left center; border-radius: ${px(3)};
       }
-      ${scope} .ls-x { position: absolute; inset: -4%; pointer-events: none; }
+      ${scope} .ls-x { position: absolute; inset: -9%; pointer-events: none; }
       ${scope} .ls-x i {
-        position: absolute; left: -14%; top: 50%; width: 128%; height: ${px(9)}; margin-top: -${px(4.5)};
+        position: absolute; left: -14%; top: 50%; width: 128%; height: ${px(19)}; margin-top: -${px(9.5)};
       }
       ${scope} .ls-x i:nth-child(1) { rotate: 45deg; }
       ${scope} .ls-x i:nth-child(2) { rotate: -45deg; }
       ${scope} .ls-x b {
-        display: block; width: 100%; height: 100%; background: var(--alarm); border-radius: ${px(5)};
+        display: block; width: 100%; height: 100%; background: var(--alarm); border-radius: ${px(10)};
         transform-origin: left center; box-shadow: 0 ${px(2)} ${px(6)} rgba(150,20,20,0.25);
       }
 `

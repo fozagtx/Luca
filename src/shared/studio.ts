@@ -18,7 +18,7 @@ You never draw it by hand. The whole picture is one scene plan you pass to studi
 6. snapshot 3–4 beats (the hook, a card, a price, the call to action) and fix cut-off text, crowding or a wrong logo.
 
 ## Beats
-- One beat is one idea, 1.5–3 s, starting and ending on word boundaries from the word times. Never hold one picture longer than 4 s. Between beats the face fills the frame (no beat needed): give the personal and emotional lines to the face, 1–2 s at a time.
+- One beat is one idea, 1.5–3 s, starting and ending on word boundaries from the word times. Never hold one picture longer than 4 s. Between beats the face fills the frame (no beat needed): give the personal and emotional lines to the face, 1–2 s at a time. A gap under 0.5 s between beats is closed (the beat before holds through the pause and the picture changes on the next word), so end a beat on the next one's start; a beat with a graphic needs at least 0.8 s.
 - Cover about 70–90% of the video with beats.
 - Hook, the first 2–3.5 s: a title of two lines (one black caps word over one light lowercase word, e.g. "STOP" / "paying") stacked over icons of the things named, each icon's at on the word that names it, so it snaps into focus as it is said. Speaker inset, paper.
 - The promise ("these five free tools"): a list with blur: true, a teaser of what is coming. Paper, speaker none.
@@ -40,13 +40,13 @@ You never draw it by hand. The whole picture is one scene plan you pass to studi
 - list: items [{ text, at }], mark github|check|number|dot|none, blur, highlight { index, badge, at }.
 - window: images [{ image, at }] with labels [{ text, at }] and boxes [{ x, y, w, h, at }] over the first image, or chat { title, greeting, prompt, typeAt, reply, replyAt }.
 - wave: cards [{ label, accent, at }] (accent is the result: the cloned voice, the cleaned audio).
-- price: label and from (the paid tool and its price) or crossed (paid tools as tiles), strikeAt, tag (the free one), to, toAt.
+- price: label and from (the paid tool and its price) or crossed (paid tools as tiles, each crossed at its own at), strikeAt, tag (the free one), to, toAt.
 - compare: image, before, after, afterAt (it turns sharp and the tag flips to the accent).
 - pills: intro, items [{ text, at }], joiner.
 - number: label, strikeAt, value, valueAt, sub.
 - cta: kicker (default COMMENT BELOW), word, typeAt, sub.
 - image: image, caption. quote: text, by.
-- rank: rank, name, stat, mark, value; terminal: command, typeAt, output, outputAt (both made for the serif look).
+- rank: rank, name, stat, mark, value, valueAt; terminal: command, typeAt, output, outputAt (both made for the serif look).
 - A beat's graphic can be a list of up to 3 kinds stacked top to bottom (the hook's title over its icons).
 
 ## Looks

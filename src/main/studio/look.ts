@@ -25,7 +25,8 @@ export type StudioLook = {
   alarm: string
 }
 
-const ALARM = '#E5322F'
+// a crimson, blue over green, as the reference's struck prices and X strokes sample
+const ALARM = '#DE2C40'
 
 export const LOOKS: Record<StudioLook['id'], StudioLook> = {
   paper: {
@@ -34,9 +35,9 @@ export const LOOKS: Record<StudioLook['id'], StudioLook> = {
       display: 'Archivo Expanded',
       text: 'Archivo',
       serif: 'Instrument Serif',
-      mono: 'JetBrains Mono'
+      mono: 'DM Mono'
     },
-    bundled: ['Archivo Expanded', 'Archivo', 'Instrument Serif'],
+    bundled: ['Archivo Expanded', 'Archivo', 'Instrument Serif', 'DM Mono'],
     displayItalic: false,
     weights: { black: 900, bold: 700, medium: 500, light: 300 },
     texture: true,
@@ -79,9 +80,9 @@ export const LOOKS: Record<StudioLook['id'], StudioLook> = {
       display: 'Playfair Display',
       text: 'Inter',
       serif: 'Playfair Display',
-      mono: 'JetBrains Mono'
+      mono: 'DM Mono'
     },
-    bundled: [],
+    bundled: ['DM Mono'],
     displayItalic: true,
     weights: { black: 900, bold: 800, medium: 700, light: 500 },
     texture: false,

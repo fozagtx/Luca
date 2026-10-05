@@ -16,6 +16,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { basename, extname, join } from 'node:path'
+import { googleFontUrl } from '../../shared/captions'
 import { STUDIO_GUIDE } from '../../shared/studio'
 import type { Project } from '../../shared/types'
 import { fontFaceRules, installBundledFont, refreshCaptions } from '../captions'
@@ -26,10 +27,10 @@ import { bundledResourcesDir } from '../resources'
 import { checkpoint } from '../versions'
 import { studioComposition, STUDIO_FILE, STUDIO_ID, type FootageClip } from './compose'
 import { placeStudioHost, removeStudioHost, speakerClips } from './host'
-import { studioGeometry } from './geometry'
+import { popoutFits, studioGeometry } from './geometry'
 import { imageSize } from './imagesize'
 import { lookOf } from './look'
-import { normalizePlan, planWarnings, type StudioPlan } from './schema'
+import { normalizePlan, planWarnings, type StudioGraphic, type StudioPlan } from './schema'
 import { readStudio, studioFile, type SavedStudio } from './zones'
 
 export { readStudio } from './zones'
@@ -74,7 +75,8 @@ function footagePrint(dir: string, html: string, source: string | null): string 
 
 /**
  * The plan with every file it names checked: a logo that isn't in the project falls back to
- * letters on its tile (a broken image would render as nothing), and a missing picture is reported.
+ * letters on its tile, and a missing picture is left out (a window keeps the screenshots it has,
+ * a compare or image goes), so the composition never references a file that isn't there.
  */
 function checkFiles(dir: string, plan: StudioPlan): { plan: StudioPlan; notes: string[] } {
   const notes: string[] = []
@@ -97,13 +99,40 @@ function checkFiles(dir: string, plan: StudioPlan): { plan: StudioPlan; notes: s
       delete out.logo
       delete out.tint
     }
-    if (typeof out.image === 'string' && missing(out.image))
-      notes.push(
-        `${out.image} isn't in the project: that picture will be empty. Use a path that exists.`
-      )
     return out
   }
-  return { plan: fix(plan) as StudioPlan, notes }
+  const fixed = fix(plan) as StudioPlan
+  const scenes = fixed.scenes.map((s) => {
+    if (!s.graphic) return s
+    const list = Array.isArray(s.graphic) ? s.graphic : [s.graphic]
+    const kept = list.flatMap((g): StudioGraphic[] => {
+      if (g.kind === 'window' && g.images?.length) {
+        const gone = g.images.filter((i) => missing(i.image))
+        if (!gone.length) return [g]
+        const images = g.images.filter((i) => !missing(i.image))
+        notes.push(
+          `${gone.map((i) => i.image).join(', ')} isn't in the project: the window at ${s.start}s ${images.length ? 'leaves it out' : 'draws a chat app instead'}. Use a path that exists.`
+        )
+        if (images.length) return [{ ...g, images }]
+        const { images: _gone, ...rest } = g
+        void _gone
+        return [rest]
+      }
+      if ((g.kind === 'compare' || g.kind === 'image') && missing(g.image)) {
+        notes.push(
+          `${g.image} isn't in the project: the ${g.kind} at ${s.start}s was left out. Use a path that exists.`
+        )
+        return []
+      }
+      return [g]
+    })
+    if (kept.length === list.length && kept.every((g, i) => g === list[i])) return s
+    const { graphic: _old, ...rest } = s
+    void _old
+    if (!kept.length) return rest
+    return { ...rest, graphic: Array.isArray(s.graphic) ? kept : kept[0] }
+  })
+  return { plan: { ...fixed, scenes }, notes }
 }
 
 /** The size of every picture and logo the plan names that is in the project. */
@@ -141,7 +170,7 @@ function build(
   const d = dims(html)
   if (!(d.duration > 0)) throw new Error('The video has no length yet.')
   // where the face is: the plan's word, else what the cut-out showed
-  const face = plan.face ?? detectedFace(p.dir)
+  const face = plan.face ?? detectedFace(p.dir, d)
   const checked = checkFiles(p.dir, face ? { ...plan, face } : plan)
   const { plan: norm, notes: adjusted } = normalizePlan(checked.plan, d.duration)
   const notes = [...checked.notes, ...adjusted]
@@ -162,7 +191,10 @@ function build(
     cutouts,
     fontFaces: fontFaceRules(p.dir, look.bundled),
     texture: look.texture ? TEXTURE : null,
-    images: imageSizes(p.dir, norm)
+    images: imageSizes(p.dir, norm),
+    fontLinks: Object.values(look.fonts)
+      .filter((f) => !look.bundled.includes(f))
+      .flatMap((f) => googleFontUrl(f) ?? [])
   })
   // as compose.ts decides: the head rises out of a card along the bottom, not a side card
   const popout =
@@ -170,7 +202,7 @@ function build(
     footage.length > 0 &&
     footage.every((c) => !!cutouts[c.src]) &&
     look.id === 'paper' &&
-    !studioGeometry(d.w, d.h).side
+    popoutFits(studioGeometry(d.w, d.h, look.id), norm.face)
   return {
     comp,
     index: placeStudioHost(html, d.duration, p.source ?? null),
@@ -296,9 +328,13 @@ export async function makeCutouts(
     rmSync(join(p.dir, part), { force: true })
     made.push(out)
   }
-  const face = await findFace(p.dir, cutoutPath(files[0])).catch(() => null)
-  if (face)
-    writeFileSync(speakerFile(p.dir), JSON.stringify({ face, from: cutoutPath(files[0]) }, null, 2))
+  const found = await findFace(p.dir, cutoutPath(files[0])).catch(() => null)
+  const face = found && { x: found.x, y: found.y }
+  if (found)
+    writeFileSync(
+      speakerFile(p.dir),
+      JSON.stringify({ face, aspect: found.aspect, from: cutoutPath(files[0]) }, null, 2)
+    )
   refreshStudio(p)
   return { made, kept, face }
 }
@@ -307,15 +343,33 @@ export async function makeCutouts(
 
 const speakerFile = (dir: string): string => join(lucaDir(dir), 'speaker.json')
 
-/** The face position found in the speaker's cut-out, if one was found. */
-export function detectedFace(dir: string): { x: number; y: number } | null {
+/**
+ * The face position found in the speaker's cut-out, if one was found. It was measured in the
+ * footage; with the frame's size it is moved to where it lands in the frame, which the footage
+ * covers (a 9:16 video in a square frame loses its top and bottom).
+ */
+export function detectedFace(
+  dir: string,
+  frame?: { w: number; h: number }
+): { x: number; y: number } | null {
   try {
     const v = JSON.parse(readFileSync(speakerFile(dir), 'utf8')) as {
       face?: { x: number; y: number }
+      /** The footage's height over its width. */
+      aspect?: number
     }
-    return v.face && v.face.x >= 0 && v.face.x <= 1 && v.face.y >= 0 && v.face.y <= 1
-      ? v.face
-      : null
+    const f = v.face
+    if (!f || !(f.x >= 0 && f.x <= 1 && f.y >= 0 && f.y <= 1)) return null
+    if (!frame || !v.aspect || !(v.aspect > 0)) return f
+    // the footage, 1 wide and `aspect` tall, scaled to cover the frame and centered on it
+    const s = Math.max(frame.w, frame.h / v.aspect)
+    const fw = s
+    const fh = v.aspect * s
+    const clamp = (n: number): number => Math.round(Math.min(1, Math.max(0, n)) * 1000) / 1000
+    return {
+      x: clamp((f.x * fw - (fw - frame.w) / 2) / frame.w),
+      y: clamp((f.y * fh - (fh - frame.h) / 2) / frame.h)
+    }
   } catch {
     return null
   }
@@ -350,7 +404,7 @@ async function alphaGrid(file: string, at: number, w: number): Promise<Buffer | 
 export async function findFace(
   dir: string,
   cutout: string
-): Promise<{ x: number; y: number } | null> {
+): Promise<{ x: number; y: number; aspect: number } | null> {
   const file = join(dir, cutout)
   const seconds = await probeMedia(file).then(
     (m) => m.duration,
@@ -359,11 +413,13 @@ export async function findFace(
   if (!(seconds > 0)) return null
   const W = 64
   const found: { x: number; y: number }[] = []
+  let aspect = 0
   for (const share of [0.25, 0.5, 0.75]) {
     const g = await alphaGrid(file, seconds * share, W)
     if (!g) continue
     const H = Math.floor(g.length / W)
     if (H < 8) continue
+    aspect = H / W
     const on = (x: number, y: number): boolean => g[y * W + x] > 128
     let covered = 0
     for (let i = 0; i < W * H; i++) if (g[i] > 128) covered++
@@ -400,7 +456,8 @@ export async function findFace(
   const y = mid(found.map((f) => f.y))
   return {
     x: Math.round(Math.min(0.85, Math.max(0.15, x)) * 1000) / 1000,
-    y: Math.round(Math.min(0.7, Math.max(0.12, y)) * 1000) / 1000
+    y: Math.round(Math.min(0.7, Math.max(0.12, y)) * 1000) / 1000,
+    aspect: Math.round(aspect * 1000) / 1000
   }
 }
 

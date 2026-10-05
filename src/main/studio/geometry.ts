@@ -2,7 +2,8 @@
  * Where things go in the Studio look at any frame size: the speaker's card, the zone a graphic
  * fills for each speaker position, and where captions sit. Measured off the reference in 9:16
  * and carried to other shapes: tall and square frames stack (graphic above, speaker card along the
- * bottom); wide frames go side by side (graphic left, speaker card on the right).
+ * bottom); wide frames go side by side (graphic left, speaker card on the right). The serif look
+ * (the reference's BEFORE) has its own, bigger face card in the lower half.
  */
 import type { StudioSpeaker } from './schema'
 
@@ -15,8 +16,11 @@ export type StudioGeometry = {
   k: number
   /** Graphic left, speaker right. */
   side: boolean
-  /** The speaker's card in the inset position; it bleeds off the bottom edge. */
-  card: Rect & { r: number }
+  /**
+   * The speaker's card in the inset position. It bleeds off the bottom edge, rounded at the top,
+   * unless `closed` (the serif look): then it ends above the foot, rounded at all four corners.
+   */
+  card: Rect & { r: number; closed?: boolean }
   /** The rect each speaker position leaves for the graphic. */
   zones: Record<StudioSpeaker, Rect>
   /** Caption line centers (px) and the widest a line may be, per speaker position. */
@@ -27,7 +31,11 @@ const lerp = (a: number, b: number, t: number): number => a + (b - a) * t
 const clamp01 = (t: number): number => Math.max(0, Math.min(1, t))
 const round = (n: number): number => Math.round(n * 10) / 10
 
-export function studioGeometry(w: number, h: number): StudioGeometry {
+export function studioGeometry(
+  w: number,
+  h: number,
+  look: 'paper' | 'serif' = 'paper'
+): StudioGeometry {
   const k = Math.min(w, h) / 1080
   const ratio = w / h
   const side = ratio >= 1.2
@@ -55,12 +63,53 @@ export function studioGeometry(w: number, h: number): StudioGeometry {
   }
   // 9:16 (0.5625) → square (1.0): the card grows shorter as the frame gets wider
   const t = clamp01((ratio - 0.5625) / (1 - 0.5625))
+  const pad = w * lerp(0.06, 0.1, t)
+  // the graphic alone centres at about 0.4 h, clear of the caption line under it
+  const none = rounded({
+    x: pad,
+    y: h * lerp(0.1, 0.07, t),
+    w: w - pad * 2,
+    h: h * lerp(0.6, 0.66, t)
+  })
+  const full = rounded({ x: pad, y: h * 0.06, w: w - pad * 2, h: h * 0.3 })
+  const low = { x: round(w / 2), y: round(h * lerp(0.74, 0.84, t)), w: round(w * 0.8) }
+  if (look === 'serif') {
+    // the BEFORE: a big rounded face card over the lower 44%, a compact graphic block above it
+    const cardTop = h * lerp(0.555, 0.5, t)
+    const margin = w * lerp(0.025, 0.15, t)
+    const card = {
+      x: margin,
+      y: cardTop,
+      w: w - margin * 2,
+      h: h - cardTop - h * 0.015,
+      r: round(0.035 * w),
+      closed: true
+    }
+    return {
+      w,
+      h,
+      k,
+      side,
+      card: rounded(card),
+      zones: {
+        inset: rounded({ x: pad, y: h * 0.08, w: w - pad * 2, h: cardTop - h * 0.1 - h * 0.08 }),
+        none,
+        full
+      },
+      captions: {
+        inset: { x: round(w / 2), y: round(cardTop - h * 0.055), w: round(w * 0.8) },
+        none: low,
+        full: low
+      }
+    }
+  }
   const cardTop = h * lerp(0.73, 0.64, t)
   const margin = w * lerp(0.065, 0.2, t)
   const card = { x: margin, y: cardTop, w: w - margin * 2, h: h - cardTop + 40 * k, r: 46 * k }
   const zoneTop = h * lerp(0.07, 0.07, t)
-  const insetBottom = cardTop - h * lerp(0.15, 0.14, t)
-  const pad = w * lerp(0.06, 0.1, t)
+  // the popped-out head rises about 0.1–0.12 h above the card: the caption line sits over the
+  // hair, the graphic over the caption
+  const insetBottom = cardTop - h * lerp(0.15, 0.19, t)
   return {
     w,
     h,
@@ -69,13 +118,13 @@ export function studioGeometry(w: number, h: number): StudioGeometry {
     card: rounded(card),
     zones: {
       inset: rounded({ x: pad, y: zoneTop, w: w - pad * 2, h: insetBottom - zoneTop }),
-      none: rounded({ x: pad, y: h * 0.08, w: w - pad * 2, h: h * lerp(0.6, 0.66, t) }),
-      full: rounded({ x: pad, y: h * 0.06, w: w - pad * 2, h: h * 0.3 })
+      none,
+      full
     },
     captions: {
-      inset: { x: round(w / 2), y: round(cardTop - h * lerp(0.1, 0.085, t)), w: round(w * 0.8) },
-      none: { x: round(w / 2), y: round(h * lerp(0.74, 0.84, t)), w: round(w * 0.8) },
-      full: { x: round(w / 2), y: round(h * lerp(0.74, 0.84, t)), w: round(w * 0.8) }
+      inset: { x: round(w / 2), y: round(cardTop - h * lerp(0.13, 0.155, t)), w: round(w * 0.8) },
+      none: low,
+      full: low
     }
   }
 }
@@ -114,10 +163,20 @@ export function insetPose(
   const { card } = g
   const visibleH = Math.min(card.y + card.h, g.h) - card.y
   const cover = Math.max(card.w / g.w, visibleH / g.h)
-  // the face lands in the card's middle (cover) or just below its top edge (pop-out)
-  const scale = popout ? cover * (g.side ? 0.78 : 0.62) : cover
+  const base = cover * (g.side ? 0.78 : 0.6)
+  // big enough that the head (about 0.24 of the footage above the face) clears the card by 5% of
+  // the frame while the body still reaches the frame's foot; a square card alone would leave none
+  const need = g.side
+    ? 0
+    : (g.h - card.y + 0.05 * g.h) / (g.h * (1 - Math.max(0.05, face.y - 0.24)))
+  const scale = popout ? Math.min(cover, Math.max(base, need)) : cover
   const tx = card.x + card.w / 2
-  const ty = popout ? card.y + visibleH * (g.side ? 0.2 : 0.3) : card.y + visibleH * 0.48
+  // the face lands in the card's middle (cover), or just under its top edge (pop-out)
+  const ty = popout
+    ? g.side
+      ? card.y + visibleH * 0.2
+      : card.y + 0.1 * g.h * scale
+    : card.y + visibleH * 0.48
   let x = tx - face.x * g.w * scale
   let y = ty - face.y * g.h * scale
   if (!popout) {
@@ -131,11 +190,20 @@ export function insetPose(
   return { x: round(x), y: round(y), scale: Math.round(scale * 10000) / 10000 }
 }
 
+/**
+ * Whether the head can rise out of the card: a card along the bottom, with the footage's top edge
+ * at least 5% of the frame above the card (less would slice the head flat along the edge).
+ */
+export function popoutFits(g: StudioGeometry, face: { x: number; y: number }): boolean {
+  if (g.side || g.card.closed) return false
+  return g.card.y - insetPose(g, face, true).y >= 0.05 * g.h
+}
+
 /** clip-path: inset(...) for a frame-space rect, in the speaker layer's own (unscaled) space. */
 export function clipFor(
   g: StudioGeometry,
   pose: SpeakerPose,
-  rect: Rect & { r: number },
+  rect: Rect & { r: number; closed?: boolean },
   openTop = false
 ): string {
   const s = pose.scale
@@ -144,6 +212,7 @@ export function clipFor(
   const right = g.w - (rect.x + rect.w - pose.x) / s
   const bottom = g.h - (rect.y + rect.h - pose.y) / s
   const px = (n: number): string => `${round(n)}px`
-  const r = openTop ? '0px' : `${px(rect.r / s)} ${px(rect.r / s)} 0px 0px`
+  const rr = px(rect.r / s)
+  const r = openTop ? '0px' : rect.closed ? `${rr} ${rr} ${rr} ${rr}` : `${rr} ${rr} 0px 0px`
   return `inset(${px(top)} ${px(right)} ${px(bottom)} ${px(left)} round ${r})`
 }

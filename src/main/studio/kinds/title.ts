@@ -11,6 +11,8 @@ export const title: KindModule<'title'> = {
       ${s} .ls-k-title .ls-line { position: relative; max-width: 100%; }
       ${s} .ls-k-title .ls-rise { font-family: var(--display), sans-serif; line-height: 1.02; letter-spacing: -0.015em; color: var(--fg); text-align: center; }
       ${s} .ls-k-title .ls-serif { font-family: var(--serif), serif; font-style: italic; font-weight: 400; letter-spacing: 0; }
+      ${s} .ls-k-title.ls-tight .ls-rise { line-height: 0.94; padding-bottom: 0.2em; }
+      ${s} .ls-k-title.ls-tight .ls-mask { padding-bottom: 0; margin-bottom: -0.2em; }
 `,
   render: (g, ctx) => {
     const { zone, look } = ctx
@@ -18,7 +20,9 @@ export const title: KindModule<'title'> = {
     const longest = Math.max(...g.lines.map((l) => l.text.length))
     // ~0.62 em a character in the wide grotesk; the fit pass shrinks anything still too wide
     const byWidth = (zone.w * 0.96) / Math.max(3, longest * (look.id === 'serif' ? 0.5 : 0.64))
-    const size = Math.min(byWidth, (zone.h * 0.9) / (n * 1.05), 190 * ctx.k)
+    // the BEFORE's hook is modest, about 0.55 of a 9:16 frame's width over its row of icons
+    const cap = look.id === 'serif' ? (n > 1 ? 114 : 120) : n > 1 ? 156 : 150
+    const size = Math.min(byWidth, (zone.h * 0.9) / (n * 1.05), cap * ctx.k)
     const lines = g.lines.map((l, i) => {
       const weight = look.weights[l.weight ?? (n > 1 ? (i === 0 ? 'black' : 'light') : 'bold')]
       const color =
@@ -41,6 +45,9 @@ export const title: KindModule<'title'> = {
         ? `H.qa('.ls-strike', G).forEach(function (el, i) { H.draw(el, ${t(Math.max(at + 0.3, g.strikeAt))} + i * 0.06); });`
         : ''
     ]
-    return { html: `<div class="ls-k-title">${lines.join('')}</div>`, js: js.join('\n') }
+    // the BEFORE sets its serif lines tight; the rise keeps room under them so the deep italic
+    // descenders clear the mask, and its travel grows with it so nothing peeks in early
+    const tight = look.id === 'serif' ? ' ls-tight' : ''
+    return { html: `<div class="ls-k-title${tight}">${lines.join('')}</div>`, js: js.join('\n') }
   }
 }

@@ -71,7 +71,7 @@ export const compare: KindModule<'compare'> = {
       `tl.fromTo(H.q('.ls-cp-bar', G), { opacity: 1 }, { opacity: 0, duration: 0.16, immediateRender: false }, ${t(afterAt + wipe)});`,
       // the tag fills with the accent, then reads "after"
       `tl.fromTo(H.q('.ls-cp-after', G), { clipPath: 'inset(0% 100% 0% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.2, ease: 'power2.out' }, ${t(flip)});`,
-      `H.hide(H.q('.ls-cp-before', G), ${t(flip + 0.2)});`,
+      `H.hide(H.q('.ls-cp-before', G), ${t(flip + 0.1)});`,
       `H.blurIn(H.q('.ls-cp-atext', G), ${t(flip + 0.14)}, { blur: 6, dur: 0.3 });`
     ]
     return { html, js: js.join('\n') }
