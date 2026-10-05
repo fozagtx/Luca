@@ -4,8 +4,10 @@ import {
   captionLook,
   captionStyle,
   captionTextShadow,
+  googleFontUrl,
   round,
   scatterLayout,
+  splitAtBreaks,
   type CaptionLook,
   type SpeechClip
 } from '../shared/captions'
@@ -67,22 +69,36 @@ function emphasized(words: { text: string }[], emphasis: string[]): boolean[] {
   return out
 }
 
-/** Inline styles that put one line group in its zone (and recolor it for an adaptive style). */
-function zoneStyles(
-  z: CaptionZone | undefined,
+/** CSS that puts one line group in its zone (and recolors it for an adaptive style). */
+function zoneProps(
+  z: CaptionZone,
   look: CaptionLook,
   d: { w: number; h: number }
-): { group: string; line: string } {
-  if (!z) return { group: '', line: '' }
+): { group: Record<string, string>; line: Record<string, string> } {
   const pad = (v: number): number => Math.max(0, Math.round(v))
-  const group = `align-items:center;padding:${pad(2 * z.y - d.h)}px ${pad(d.w - 2 * z.x)}px ${pad(d.h - 2 * z.y)}px ${pad(2 * z.x - d.w)}px`
-  const line = [
-    `max-width:${Math.round(z.w)}px`,
-    ...(look.adaptive && z.color ? [`color:${z.color}`] : []),
-    ...(look.adaptive && z.light ? ['text-shadow:none'] : [])
-  ].join(';')
+  const group = {
+    'align-items': 'center',
+    padding: `${pad(2 * z.y - d.h)}px ${pad(d.w - 2 * z.x)}px ${pad(d.h - 2 * z.y)}px ${pad(2 * z.x - d.w)}px`
+  }
+  const line: Record<string, string> = { 'max-width': `${Math.round(z.w)}px` }
+  if (look.adaptive && z.color) line.color = z.color
+  if (look.adaptive && z.light) line['text-shadow'] = 'none'
   return { group, line }
 }
+
+const inline = (css: Record<string, string>): string =>
+  Object.entries(css)
+    .map(([k, v]) => `${k}:${v}`)
+    .join(';')
+
+/** The same CSS as GSAP set vars: camelCase properties. */
+const camel = (css: Record<string, string>): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(css).map(([key, v]) => [
+      key.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()),
+      v
+    ])
+  )
 
 function css(
   look: CaptionLook,
@@ -146,8 +162,21 @@ function scatterCss(look: CaptionLook, cfg: CaptionConfig, d: { w: number; h: nu
       }`
 }
 
-function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: number }): string {
-  const data = groups.map((g) => [g.start, g.end, g.words.map((w) => [w.start, w.end])])
+/** A line restyled mid-way, when the picture cuts while it is still up: at, group CSS, line CSS. */
+type Restyle = [number, Record<string, string>, Record<string, string>]
+
+function script(
+  groups: CaptionGroup[],
+  look: CaptionLook,
+  d: { w: number; h: number },
+  restyles: Restyle[][] = []
+): string {
+  const data = groups.map((g, i) => [
+    g.start,
+    g.end,
+    g.words.map((w) => [w.start, w.end]),
+    restyles[i] ?? []
+  ])
   const opts = {
     anim: look.anim,
     layout: look.layout,
@@ -187,6 +216,11 @@ function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: nu
           var line = el.querySelector('.cl');
           var words = el.querySelectorAll('.w');
           tl.set(el, { visibility: 'visible', opacity: 1 }, g[0]);
+          // the picture cut while the line is up: it moves and recolors with it
+          g[3].forEach(function (r) {
+            tl.set(el, r[1], r[0]);
+            if (line) tl.set(line, r[2], r[0]);
+          });
           if (O.layout === 'scatter') {
             g[2].forEach(function (w, j) {
               var span = words[j];
@@ -248,7 +282,7 @@ function script(groups: CaptionGroup[], look: CaptionLook, d: { w: number; h: nu
  * Studio look puts them over time, and its emphasis words.
  */
 export function captionsComposition(
-  groups: CaptionGroup[],
+  lineGroups: CaptionGroup[],
   cfg: CaptionConfig,
   d: { w: number; h: number; duration: number },
   faces?: ProjectFontFace[],
@@ -259,8 +293,40 @@ export function captionsComposition(
   const look = captionLook(cfg, faces)
   const zoneAt = (t: number): CaptionZone | undefined =>
     place?.zones.find((z) => t >= z.start - 0.001 && t < z.end)
+  // a line whose first word lands on a cut (up to 0.05 s early) belongs to the picture after it
+  const anchor = (g: CaptionGroup): number => Math.min(g.start + 0.05, (g.start + g.end) / 2)
   const emFont = place?.emphasis.length ? place.emphasisFont : null
   const k = Math.min(d.w, d.h) / 1080
+  const restyles: Restyle[][] = []
+  let groups = lineGroups
+  if (place?.zones.length && look.layout !== 'scatter') {
+    // a line breaks where the picture cuts to a place or color of its own, so it moves on the
+    // same word as the picture; one still being said across the cut is restyled at it
+    const key = (z: CaptionZone): string => JSON.stringify(zoneProps(z, look, d))
+    const cuts = place.zones.filter((z, i) => i > 0 && key(z) !== key(place.zones[i - 1]))
+    groups = splitAtBreaks(
+      groups,
+      cuts.map((z) => z.start)
+    )
+    groups.forEach((g, i) => {
+      let cur = zoneAt(anchor(g))
+      const list: Restyle[] = []
+      for (const z of cuts) {
+        if (z.start <= anchor(g) || z.start >= g.end) continue
+        const from = cur && zoneProps(cur, look, d)
+        const to = zoneProps(z, look, d)
+        const line = { ...to.line }
+        // the style's own shadow comes back when the line leaves a light background
+        if (from?.line['text-shadow'] && !line['text-shadow'])
+          line['text-shadow'] = captionTextShadow(look, k) || 'none'
+        list.push([z.start, camel(to.group), camel(line)])
+        cur = z
+      }
+      restyles[i] = list
+    })
+  }
+  // the producer embeds only some weights of a built-in italic: the stylesheet brings the rest
+  const fontLink = look.italic ? googleFontUrl(cfg.font) : null
   const lines =
     look.layout === 'scatter'
       ? groups
@@ -278,7 +344,12 @@ export function captionsComposition(
           .join('\n')
       : groups
           .map((g, i) => {
-            const z = zoneStyles(zoneAt(g.start), look, d)
+            const zone = zoneAt(anchor(g))
+            const props = zone ? zoneProps(zone, look, d) : null
+            const z = {
+              group: props ? inline(props.group) : '',
+              line: props ? inline(props.line) : ''
+            }
             const em = emFont ? emphasized(g.words, place?.emphasis ?? []) : []
             return `      <div class="cg" id="lc-${i}"${z.group ? ` style="${z.group}"` : ''}><div class="cl"${z.line ? ` style="${z.line}"` : ''}>${g.words
               .map((w, j) => `<span class="w${em[j] ? ' em' : ''}">${esc(w.text)}</span>`)
@@ -297,11 +368,11 @@ export function captionsComposition(
 ${lines}
     </div>
 
-    <style>${fontFaces.length ? `\n${fontFaces.join('\n')}` : ''}${css(look, cfg, d, emFont)}
+${fontLink ? `    <link rel="stylesheet" href="${esc(fontLink)}" />\n` : ''}    <style>${fontFaces.length ? `\n${fontFaces.join('\n')}` : ''}${css(look, cfg, d, emFont)}
     </style>
 
     <script src="${GSAP}"></script>
-    <script>${script(groups, look, d)}
+    <script>${script(groups, look, d, restyles)}
     </script>
   </div>
 </template>

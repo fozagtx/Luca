@@ -25,7 +25,8 @@ export type StudioLook = {
   alarm: string
 }
 
-const ALARM = '#E5322F'
+// a crimson, blue over green, as the reference's struck prices and X strokes sample
+const ALARM = '#DE2C40'
 
 export const LOOKS: Record<StudioLook['id'], StudioLook> = {
   paper: {

@@ -48,15 +48,34 @@ function images(g: Win, ctx: KindCtx): KindOut {
   const tagArea = labels.length ? tagFs * 1.5 + gap * 2 : 0
   const rowGap = 40 * k
   const stackGap = labels.length ? tagArea : 44 * k
+  // stacked shots run a touch past the zone, the ~0.9 w the reference gives them
+  const stackW = zone.w * 1.02
   // two cards go side by side when that makes them bigger (a typical 16:10 screenshot)
   const side =
     n === 2 &&
     Math.min((zone.w - rowGap) / 2, (zone.h - tagArea) * 1.6) >
-      Math.min(zone.w, ((zone.h - stackGap) / 2) * 1.6) * 1.05
+      Math.min(stackW, ((zone.h - stackGap) / 2) * 1.6) * 1.05
   // the most room each card may take; its real size follows the image's own shape once loaded
-  const maxW = side ? (zone.w - rowGap) / 2 : n === 2 ? zone.w : zone.w * 0.96
+  const maxW = side ? (zone.w - rowGap) / 2 : n === 2 ? stackW : zone.w * 0.96
   const maxH = side ? zone.h - tagArea : n === 2 ? (zone.h - stackGap) / 2 : zone.h - tagArea
   const w0 = Math.min(maxW, maxH * 1.6)
+  // each image's own shape when Luca read it from the file; else a 16:10 guess the js corrects
+  const ratios = shots.map((s) => {
+    const size = ctx.imageSize(s.image)
+    return size && size[0] > 0 && size[1] > 0 ? size[0] / size[1] : null
+  })
+  const widths = ratios.map((r) => (r ? Math.min(maxW, maxH * r) : w0))
+  // two stacked shots of known shape share one width (so the height splits by their shapes)
+  // when that shows about as much of them as an even height split: two wide shots fill the
+  // column, a portrait next to a landscape keeps equal heights. One width wins near-ties: the
+  // column reads tidier and the boxed first shot is never the narrow one
+  const [ra, rb] = ratios
+  if (n === 2 && !side && ra && rb) {
+    const inv = 1 / ra + 1 / rb
+    const wEq = Math.min(maxW, (zone.h - stackGap) / inv)
+    if (wEq * wEq * inv > ((widths[0] * widths[0]) / ra + (widths[1] * widths[1]) / rb) * 0.95)
+      widths.fill(wEq)
+  }
   const sorted = [...(g.boxes ?? [])].sort((a, b) => a.at - b.at)
   const boxes = sorted.map((b) => {
     const x = clamp(b.x, 0, 0.98)
@@ -73,10 +92,9 @@ function images(g: Win, ctx: KindCtx): KindOut {
   const attr = (b: { x: number; y: number; w: number; h: number }): string =>
     `attr: { x: ${r1(b.x * 1000)}, y: ${r1(b.y * 1000)}, width: ${r1(b.w * 1000)}, height: ${r1(b.h * 1000)} }`
   const cards = shots.map((s, i) => {
-    // the image's own shape when Luca read it from the file; else a 16:10 guess the js corrects
     const size = ctx.imageSize(s.image)
-    const r = size && size[0] > 0 && size[1] > 0 ? size[0] / size[1] : 1.6
-    const w = size ? Math.min(maxW, maxH * r) : w0
+    const r = ratios[i] ?? 1.6
+    const w = widths[i]
     const box =
       i === 0 && boxes.length
         ? `<svg class="ls-wbox" viewBox="0 0 1000 1000" preserveAspectRatio="none"><rect x="${r1(boxes[0].x * 1000)}" y="${r1(boxes[0].y * 1000)}" width="${r1(boxes[0].w * 1000)}" height="${r1(boxes[0].h * 1000)}" rx="${r1((radius * 1000) / w)}" ry="${r1((radius * 1000 * r) / w)}" vector-effect="non-scaling-stroke" /></svg>`
@@ -164,12 +182,13 @@ function chat(g: Win, ctx: KindCtx): KindOut {
 
   const at = when(g.at, ctx.start, ctx.start)
   const typeAt = when(c?.typeAt, at + 0.35, ctx.start)
-  // ~16 characters a second, quicker when the beat (or the reply) leaves less room
-  const deadline = Math.min(ctx.end - 0.9, c?.replyAt !== undefined ? c.replyAt - 1.1 : Infinity)
-  const cps = clamp(prompt.length / Math.max(0.1, deadline - typeAt), 16, 40)
+  // ~18 characters a second, quicker when the beat (or the reply) leaves less room: the send,
+  // the jump and about a second of thinking dots must still fit before the cut
+  const deadline = Math.min(ctx.end - 1.3, c?.replyAt !== undefined ? c.replyAt - 1.1 : Infinity)
+  const cps = clamp(prompt.length / Math.max(0.1, deadline - typeAt), 18, 40)
   const typeEnd = typeAt + prompt.length / cps
-  const jumpAt = typeEnd + 0.35
-  const dotsAt = jumpAt + 0.3
+  const jumpAt = typeEnd + 0.18
+  const dotsAt = jumpAt + 0.22
   const replyAt = c?.reply
     ? Math.max(dotsAt + 0.45, when(c.replyAt, dotsAt + 1.2, ctx.start))
     : ctx.end
@@ -219,9 +238,10 @@ var from = H.q('.ls-wtyped', G);
 var dy = top(from) + from.offsetHeight / 2 - top(user) - user.offsetHeight / 2;
 tl.fromTo(user, { y: dy, opacity: 0, scale: 0.9, filter: 'blur(${r1(8 * k)}px)' }, { y: 0, opacity: 1, scale: 1, filter: 'blur(0px)', duration: 0.55, ease: 'expo.out' }, ${t(jumpAt)});`,
       `H.blurIn(H.q('.ls-wdots', G), ${t(dotsAt)}, { y: 6, blur: 6, dur: 0.3 });`,
-      // the dots pulse one after another until the reply lands
+      // the dots pulse one after another until the reply lands; a pulse that the reply or the cut
+      // interrupts is still worth starting once its rise shows
       `H.qa('.ls-wdots i', G).forEach(function (d, i) {
-  for (var p = ${t(dotsAt + 0.2)} + i * 0.15; p + 0.55 < ${t(dotsEnd)}; p += 0.9) {
+  for (var p = ${t(dotsAt + 0.2)} + i * 0.15; p + 0.25 < ${t(dotsEnd)}; p += 0.9) {
     tl.fromTo(d, { opacity: 0.35, y: 0 }, { opacity: 1, y: ${r1(-6 * u)}, duration: 0.25, ease: 'sine.out', immediateRender: false }, p);
     tl.fromTo(d, { opacity: 1, y: ${r1(-6 * u)} }, { opacity: 0.35, y: 0, duration: 0.3, ease: 'sine.in', immediateRender: false }, p + 0.25);
   }

@@ -6,11 +6,28 @@
 import { CROSS, esc, r1, tile } from '../parts'
 import { t, when, type KindModule } from './types'
 
+/** Rough advance of a label in em (Archivo at 500); data-fit catches what this misses. */
+const ADVANCE = 0.55
+
+/**
+ * The longest line of a label broken in two at its best space or hyphen ("Magnific AI" /
+ * "Upscaler Pro Max"): long names wrap once rather than shrinking the whole row to a whisper.
+ */
+function twoLineLen(label: string): number {
+  const s = label.trim()
+  let best = s.length
+  for (let i = 1; i < s.length; i++) {
+    if ((s[i - 1] !== ' ' && s[i - 1] !== '-') || s[i] === ' ') continue
+    best = Math.min(best, Math.max(s.slice(0, i).trimEnd().length, s.slice(i).length))
+  }
+  return best
+}
+
 export const icons: KindModule<'icons'> = {
   css: (s) => `
       ${s} .ls-k-icons { display: flex; align-items: flex-start; justify-content: center; }
-      ${s} .ls-k-icons .ls-icon { display: flex; flex-direction: column; align-items: center; }
-      ${s} .ls-k-icons .ls-label { margin-top: 0.55em; font-family: var(--text), sans-serif; font-weight: 500; color: var(--fg); white-space: nowrap; letter-spacing: -0.01em; }
+      ${s} .ls-k-icons .ls-icon { flex: none; display: flex; flex-direction: column; align-items: center; }
+      ${s} .ls-k-icons .ls-label { margin-top: 0.55em; font-family: var(--text), sans-serif; font-weight: 500; color: var(--fg); line-height: 1.15; text-align: center; text-wrap: balance; overflow: hidden; letter-spacing: -0.01em; }
 `,
   render: (g, ctx) => {
     const { zone, k } = ctx
@@ -18,7 +35,17 @@ export const icons: KindModule<'icons'> = {
     const labels = g.items.some((i) => i.label) && g.focus === false
     const gap = 26 * k
     const cap = (n === 1 ? 430 : n === 2 ? 360 : 290) * k
-    const size = Math.min(cap, (zone.w - gap * (n - 1)) / n, zone.h * (labels ? 0.7 : 0.85))
+    // a labelled column is 0.9 gap wider than its tile, so the row budgets one more gap
+    const size = Math.min(
+      cap,
+      (zone.w - gap * (labels ? n : n - 1)) / n,
+      zone.h * (labels ? 0.7 : 0.85)
+    )
+    // each column is exactly as wide as its label may be, so a long name never pushes the row
+    // wider than the tiles were sized for (off the frame, under the speaker card)
+    const colW = labels ? size + gap * 0.9 : size
+    const longest = Math.max(1, ...g.items.map((it) => (it.label ? twoLineLen(it.label) : 0)))
+    const fsLabel = Math.min(size * 0.13, colW / (longest * ADVANCE))
     const focus = g.focus !== false
     const start = when(g.at, ctx.start, ctx.start)
     // names said later snap in on their word; without times, one after another
@@ -28,7 +55,11 @@ export const icons: KindModule<'icons'> = {
     )
     const items = g.items.map((it, i) => {
       const crossed = (g.cross ?? []).some((c) => c.index === i)
-      return `<div class="ls-icon" style="margin:0 ${r1(gap / 2)}px">${tile(it, { size, light: g.light, cls: `ls-ic-${i}`, extra: crossed ? CROSS : '' })}${labels && it.label ? `<div class="ls-label" style="font-size:${r1(size * 0.13)}px">${esc(it.label)}</div>` : ''}</div>`
+      const label =
+        labels && it.label
+          ? `<div class="ls-label" data-fit style="font-size:${r1(fsLabel)}px;max-width:${r1(colW)}px">${esc(it.label)}</div>`
+          : ''
+      return `<div class="ls-icon" style="width:${r1(colW)}px;margin:0 ${r1((size + gap - colW) / 2)}px">${tile(it, { size, light: g.light, cls: `ls-ic-${i}`, extra: crossed ? CROSS : '' })}${label}</div>`
     })
     const js: string[] = []
     if (focus) {

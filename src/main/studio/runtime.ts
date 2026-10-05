@@ -2,69 +2,83 @@
  * The small animation library every Studio composition carries, as script text. It runs inside
  * the composition with `root` (the composition's element), `tl` (its one paused timeline) and
  * `K` (px scale, 1 at a 1080 px short side) in scope. Every helper adds fromTo/set tweens at a
- * fixed time, so any frame is a pure function of the playhead.
+ * fixed time, so any frame is a pure function of the playhead. An entrance in the first 0.2 s is
+ * set in its final state instead: the first frame (the thumbnail) shows the hook already set.
  */
 export const RUNTIME = `
       var H = (function () {
         function q(sel, el) { return (el || root).querySelector(sel); }
         function qa(sel, el) { return Array.prototype.slice.call((el || root).querySelectorAll(sel)); }
         function px(n) { return Math.round(n * K * 10) / 10 + 'px'; }
+        /**
+         * tl.fromTo, except that an entrance in the first 0.2 s is set at build in its end state:
+         * a zero-length tween at 0 on a paused timeline isn't reliably rendered on the first seek,
+         * and a negative position would shift every other tween on the timeline.
+         */
+        function enter(el, from, to, at) {
+          if (!el) return;
+          if (at < 0.2) {
+            var end = {};
+            for (var k in to) if (k !== 'duration' && k !== 'ease' && k !== 'immediateRender') end[k] = to[k];
+            gsap.set(el, end);
+            return;
+          }
+          tl.fromTo(el, from, to, at);
+        }
         return {
           q: q,
           qa: qa,
-          /** text rising out of the mask line it sits in */
+          enter: enter,
+          /** text rising out of the mask line it sits in (from: how far below, in % of its height) */
           rise: function (el, at, o) {
             o = o || {};
-            if (!el) return;
-            tl.fromTo(el, { yPercent: 108 }, { yPercent: 0, duration: o.dur || 0.48, ease: o.ease || 'expo.out' }, at);
+            enter(el, { yPercent: o.from || 108 }, { yPercent: 0, duration: o.dur || 0.48, ease: o.ease || 'expo.out' }, at);
           },
-          /** fades in out of a blur, optionally rising a little */
+          /** fades in out of a blur, optionally rising a little: solid within about 0.1 s */
           blurIn: function (el, at, o) {
             o = o || {};
-            if (!el) return;
-            tl.fromTo(el,
-              { opacity: 0, filter: 'blur(' + px(o.blur || 14) + ')', y: (o.y || 0) * K, scale: o.scale || 1 },
-              { opacity: 1, filter: 'blur(0px)', y: 0, scale: 1, duration: o.dur || 0.38, ease: o.ease || 'power3.out' },
+            enter(el,
+              { opacity: 0, filter: 'blur(' + px(o.blur || 10) + ')', y: (o.y || 0) * K, scale: o.scale || 1 },
+              { opacity: 1, filter: 'blur(0px)', y: 0, scale: 1, duration: o.dur || 0.26, ease: o.ease || 'expo.out' },
               at);
           },
           /** scales up from small with a soft overshoot */
           pop: function (el, at, o) {
             o = o || {};
-            if (!el) return;
-            tl.fromTo(el,
+            enter(el,
               { opacity: 0, scale: o.from || 0.62 },
               { opacity: 1, scale: 1, duration: o.dur || 0.5, ease: o.ease || 'back.out(1.5)' },
               at);
             // the blur clears on its own ease: an overshoot would take it below zero, which CSS
             // rejects, and the frame would keep the blurred start
             if (o.blur !== 0)
-              tl.fromTo(el,
+              enter(el,
                 { filter: 'blur(' + px(o.blur || 8) + ')' },
                 { filter: 'blur(0px)', duration: Math.min(0.32, o.dur || 0.5), ease: 'power2.out' },
                 at);
           },
-          /** slides in from the right (dx > 0) or left with a motion blur */
+          /**
+           * slides in from the right (dx > 0) or left with a motion blur; sx stretches it along
+           * the move at the start (its CSS transform-origin decides which end stays put)
+           */
           slideIn: function (el, at, o) {
             o = o || {};
-            if (!el) return;
-            tl.fromTo(el,
-              { opacity: 0, x: (o.dx === undefined ? 220 : o.dx) * K, filter: 'blur(' + px(o.blur || 10) + ')' },
-              { opacity: 1, x: 0, filter: 'blur(0px)', duration: o.dur || 0.42, ease: o.ease || 'expo.out' },
-              at);
+            var from = { opacity: 0, x: (o.dx === undefined ? 220 : o.dx) * K, filter: 'blur(' + px(o.blur || 10) + ')' };
+            var to = { opacity: 1, x: 0, filter: 'blur(0px)', duration: o.dur || 0.42, ease: o.ease || 'expo.out' };
+            if (o.sx) { from.scaleX = o.sx; to.scaleX = 1; }
+            enter(el, from, to, at);
           },
           /** a line drawn left to right (its CSS transform-origin is left) */
           draw: function (el, at, o) {
             o = o || {};
-            if (!el) return;
-            tl.fromTo(el, { scaleX: 0 }, { scaleX: 1, duration: o.dur || 0.3, ease: o.ease || 'power2.inOut' }, at);
+            enter(el, { scaleX: 0 }, { scaleX: 1, duration: o.dur || 0.3, ease: o.ease || 'power2.inOut' }, at);
           },
-          /** a blurred, grey tile coming into focus */
+          /** a blurred, grey tile snapping into focus the moment its name is said */
           focus: function (el, at, o) {
             o = o || {};
-            if (!el) return;
-            tl.fromTo(el,
-              { filter: 'blur(' + px(o.blur || 13) + ') grayscale(1)', opacity: o.dim || 0.5, scale: 0.94 },
-              { filter: 'blur(0px) grayscale(0)', opacity: 1, scale: 1, duration: o.dur || 0.38, ease: 'power2.out' },
+            enter(el,
+              { filter: 'blur(' + px(o.blur || 13) + ') grayscale(1)', opacity: o.dim || 0.5, scale: 0.96 },
+              { filter: 'blur(0px) grayscale(0)', opacity: 1, scale: 1, duration: o.dur || 0.12, ease: 'power3.out' },
               at);
           },
           /** shows each .ls-ch inside el one after another, cps characters a second */

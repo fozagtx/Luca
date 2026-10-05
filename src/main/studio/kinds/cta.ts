@@ -7,11 +7,13 @@
 import { esc, r1, SEND_SVG, typed } from '../parts'
 import { t, when, type KindModule } from './types'
 
-// average advance per character class, in em
+// average advance per character class, in em; M and W run far wider than the other letters
 const EM: [RegExp, number][] = [
   [/\s/, 0.32],
+  [/[MW]/, 1.18],
   [/[A-Z]/, 0.9],
   [/\d/, 0.76],
+  [/[mw]/, 1.08],
   [/[a-z]/, 0.68]
 ]
 
@@ -107,6 +109,9 @@ export const cta: KindModule<'cta'> = {
     const typeAt = when(g.typeAt, at + 0.45, at + 0.25)
     const typeEnd = typeAt + [...g.word].length / CPS
     const js = [
+      // the em table is a guess and fitAll measured with every letter hidden: with them all
+      // showing, the word shrinks until it and its caret clear the send button
+      `(function (wd) { var chs = H.qa('.ls-ch', wd); chs.forEach(function (c) { c.style.display = 'inline'; }); var fs = parseFloat(getComputedStyle(wd).fontSize) || 10; for (var n = 0; n < 40 && wd.scrollWidth > wd.clientWidth + 0.5 && fs > 10; n++) { fs *= 0.94; wd.style.fontSize = Math.round(fs * 10) / 10 + 'px'; } chs.forEach(function (c) { c.style.display = ''; }); })(H.q('.ls-word', G));`,
       `H.blurIn(H.q('.ls-kick', G), ${t(at)}, { blur: 10, dur: 0.4 });`,
       `H.blurIn(H.q('.ls-field', G), ${t(at + 0.06)}, { y: 18, scale: 0.97, blur: 14, dur: 0.5, ease: 'expo.out' });`,
       popIn('.ls-avatar', at + 0.16, 0.4, k),

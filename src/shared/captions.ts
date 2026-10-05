@@ -250,11 +250,11 @@ export const CAPTION_STYLES: CaptionStyle[] = [
       'Small lowercase words that come into focus, a few at a time. Dark on paper, light on you.',
     font: 'Archivo',
     weight: 500,
-    size: 44,
+    size: 54,
     uppercase: false,
     lowercase: true,
     adaptive: true,
-    letterSpacing: -0.01,
+    letterSpacing: 0,
     color: '#FFFFFF',
     accent: '#FFFFFF',
     shadow: '0 2px 10px rgba(0,0,0,0.45)',
@@ -268,10 +268,10 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     font: 'Playfair Display',
     weight: 900,
     italic: true,
-    size: 86,
+    size: 112,
     uppercase: true,
     adaptive: true,
-    letterSpacing: 0.01,
+    letterSpacing: 0,
     color: '#FFFFFF',
     accent: '#FFFFFF',
     shadow: '0 3px 14px rgba(0,0,0,0.55)',
@@ -900,11 +900,12 @@ const LIMITS: Record<CaptionConfig['wordsPerLine'], { words: number; chars: numb
 /**
  * Groups words into caption lines: a line ends at a sentence end, at a clause break once it has
  * a couple of words, before a pause over 0.45 s, or at the length limit. Lines then linger up to
- * 0.6 s (never into the next line) so short ones stay readable.
+ * 0.6 s (never into the next line) so short ones stay readable. `breaks` are times the picture
+ * cuts (see splitAtBreaks).
  */
 export function groupWords(
   words: TimedWord[],
-  opts: { wordsPerLine: CaptionConfig['wordsPerLine']; portrait?: boolean }
+  opts: { wordsPerLine: CaptionConfig['wordsPerLine']; portrait?: boolean; breaks?: number[] }
 ): CaptionGroup[] {
   const lim = LIMITS[opts.wordsPerLine]
   const maxChars = Math.round(lim.chars * (opts.portrait ? 0.72 : 1))
@@ -941,7 +942,48 @@ export function groupWords(
     g.start = round(g.start)
     g.end = round(g.end)
   }
-  return groups.filter((g) => g.end - g.start > 0.05)
+  return splitAtBreaks(
+    groups.filter((g) => g.end - g.start > 0.05),
+    opts.breaks ?? []
+  )
+}
+
+/**
+ * Caption lines split where the picture cuts (the Studio look's layout changes), so a line takes
+ * the place and color of the stretch it is said in: a line breaks before the first word said
+ * after a cut, and no line lingers past a cut once its last word is done. Splitting lines that
+ * are already split changes nothing.
+ */
+export function splitAtBreaks(groups: CaptionGroup[], breaks: number[]): CaptionGroup[] {
+  if (!breaks.length) return groups
+  const cuts = [...breaks].sort((a, b) => a - b)
+  const out: CaptionGroup[] = []
+  const line = (words: TimedWord[], start: number, end: number): CaptionGroup => ({
+    text: words.map((w) => w.text).join(' '),
+    start,
+    end,
+    words
+  })
+  for (const g of groups) {
+    let cur: TimedWord[] = []
+    let start = g.start
+    for (const w of g.words) {
+      const prev = cur[cur.length - 1]
+      if (prev && cuts.some((b) => prev.start < b - 0.02 && w.start >= b - 0.05)) {
+        out.push(line(cur, start, w.start))
+        cur = []
+        start = w.start
+      }
+      cur.push(w)
+    }
+    out.push(line(cur, start, g.end))
+  }
+  for (const g of out) {
+    const next = cuts.find((b) => b > g.start + 0.05)
+    const last = g.words[g.words.length - 1]
+    if (next !== undefined && g.end > next) g.end = round(Math.max(next, last?.end ?? next))
+  }
+  return out
 }
 
 export const round = (n: number): number => Math.round(n * 1000) / 1000

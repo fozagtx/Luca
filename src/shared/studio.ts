@@ -18,7 +18,7 @@ You never draw it by hand. The whole picture is one scene plan you pass to studi
 6. snapshot 3–4 beats (the hook, a card, a price, the call to action) and fix cut-off text, crowding or a wrong logo.
 
 ## Beats
-- One beat is one idea, 1.5–3 s, starting and ending on word boundaries from the word times. Never hold one picture longer than 4 s. Between beats the face fills the frame (no beat needed): give the personal and emotional lines to the face, 1–2 s at a time.
+- One beat is one idea, 1.5–3 s, starting and ending on word boundaries from the word times. Never hold one picture longer than 4 s. Between beats the face fills the frame (no beat needed): give the personal and emotional lines to the face, 1–2 s at a time. A gap under 0.5 s between beats is closed (the beat before holds through the pause and the picture changes on the next word), so end a beat on the next one's start; a beat with a graphic needs at least 0.8 s.
 - Cover about 70–90% of the video with beats.
 - Hook, the first 2–3.5 s: a title of two lines (one black caps word over one light lowercase word, e.g. "STOP" / "paying") stacked over icons of the things named, each icon's at on the word that names it, so it snaps into focus as it is said. Speaker inset, paper.
 - The promise ("these five free tools"): a list with blur: true, a teaser of what is coming. Paper, speaker none.
