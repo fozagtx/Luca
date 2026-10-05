@@ -62,7 +62,7 @@ export const compare: KindModule<'compare'> = {
     const html = `<div class="ls-k-compare" style="width:${r1(cardW)}px;margin-top:${r1(lower)}px"><div class="ls-cp-tags" style="margin-bottom:${r1(tagGap)}px"><div class="ls-cp-before">${tag(before, tagS)}</div><span class="ls-tag ls-tag-accent ls-cp-after" style="font-size:${r1(tagS)}px"><span class="ls-cp-atext">${esc(after)}</span></span></div><div class="ls-cp-card" style="width:${r1(cardW)}px;height:${r1(cardH)}px;border-radius:${r1(20 * k)}px"><img class="ls-cp-img ls-cp-soft" src="${src}" alt="" /><div class="ls-cp-sharp"><img class="ls-cp-img" src="${src}" alt="" /></div><div class="ls-cp-bar"><div class="ls-cp-knob" style="width:${r1(knob)}px;height:${r1(knob)}px;margin:-${r1(knob / 2)}px 0 0 -${r1(knob / 2)}px">${HANDLE_SVG}</div></div></div></div>`
 
     const js = [
-      `H.blurIn(H.q('.ls-cp-card', G), ${t(at)}, { y: 34, blur: 18, scale: 0.97, dur: 0.55 });`,
+      `H.blurIn(H.q('.ls-cp-card', G), ${t(at)}, { y: 20, blur: 12, scale: 0.98, dur: 0.32 });`,
       `H.blurIn(H.q('.ls-cp-tags', G), ${t(at + 0.12)}, { y: 12, blur: 10 });`,
       // the divider sweeps left to right and the sharp picture follows it
       `tl.fromTo(H.q('.ls-cp-sharp', G), { clipPath: 'inset(0% 100% 0% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: ${wipe}, ease: 'power2.inOut' }, ${t(afterAt)});`,

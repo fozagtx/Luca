@@ -96,9 +96,13 @@ export const terminal: KindModule<'terminal'> = {
         ? g.outputAt - 0.25
         : ctx.end - 0.5 - (out.length ? 0.35 + out.length * 0.12 : 0)
     const room = until - typeAt
-    const cps = Math.min(30, Math.max(12, room > 0 ? n / room : 30))
+    const cps = Math.min(60, Math.max(12, room > 0 ? n / room : 60))
     const typeEnd = typeAt + n / cps
-    const outAt = Math.max(when(g.outputAt, typeEnd + 0.35, ctx.start), typeEnd + 0.15)
+    // the output lands before the cut, even when the plan asks for it later
+    const outAt = Math.min(
+      ctx.end - 0.3 - (out.length - 1) * 0.12,
+      Math.max(when(g.outputAt, typeEnd + 0.35, ctx.start), typeEnd + 0.15)
+    )
     const lastAt = outAt + (out.length - 1) * 0.12
     const js = [
       `H.blurIn(H.q('.ls-tm-win', G), ${t(at)}, { y: 28, blur: 12 });`,

@@ -27,7 +27,7 @@ export const icons: KindModule<'icons'> = {
   css: (s) => `
       ${s} .ls-k-icons { display: flex; align-items: flex-start; justify-content: center; }
       ${s} .ls-k-icons .ls-icon { flex: none; display: flex; flex-direction: column; align-items: center; }
-      ${s} .ls-k-icons .ls-label { margin-top: 0.55em; font-family: var(--text), sans-serif; font-weight: 500; color: var(--fg); line-height: 1.15; text-align: center; text-wrap: balance; overflow: hidden; letter-spacing: -0.01em; }
+      ${s} .ls-k-icons .ls-label { margin-top: 0.55em; font-family: var(--small), sans-serif; font-weight: 400; color: var(--fg); line-height: 1.15; text-align: center; text-wrap: balance; overflow: hidden; letter-spacing: -0.01em; }
 `,
   render: (g, ctx) => {
     const { zone, k } = ctx

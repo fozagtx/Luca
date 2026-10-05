@@ -79,7 +79,7 @@ stack like vertical with a shorter card.
 
 ### Motion grammar
 
-- Background and layout changes are **hard cuts on a word**. Nothing cross-fades.
+- Background changes and the face's returns are **hard cuts on a word**. Nothing cross-fades. When the speaker's card comes and goes it moves: it **drops out** (0.15 s) when a card takes the whole frame and **rises in** from below the frame (0.35 s, expo out) when it comes back, while the outgoing graphic whips out (left as the speaker leaves, up as the card rises) in 0.16 s.
 - Elements arrive, they never just appear: text **rises out of a mask** (0.5 s, expo out); icons
   **focus in** from a blur (0.45 s); pills **slide in from the right** with a motion blur, 0.12 s
   apart; tiles **pop** from 0.6× with a soft overshoot; numbers **land** with a slight scale-down.

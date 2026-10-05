@@ -12,7 +12,7 @@ export const number: KindModule<'number'> = {
       ${s} .ls-k-number .ls-nb-line { position: relative; max-width: 100%; }
       ${s} .ls-k-number .ls-nb-label { font-family: var(--display), sans-serif; line-height: 1.08; letter-spacing: -0.035em; color: var(--fg); text-align: center; }
       ${s} .ls-k-number .ls-nb-line .ls-strike { top: 56%; color: var(--fg); }
-      ${s} .ls-k-number .ls-nb-vmask { overflow: hidden; max-width: 100%; padding: 0.1em 0.2em 0.03em; margin: -0.1em -0.2em -0.03em; box-sizing: content-box; }
+      ${s} .ls-k-number .ls-nb-vmask { overflow: hidden; max-width: 100%; padding: 0.1em 0.2em 0; margin: -0.1em -0.2em 0; box-sizing: content-box; }
       ${s} .ls-k-number .ls-nb-value {
         font-family: var(--display), sans-serif; line-height: 1; letter-spacing: -0.045em; color: var(--fg);
         white-space: nowrap; text-align: center; transform-origin: 50% 70%; will-change: transform, filter;
@@ -62,9 +62,11 @@ export const number: KindModule<'number'> = {
       g.label ? `H.rise(H.q('.ls-nb-label', G), ${t(at)});` : '',
       strikeAt !== undefined ? `H.draw(H.q('.ls-strike', G), ${t(strikeAt)}, { dur: 0.28 });` : '',
       // lands: rises out of its mask while it settles from a slight zoom and blur
-      `H.rise(H.q('.ls-nb-vrise', G), ${t(valueAt)}, { dur: 0.6 });`,
-      `tl.fromTo(H.q('.ls-nb-value', G), { scale: 1.2, filter: 'blur(${r1(14 * k)}px)' }, { scale: 1, filter: 'blur(0px)', duration: 0.7, ease: 'expo.out' }, ${t(valueAt)});`,
-      g.sub ? `H.blurIn(H.q('.ls-nb-sub', G), ${t(valueAt + 0.28)}, { y: 14 });` : ''
+      `H.rise(H.q('.ls-nb-vrise', G), ${t(valueAt)}, { dur: 0.6, from: 150 });`,
+      `H.enter(H.q('.ls-nb-value', G), { scale: 1.2, filter: 'blur(${r1(14 * k)}px)' }, { scale: 1, filter: 'blur(0px)', duration: 0.7, ease: 'expo.out' }, ${t(valueAt)});`,
+      g.sub
+        ? `H.blurIn(H.q('.ls-nb-sub', G), ${t(Math.max(valueAt, Math.min(valueAt + 0.28, ctx.end - 0.35)))}, { y: 14 });`
+        : ''
     ]
     return {
       html: `<div class="ls-k-number">${html.join('')}</div>`,

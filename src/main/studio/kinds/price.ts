@@ -57,7 +57,7 @@ export const price: KindModule<'price'> = {
       ${s} .ls-k-price .ls-pr-row { display: flex; align-items: center; justify-content: center; }
       ${s} .ls-k-price .ls-pr-tile {
         flex-direction: column;
-        background: linear-gradient(158deg, rgba(244,242,237,0.95) 0%, rgba(216,212,204,0.93) 48%, rgba(194,190,182,0.95) 100%);
+        background: linear-gradient(158deg, rgba(226,223,214,0.96) 0%, rgba(205,202,190,0.95) 48%, rgba(186,182,170,0.96) 100%);
       }
       ${s} .ls-k-price .ls-pr-tlw { width: 84%; display: flex; justify-content: center; }
       ${s} .ls-k-price .ls-pr-tl { font-family: var(--display), sans-serif; font-weight: 600; line-height: 1.1; letter-spacing: -0.03em; white-space: nowrap; }
@@ -145,13 +145,10 @@ export const price: KindModule<'price'> = {
       : 'flex-direction:column'
     const html = `<div class="ls-k-price" style="${layout};margin-top:${r1(lower)}px">${hasOld ? `<div class="ls-pr-old">${old.join('')}</div>` : ''}<div class="ls-pr-new"${hasOld && !wide ? ` style="margin-top:${r1(gapA)}px"` : ''}>${neu.join('')}</div></div>`
 
-    // pops with a soft overshoot; the blur clears on its own ease so it never goes negative
-    const js: string[] = [
-      `function pop(el, at, from) { if (!el) return; tl.fromTo(el, { opacity: 0, scale: from }, { opacity: 1, scale: 1, duration: 0.5, ease: 'back.out(1.5)' }, at); tl.fromTo(el, { filter: 'blur(${r1(8 * k)}px)' }, { filter: 'blur(0px)', duration: 0.32, ease: 'power2.out' }, at); }`
-    ]
+    const js: string[] = []
     if (n) {
       marks.forEach((_, i) => {
-        js.push(`pop(H.q('.ls-pr-t-${i}', G), ${t(at + i * 0.08)}, 0.7);`)
+        js.push(`H.pop(H.q('.ls-pr-t-${i}', G), ${t(at + i * 0.08)}, { from: 0.7 });`)
         const c =
           marks[i].at !== undefined ? Math.max(at + 0.25, marks[i].at!) : strikeAt + i * step
         js.push(
@@ -165,10 +162,11 @@ export const price: KindModule<'price'> = {
         js.push(`H.draw(H.q('.ls-pr-fw .ls-strike', G), ${t(strikeAt)}, { dur: 0.3 });`)
       }
     }
-    if (tagS) js.push(`pop(H.q('.ls-pr-tag', G), ${t(Math.max(at, toAt - 0.06))}, 0.8);`)
+    if (tagS)
+      js.push(`H.pop(H.q('.ls-pr-tag', G), ${t(Math.max(at, toAt - 0.06))}, { from: 0.8 });`)
     // lands: settles from a slight zoom out of a blur
     js.push(
-      `tl.fromTo(H.q('.ls-pr-to', G), { opacity: 0, scale: 1.22, filter: 'blur(${r1(16 * k)}px)' }, { opacity: 1, scale: 1, filter: 'blur(0px)', duration: 0.6, ease: 'expo.out' }, ${t(toAt)});`
+      `H.enter(H.q('.ls-pr-to', G), { opacity: 0, scale: 1.22, filter: 'blur(${r1(16 * k)}px)' }, { opacity: 1, scale: 1, filter: 'blur(0px)', duration: 0.6, ease: 'expo.out' }, ${t(toAt)});`
     )
     return { html, js: js.join('\n') }
   }

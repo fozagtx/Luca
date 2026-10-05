@@ -106,7 +106,11 @@ export const cta: KindModule<'cta'> = {
       : ''
 
     const at = when(g.at, ctx.start, ctx.start)
-    const typeAt = when(g.typeAt, at + 0.45, at + 0.25)
+    // typed out in full before the cut, even when the plan asks for it late
+    const typeAt = Math.max(
+      at,
+      Math.min(when(g.typeAt, at + 0.45, at + 0.25), ctx.end - 0.3 - [...g.word].length / CPS)
+    )
     const typeEnd = typeAt + [...g.word].length / CPS
     const js = [
       // the em table is a guess and fitAll measured with every letter hidden: with them all

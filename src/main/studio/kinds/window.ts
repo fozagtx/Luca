@@ -131,7 +131,7 @@ function images(g: Win, ctx: KindCtx): KindOut {
 });`,
     ...cardAt.map(
       (c, i) =>
-        `H.blurIn(H.q('.ls-wcard-${i}', G), ${t(c)}, { y: 46, blur: 18, scale: 0.96, dur: 0.6 });`
+        `H.blurIn(H.q('.ls-wcard-${i}', G), ${t(c)}, { y: 24, blur: 12, scale: 0.98, dur: 0.32 });`
     ),
     ...labelJs(labels, ctx)
   ]
@@ -214,7 +214,7 @@ function chat(g: Win, ctx: KindCtx): KindOut {
 
   const js = [
     `var win = H.q('.ls-wwin', G), caret = H.q('.ls-caret', G);`,
-    `H.blurIn(win, ${t(at)}, { y: 30, blur: 28, scale: 0.97, dur: 0.55 });`,
+    `H.blurIn(win, ${t(at)}, { y: 16, blur: 14, scale: 0.98, dur: 0.3 });`,
     `H.blurIn(H.q('.ls-wgreet', G), ${t(at + 0.2)}, { y: 10, blur: 8, dur: 0.45 });`,
     `H.blink(caret, ${t(at)}, ${t(prompt ? typeAt : ctx.end)});`,
     ...labelJs(labels, ctx)

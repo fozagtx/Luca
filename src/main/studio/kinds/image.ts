@@ -58,7 +58,7 @@ export const image: KindModule<'image'> = {
     const html = `<div class="ls-k-image"><div class="ls-im-card" style="width:${r1(cardW)}px;height:${r1(cardH)}px;border-radius:${r1(22 * k)}px"><div class="ls-im-frame"><img class="ls-im-img" src="${esc(g.image)}" alt="" style="object-position:${focus};transform-origin:${focus}" /></div></div>${caption}</div>`
 
     const js = [
-      `H.blurIn(H.q('.ls-im-card', G), ${t(at)}, { y: 44, blur: 20, scale: 0.965, dur: 0.6 });`,
+      `H.blurIn(H.q('.ls-im-card', G), ${t(at)}, { y: 24, blur: 12, scale: 0.98, dur: 0.35 });`,
       // a slow push on the picture, inside the frame, for the rest of the beat
       ctx.end - at > 0.2
         ? `tl.fromTo(H.q('.ls-im-img', G), { scale: 1 }, { scale: 1.06, duration: ${t(ctx.end - at)}, ease: 'none' }, ${t(at)});`

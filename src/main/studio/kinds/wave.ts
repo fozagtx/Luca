@@ -87,7 +87,7 @@ export const wave: KindModule<'wave'> = {
       const sel = `'.ls-wv-${i} .ls-wv-bar'`
       const inner = `'.ls-wv-${i} .ls-wv-bar b'`
       js.push(
-        `H.blurIn(H.q('.ls-wv-${i}', G), ${t(at)}, { y: 46, blur: 16, scale: 0.97, dur: 0.5 });`
+        `H.blurIn(H.q('.ls-wv-${i}', G), ${t(at)}, { y: 20, blur: 12, scale: 0.98, dur: 0.3 });`
       )
       // the source plays: ghost bars light up left to right. The clone is generated: its card
       // sits empty a beat, then a flat lime line appears and swells to full all at once (no

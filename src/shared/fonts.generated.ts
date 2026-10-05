@@ -143,6 +143,14 @@ export const BUNDLED_FONTS: { family: string; note: string; faces: ProjectFontFa
     faces: [{ file: 'Montserrat-Thin.ttf', weight: 100, italic: false }]
   },
   {
+    family: 'Noto Serif',
+    note: 'Sturdy black italic serif, made for big caption capitals (the classic listicle look)',
+    faces: [
+      { file: 'NotoSerif-BoldItalic.ttf', weight: 700, italic: true },
+      { file: 'NotoSerif-BlackItalic.ttf', weight: 900, italic: true }
+    ]
+  },
+  {
     family: 'Red Hat Display',
     note: 'Crisp open sans for titles and big words',
     faces: [

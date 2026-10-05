@@ -37,6 +37,7 @@ export const list: KindModule<'list'> = {
   css: (s, k) => `
       ${s} .ls-k-list { display: flex; flex-direction: column; align-items: center; width: 100%; }
       ${s} .ls-k-list .ls-row {
+        transform-origin: right center;
         display: flex; align-items: center; box-sizing: border-box; background: var(--pill); color: var(--pill-fg);
         box-shadow:
           0 ${r1(12 * k)}px ${r1(24 * k)}px var(--shadow),
@@ -72,7 +73,14 @@ export const list: KindModule<'list'> = {
     )
     const fs = Math.min(rowH * NAME, room / Math.max(...need))
     const at = when(g.at, ctx.start, ctx.start)
-    const step = Math.min(0.32, Math.max(0.1, ((ctx.end - at) * 0.5) / n))
+    // every row lands with time to read it, however short the beat
+    const n1 = Math.max(1, n - 1)
+    const step = Math.max(
+      0.05,
+      Math.min(0.4, ((ctx.end - at) * 0.5) / n1, (ctx.end - 0.85 - at) / n1)
+    )
+    // from just past the frame's right edge, stretched by their speed
+    const offR = r1((ctx.geo.w - (zone.x + (zone.w - width) / 2)) / k + 30)
     const rows = g.items.map((it, i) => {
       const hl = g.highlight?.index === i
       const icon =
@@ -99,7 +107,7 @@ export const list: KindModule<'list'> = {
         hl && g.highlight?.at !== undefined
           ? when(g.highlight.at, at, ctx.start)
           : when(it.at, at + i * step, ctx.start)
-      return `H.slideIn(H.q('.ls-row-${i}', G), ${t(time)}, { dx: ${r1((width * 0.55) / k)} });`
+      return `H.slideIn(H.q('.ls-row-${i}', G), ${t(time)}, { dx: ${offR}, dur: 0.5, ease: 'power4.out', blur: 14, sx: 1.12 });`
     })
     return { html: `<div class="ls-k-list">${rows.join('')}</div>`, js: js.join('\n') }
   }

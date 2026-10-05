@@ -265,7 +265,7 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     id: 'serif-caps',
     name: 'Serif caps',
     blurb: 'Heavy italic serif capitals, two or three words at a time. The listicle classic.',
-    font: 'Playfair Display',
+    font: 'Noto Serif',
     weight: 900,
     italic: true,
     size: 112,

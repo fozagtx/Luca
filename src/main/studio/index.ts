@@ -178,9 +178,11 @@ function build(
   for (const family of look.bundled) installBundledFont(p.dir, family)
   if (look.texture) {
     const dest = join(p.dir, TEXTURE)
-    if (!existsSync(dest)) {
+    const src = join(bundledResourcesDir('textures'), 'crumple.jpg')
+    // a project from before the texture changed takes the new one
+    if (!existsSync(dest) || statSync(dest).size !== statSync(src).size) {
       mkdirSync(join(p.dir, 'media', 'studio'), { recursive: true })
-      copyFileSync(join(bundledResourcesDir('textures'), 'crumple.jpg'), dest)
+      copyFileSync(src, dest)
     }
   }
   const footage = speakerClips(html, p.source ?? null)

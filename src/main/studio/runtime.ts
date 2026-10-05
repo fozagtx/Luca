@@ -111,7 +111,8 @@ export const RUNTIME = `
           var box = el.parentNode;
           var max = el.dataset.fit === 'parent' && box ? box.clientWidth : el.clientWidth;
           var size = parseFloat(getComputedStyle(el).fontSize) || 10;
-          for (var n = 0; n < 40 && el.scrollWidth > max + 0.5; n++) {
+          var min = parseFloat(el.dataset.fitMin || '0');
+          for (var n = 0; n < 40 && el.scrollWidth > max + 0.5 && size * 0.94 >= min; n++) {
             size *= 0.94;
             el.style.fontSize = Math.round(size * 10) / 10 + 'px';
           }

@@ -19,7 +19,8 @@
     "Archivo Expanded": "Wide grotesque, light to black: big lowercase titles, prices and labels (the Studio look)",
     "Archivo": "Neutral grotesque for small captions and labels (the Studio look)",
     "Instrument Serif": "Condensed editorial serif; its italic marks the words that matter",
-    "DM Mono": "Clean monospace for small caps labels, kickers and terminals (the Studio look)"
+    "DM Mono": "Clean monospace for small caps labels, kickers and terminals (the Studio look)",
+    "Noto Serif": "Sturdy black italic serif, made for big caption capitals (the classic listicle look)"
   },
   "families": {
     "Helvetica-Light.ttf": "Helvetica",

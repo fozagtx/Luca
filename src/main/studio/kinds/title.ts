@@ -33,7 +33,9 @@ export const title: KindModule<'title'> = {
             : l.color === 'dim'
               ? 'var(--dim)'
               : 'var(--fg)'
-      const fs = r1(l.serif ? size * 1.18 : size)
+      const em = look.id === 'serif' ? 0.5 : 0.64
+      const own = Math.min((zone.w * 0.96) / Math.max(3, l.text.length * em), size)
+      const fs = r1(l.serif ? own * 1.18 : own)
       const style = `font-weight:${weight};color:${color};${look.displayItalic && !l.serif ? 'font-style:italic;' : ''}`
       // the line carries the size, so the strike's em is the text's
       return `<div class="ls-line" style="font-size:${fs}px"><div class="ls-mask"><div class="ls-rise${l.serif ? ' ls-serif' : ''}" data-fit="parent" style="${style}">${esc(l.text)}</div></div>${g.strikeAt !== undefined ? `<i class="ls-strike" style="color:${color}"></i>` : ''}</div>`
