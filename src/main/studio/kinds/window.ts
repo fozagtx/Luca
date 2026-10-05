@@ -18,15 +18,20 @@ const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.m
 function labelBlock(labels: Label[], fs: number, style: string): string {
   if (!labels.length) return ''
   const items = labels.map(
-    (l, i) => `<div class="ls-wlab ls-wlab-${i}">${tag(l.text, fs, false, 'ls-wtag')}</div>`
+    (l, i) =>
+      `<div class="ls-wlab ls-wlab-${i}"${i ? ' style="opacity:0"' : ''}>${tag(l.text, fs, false, 'ls-wtag')}</div>`
   )
   return `<div class="ls-wlabels" style="${style}">${items.join('')}</div>`
 }
 
 function labelJs(labels: Label[], ctx: KindCtx): string[] {
   const times = labels.map((l) => when(l.at, ctx.start, ctx.start))
+  // the first label fades in; the next ones swap in place on their word, as the reference does
+  // (a fade from nothing would leave a frame with no label at the swap)
   return labels.flatMap((_, i) => [
-    `H.blurIn(H.q('.ls-wlab-${i} .ls-tag', G), ${t(times[i])}, { y: 14, blur: 8, dur: 0.28 });`,
+    i === 0
+      ? `H.blurIn(H.q('.ls-wlab-0 .ls-tag', G), ${t(times[0])}, { y: 14, blur: 8, dur: 0.28 });`
+      : `H.show(H.q('.ls-wlab-${i}', G), ${t(times[i])});\nH.enter(H.q('.ls-wlab-${i} .ls-tag', G), { opacity: 0.55, y: ${r1(8 * ctx.k)}, filter: 'blur(${r1(6 * ctx.k)}px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.22, ease: 'expo.out' }, ${t(times[i])});`,
     i + 1 < labels.length
       ? `H.hide(H.q('.ls-wlab-${i}', G), ${t(Math.max(times[i] + 0.05, times[i + 1]))});`
       : ''
@@ -189,10 +194,13 @@ function chat(g: Win, ctx: KindCtx): KindOut {
   const typeEnd = typeAt + prompt.length / cps
   const jumpAt = typeEnd + 0.18
   const dotsAt = jumpAt + 0.22
+  // the reply lands before the cut, even when the plan asks for it later
   const replyAt = c?.reply
-    ? Math.max(dotsAt + 0.45, when(c.replyAt, dotsAt + 1.2, ctx.start))
+    ? Math.min(ctx.end - 0.45, Math.max(dotsAt + 0.45, when(c.replyAt, dotsAt + 1.2, ctx.start)))
     : ctx.end
   const dotsEnd = Math.min(replyAt, ctx.end)
+  // dots that would be gone in a blink are left out
+  const thinking = dotsEnd - dotsAt >= 0.3
 
   const bar = `<div class="ls-wbar" style="height:${px(barH)};padding:0 ${px(30)};gap:${px(13)}"><span class="ls-wico" style="width:${px(30)};height:${px(30)};--ls-ring:${px(3)}"></span><span class="ls-wtitle" style="font-size:${px(27)}">${esc(c?.title ?? 'New chat')}</span></div>`
   const greet = `<div class="ls-wgreet"><span class="ls-wbub" style="font-size:${px(39)};padding:${px(10)} ${px(22)};border-radius:${px(15)}">${esc(c?.greeting ?? 'How can I help you today?')}</span></div>`
@@ -203,7 +211,7 @@ function chat(g: Win, ctx: KindCtx): KindOut {
   const reply = c?.reply
     ? `<div class="ls-wreply" style="font-size:${px(38)};padding:0 ${px(4)}">${esc(c.reply)}</div>`
     : ''
-  const msgs = `<div class="ls-wmsgs" style="top:${px(barH)};bottom:${px(fieldH + fieldIn * 2)};padding:${px(wide ? 46 : 72)} ${px(pad)} 0;gap:${px(wide ? 38 : 60)}">${greet}${user}${prompt ? `<div class="ls-wans">${dots}${reply}</div>` : ''}</div>`
+  const msgs = `<div class="ls-wmsgs" style="top:${px(barH)};bottom:${px(fieldH + fieldIn * 2)};padding:${px(wide ? 46 : 72)} ${px(pad)} 0;gap:${px(wide ? 38 : 60)}">${greet}${user}${prompt ? `<div class="ls-wans">${thinking ? dots : ''}${reply}</div>` : ''}</div>`
   const field = `<div class="ls-wfield" style="left:${px(fieldIn)};right:${px(fieldIn)};bottom:${px(fieldIn)};height:${px(fieldH)};border-radius:${px(22)};padding:0 ${px(20)} 0 ${px(32)};gap:${px(20)}"><div class="ls-wtext" style="font-size:${px(promptFs)}"><span class="ls-wph">Ask anything</span><span class="ls-wtyped">${typed(prompt)}</span></div><div class="ls-wsend" style="width:${px(send)};height:${px(send)}"><span class="ls-wsend-off" style="border-radius:${px(12)}"></span><span class="ls-wsend-on"><span style="width:${px(send * 0.5)};height:${px(send * 0.5)}">${SEND_SVG}</span></span></div></div>`
   const win = `<div class="ls-wwin" style="width:${r1(W)}px;height:${r1(Hh)}px;border-radius:${r1(Math.max(14 * k, 28 * u))}px">${bar}${msgs}${field}</div>`
   const lab = labelBlock(
@@ -237,15 +245,17 @@ function top(el) { var y = 0; while (el && el !== win) { y += el.offsetTop; el =
 var from = H.q('.ls-wtyped', G);
 var dy = top(from) + from.offsetHeight / 2 - top(user) - user.offsetHeight / 2;
 tl.fromTo(user, { y: dy, opacity: 0, scale: 0.9, filter: 'blur(${r1(8 * k)}px)' }, { y: 0, opacity: 1, scale: 1, filter: 'blur(0px)', duration: 0.55, ease: 'expo.out' }, ${t(jumpAt)});`,
-      `H.blurIn(H.q('.ls-wdots', G), ${t(dotsAt)}, { y: 6, blur: 6, dur: 0.3 });`,
+      thinking ? `H.blurIn(H.q('.ls-wdots', G), ${t(dotsAt)}, { y: 6, blur: 6, dur: 0.3 });` : '',
       // the dots pulse one after another until the reply lands; a pulse that the reply or the cut
       // interrupts is still worth starting once its rise shows
-      `H.qa('.ls-wdots i', G).forEach(function (d, i) {
+      thinking
+        ? `H.qa('.ls-wdots i', G).forEach(function (d, i) {
   for (var p = ${t(dotsAt + 0.2)} + i * 0.15; p + 0.25 < ${t(dotsEnd)}; p += 0.9) {
     tl.fromTo(d, { opacity: 0.35, y: 0 }, { opacity: 1, y: ${r1(-6 * u)}, duration: 0.25, ease: 'sine.out', immediateRender: false }, p);
     tl.fromTo(d, { opacity: 1, y: ${r1(-6 * u)} }, { opacity: 0.35, y: 0, duration: 0.3, ease: 'sine.in', immediateRender: false }, p + 0.25);
   }
 });`
+        : ''
     )
     if (c?.reply)
       js.push(
@@ -253,7 +263,7 @@ tl.fromTo(user, { y: dy, opacity: 0, scale: 0.9, filter: 'blur(${r1(8 * k)}px)' 
         `H.blurIn(H.q('.ls-wreply', G), ${t(replyAt)}, { y: 10, blur: 10, dur: 0.5 });`
       )
   }
-  return { html: `<div class="ls-k-window">${win}${lab}</div>`, js: js.join('\n') }
+  return { html: `<div class="ls-k-window">${win}${lab}</div>`, js: js.filter(Boolean).join('\n') }
 }
 
 export const win: KindModule<'window'> = {
