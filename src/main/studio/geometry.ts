@@ -72,7 +72,7 @@ export function studioGeometry(
     h: h * lerp(0.6, 0.66, t)
   })
   const full = rounded({ x: pad, y: h * 0.06, w: w - pad * 2, h: h * 0.3 })
-  const low = { x: round(w / 2), y: round(h * lerp(0.74, 0.84, t)), w: round(w * 0.8) }
+  const low = { x: round(w / 2), y: round(h * lerp(0.74, 0.84, t)), w: round(w * 0.88) }
   if (look === 'serif') {
     // the BEFORE: a big rounded face card over the lower 44%, a compact graphic block above it
     const cardTop = h * lerp(0.555, 0.5, t)
@@ -97,7 +97,7 @@ export function studioGeometry(
         full
       },
       captions: {
-        inset: { x: round(w / 2), y: round(cardTop - h * 0.055), w: round(w * 0.8) },
+        inset: { x: round(w / 2), y: round(cardTop - h * 0.055), w: round(w * 0.88) },
         none: low,
         full: low
       }
@@ -122,7 +122,7 @@ export function studioGeometry(
       full
     },
     captions: {
-      inset: { x: round(w / 2), y: round(cardTop - h * lerp(0.13, 0.155, t)), w: round(w * 0.8) },
+      inset: { x: round(w / 2), y: round(cardTop - h * lerp(0.13, 0.155, t)), w: round(w * 0.88) },
       none: low,
       full: low
     }
