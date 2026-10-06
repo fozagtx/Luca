@@ -11,7 +11,7 @@ import {
 import { extname, join, relative, sep } from 'node:path'
 import { placeWords } from '../shared/captions'
 import type { CleanResult, CleanStatus, Cut, Edl, Project, Transcript } from '../shared/types'
-import { activeAgent, agentFor } from './agent'
+import { activeAgent } from './agent'
 import { hasTranscript, refreshCaptions } from './captions'
 import { speechClips } from './captions-html'
 import { footageVideos } from './color'
@@ -563,7 +563,11 @@ export async function runCleanEdit(p: Project): Promise<void> {
     writeFileSync(join(p.dir, '.luca', 'cut-candidates.json'), JSON.stringify(candidates, null, 2))
 
     setStatus({ stage: 'reviewing', message: `${candidates.length} candidates` })
-    const agent = activeAgent() ?? agentFor(p)
+    // transcribing takes minutes: once another project is open (or none), the Luca of this one is
+    // gone, and the other's would review the cuts, and write edl.json, in its own project
+    const agent = activeAgent()
+    if (agent?.project.dir !== p.dir)
+      throw new Error('The project was closed before Luca could review the cuts. Try again.')
     let edl: Edl | null = null
     let feedback = ''
     for (let attempt = 0; attempt < 3 && !edl; attempt++) {

@@ -846,13 +846,14 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
           try {
             const p = readProject(projectDir)
             if (!p) return text({ ok: false, error: 'No project' })
+            // Luca's turn is saved as one version when it ends
             if (lut === 'none') {
-              await removeColor(p)
+              await removeColor(p, { checkpoint: false })
               return text('Removed the color grade')
             }
             const info = BUNDLED_LUTS.find((l) => l.id === lut)
             const level = intensity ?? 0.85
-            const state = await applyColor(p, { lut, intensity: level })
+            const state = await applyColor(p, { lut, intensity: level }, { checkpoint: false })
             return text(
               `Applied ${info?.name ?? lut} at ${Math.round(level * 100)}% to ${state.targets} clip${state.targets === 1 ? '' : 's'}`
             )

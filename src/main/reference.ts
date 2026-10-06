@@ -1,6 +1,8 @@
-import { copyFileSync, mkdirSync, readdirSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { childEnv, probeMedia, run, which } from './env'
+
+const SHEET = /^sheet-\d+\.png$/
 
 /**
  * Study a reference video: a copy in .luca/reference/ and tiled contact sheets it can read —
@@ -26,6 +28,8 @@ export async function studyReference(
       )) * 10
     ) / 10
   report?.('Pulling frames')
+  // the sheets of a reference studied before (a longer one leaves more) aren't this one's
+  for (const f of readdirSync(refDir)) if (SHEET.test(f)) rmSync(join(refDir, f), { force: true })
   const ffmpeg = (await which('ffmpeg')) ?? 'ffmpeg'
   const r = await run(
     ffmpeg,
@@ -43,8 +47,9 @@ export async function studyReference(
   )
   if (r.code !== 0) throw new Error(r.stderr.trim().slice(-400) || 'Could not read the video')
   const sheets = readdirSync(refDir)
-    .filter((f) => /^sheet-\d+\.png$/.test(f))
-    .sort()
+    .filter((f) => SHEET.test(f))
+    // sheet-100 (past 16 minutes) comes after sheet-99
+    .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
     .map((f) => `.luca/reference/${f}`)
   return { path: `.luca/reference/reference${ext}`, seconds, sheets }
 }

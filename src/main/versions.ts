@@ -150,12 +150,26 @@ async function restoreNow(dir: string, sha: string): Promise<void> {
   broadcast(Channels.historyChanged)
 }
 
-/** ⌘Z: restore the checkpoint before HEAD (after any checkpoint still being written). */
+/** Each project's last ⌘Z: the version it made and the checkpoint it went back to. */
+const undone = new Map<string, { head: string; to: string }>()
+
+/**
+ * ⌘Z: restore the checkpoint before HEAD (after any checkpoint still being written). ⌘Z again
+ * goes on back from the checkpoint the last one went to; restoring the one before HEAD, the
+ * version that undo made, would take that undo back instead.
+ */
 export function undo(dir: string): Promise<void> {
   return serial(dir, async () => {
-    const log = await git(dir).log({ maxCount: 2 })
-    const prev = log.all[1]
-    if (prev) await restoreNow(dir, prev.hash)
+    const g = git(dir)
+    const head = (await g.revparse(['HEAD'])).trim()
+    const last = undone.get(resolve(dir))
+    const from = last?.head === head ? last.to : head
+    const prev = (
+      await g.raw(['rev-parse', '--verify', '--quiet', `${from}^`]).catch(() => '')
+    ).trim()
+    if (!prev) return
+    await restoreNow(dir, prev)
+    undone.set(resolve(dir), { head: (await g.revparse(['HEAD'])).trim(), to: prev })
   })
 }
 

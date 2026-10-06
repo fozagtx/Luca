@@ -72,6 +72,9 @@ export function watchProject(dir: string): void {
     timer = setTimeout(flush, 150)
   }
   watcher.on('add', queue).on('change', queue).on('unlink', queue)
+  // a folder it can't read (permissions, too many open files) must not reach the main process
+  // as an uncaught error: the rest of the project is still watched
+  watcher.on('error', (err) => console.warn('[luca] watching the project failed', err))
 }
 
 function flush(): void {

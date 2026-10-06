@@ -127,6 +127,8 @@ export async function thumbnails(
     }
     const ffmpeg = await which('ffmpeg')
     if (!ffmpeg) throw new Error('ffmpeg not found')
+    // frames of what the file held before (a longer cut at the same path) would still count
+    for (const f of existing) rmSync(join(out, f), { force: true })
     await run(
       ffmpeg,
       [
@@ -255,7 +257,7 @@ export async function applyEdit(
   }
   if (res.code !== 0 || out.ok === false) {
     const msg =
-      out.reason ?? out.error ?? (res.stderr || res.stdout).trim().slice(-400) ?? 'Edit failed'
+      out.reason || out.error || (res.stderr || res.stdout).trim().slice(-400) || 'Edit failed'
     return { ok: false, error: out.fix ? `${msg}. ${out.fix}` : msg }
   }
   return { ok: true }

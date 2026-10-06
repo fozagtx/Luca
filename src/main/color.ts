@@ -103,8 +103,14 @@ export async function applyColor(
   return colorState(p)
 }
 
-/** Lifts the LUT off the footage; the copied .cube stays in luts/ — harmless, exports never break. */
-export async function removeColor(p: Pick<Project, 'dir'>): Promise<ColorState> {
+/**
+ * Lifts the LUT off the footage; the copied .cube stays in luts/ — harmless, exports never break.
+ * `checkpoint: false` leaves the version to the caller (Luca's turn saves itself).
+ */
+export async function removeColor(
+  p: Pick<Project, 'dir'>,
+  opts: { checkpoint?: boolean } = {}
+): Promise<ColorState> {
   const file = join(p.dir, 'index.html')
   let html = readFileSync(file, 'utf8')
   for (const tag of footageVideos(html).reverse()) {
@@ -117,6 +123,6 @@ export async function removeColor(p: Pick<Project, 'dir'>): Promise<ColorState> 
   writeFileSync(file, html)
   // the Studio look frames this footage itself, so it takes the grade too
   refreshStudio(p)
-  await checkpoint(p.dir, 'Remove color')
+  if (opts.checkpoint !== false) await checkpoint(p.dir, 'Remove color')
   return colorState(p)
 }

@@ -3,6 +3,7 @@ import { createReadStream, readFileSync, statSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
 import { extname, join, normalize, resolve, sep } from 'node:path'
+import { pipeline } from 'node:stream'
 
 const RUNTIME_PATH = '/hf/runtime.js'
 let runtimeFile: string | null = null
@@ -262,7 +263,8 @@ export class LucaServer {
     const range = req.headers.range
     if (range) {
       const m = /^bytes=(\d*)-(\d*)$/.exec(range)
-      if (!m) {
+      // `bytes=-` names no bytes at all
+      if (!m || (!m[1] && !m[2])) {
         res.writeHead(416, { 'content-range': `bytes */${size}` }).end()
         return
       }
@@ -287,7 +289,7 @@ export class LucaServer {
         res.end()
         return
       }
-      createReadStream(abs, { start, end }).pipe(res)
+      send(createReadStream(abs, { start, end }), res)
       return
     }
 
@@ -297,6 +299,15 @@ export class LucaServer {
       res.end()
       return
     }
-    createReadStream(abs).pipe(res)
+    send(createReadStream(abs), res)
   }
+}
+
+/**
+ * Stream a file into the response. A video seek aborts its request: the file is closed then (a
+ * plain pipe keeps it open). A file that can't be read ends the response instead of leaving it
+ * hanging, and isn't an uncaught error in the main process.
+ */
+function send(file: ReturnType<typeof createReadStream>, res: ServerResponse): void {
+  pipeline(file, res, () => undefined)
 }

@@ -317,7 +317,11 @@ export async function makeCutouts(
     const r = await runHyperframes(
       ['remove-background', src, '-o', part, '--quality', 'balanced', '--json'],
       { cwd: p.dir, timeoutMs: 60 * 60_000, signal }
-    )
+    ).catch((err: unknown) => {
+      // stopped with Luca's turn: the half-made cut-out goes too
+      rmSync(join(p.dir, part), { force: true })
+      throw err
+    })
     if (r.code !== 0 || !existsSync(join(p.dir, part))) {
       rmSync(join(p.dir, part), { force: true })
       throw new Error(

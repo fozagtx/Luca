@@ -149,9 +149,10 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
 
   // project
   const activate = async (dir: string): Promise<ReturnType<typeof openProject>> => {
+    // a folder that isn't a project throws here, while the open one is still being watched
+    const p = openProject(dir)
     stopWatching()
     flushPosterRefresh()
-    const p = openProject(dir)
     // versions need a working git; without one the project still opens and edits, unversioned
     await ensureRepo(p.dir).catch(warnCheckpoint)
     setCurrentProject(p)
@@ -351,9 +352,14 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
   handle(Channels.looksUpdate, (slug: string) => updateLook(requireProject(), slug))
   handle(Channels.looksApply, async (slug: string) => {
     const p = requireProject()
-    await applyLook(p, slug)
-    setCurrentProject(openProject(p.dir))
-    await checkpoint(p.dir, `Apply Look: ${lookName(slug)}`)
+    try {
+      await applyLook(p, slug)
+    } finally {
+      // a look whose titles couldn't all be added is still on (its error still reaches the
+      // person); going Home or to another project while it went in stays put
+      if (currentProject()?.dir === p.dir) setCurrentProject(openProject(p.dir))
+      await checkpoint(p.dir, `Apply Look: ${lookName(slug)}`)
+    }
   })
   handle(Channels.looksRemove, (slug: string) => removeLook(slug))
   handle(Channels.looksActive, () => currentProject()?.look ?? null)
