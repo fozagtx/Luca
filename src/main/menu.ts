@@ -1,8 +1,9 @@
 import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Channels } from './ipc'
 import { looksDir } from './looks'
-import { getSettings } from './settings'
+import { getSettings, onRecentChange } from './settings'
 import { currentProject, onProjectChange } from './state'
 
 function send(cmd: string, arg?: unknown): void {
@@ -20,7 +21,10 @@ function onProject(item: MenuItemConstructorOptions): MenuItemConstructorOptions
 
 /** The last projects opened, newest first, as File → Open Recent lists them. */
 function recentItems(): MenuItemConstructorOptions[] {
-  const recent = getSettings().recentProjects.slice(0, 10)
+  // a folder that is gone (trashed, or on a drive that's out) has nothing to open
+  const recent = getSettings()
+    .recentProjects.filter((r) => existsSync(join(r.dir, 'index.html')))
+    .slice(0, 10)
   if (!recent.length) return [{ label: 'No Recent Projects', enabled: false }]
   return recent.map((r) => ({ label: r.name, click: () => send('open-recent', r.dir) }))
 }
@@ -28,10 +32,11 @@ function recentItems(): MenuItemConstructorOptions[] {
 let following = false
 
 export function buildAppMenu(): void {
-  // opening or closing a project changes what can be done (and what was opened last)
+  // opening or closing a project changes what can be done, and the recent list what to open
   if (!following) {
     following = true
     onProjectChange(() => buildAppMenu())
+    onRecentChange(() => buildAppMenu())
   }
   const template: MenuItemConstructorOptions[] = [
     {

@@ -46,8 +46,16 @@ export function getSettings(): Settings {
   return cache
 }
 
+const recentListeners = new Set<() => void>()
+
+/** Called after the recent projects change (File → Open Recent follows them). */
+export function onRecentChange(fn: () => void): void {
+  recentListeners.add(fn)
+}
+
 export function updateSettings(patch: Partial<Settings>): Settings {
   cache = { ...getSettings(), ...patch }
   writeFileSync(file(), JSON.stringify(cache, null, 2))
+  if (patch.recentProjects) for (const fn of recentListeners) fn()
   return cache
 }

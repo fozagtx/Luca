@@ -150,26 +150,30 @@ async function restoreNow(dir: string, sha: string): Promise<void> {
   broadcast(Channels.historyChanged)
 }
 
-/** Each project's last ⌘Z: the version it made and the checkpoint it went back to. */
-const undone = new Map<string, { head: string; to: string }>()
+/**
+ * Per project, each version an undo made and the checkpoint it went back to. Its parent in git
+ * is the change that undo took away, so going back from it would bring that change back.
+ */
+const undone = new Map<string, Map<string, string>>()
 
 /**
- * ⌘Z: restore the checkpoint before HEAD (after any checkpoint still being written). ⌘Z again
- * goes on back from the checkpoint the last one went to; restoring the one before HEAD, the
- * version that undo made, would take that undo back instead.
+ * ⌘Z: restore the checkpoint before HEAD (after any checkpoint still being written). From a
+ * version an undo made, it goes on back from the checkpoint that undo went to (and from there,
+ * if that one was made by an undo too), never forward again.
  */
 export function undo(dir: string): Promise<void> {
   return serial(dir, async () => {
     const g = git(dir)
-    const head = (await g.revparse(['HEAD'])).trim()
-    const last = undone.get(resolve(dir))
-    const from = last?.head === head ? last.to : head
+    const made = undone.get(resolve(dir)) ?? new Map<string, string>()
+    undone.set(resolve(dir), made)
+    let from = (await g.revparse(['HEAD'])).trim()
+    for (let to = made.get(from); to; to = made.get(from)) from = to
     const prev = (
       await g.raw(['rev-parse', '--verify', '--quiet', `${from}^`]).catch(() => '')
     ).trim()
     if (!prev) return
     await restoreNow(dir, prev)
-    undone.set(resolve(dir), { head: (await g.revparse(['HEAD'])).trim(), to: prev })
+    made.set((await g.revparse(['HEAD'])).trim(), prev)
   })
 }
 
