@@ -11,7 +11,16 @@ export type ToolPart = Extract<ChatContentPart, { type: 'tool' }>
 export function inputOf(p: ToolPart): string | undefined {
   if (p.status === 'running' || p.output !== undefined || p.name === 'Edit' || p.name === 'Write')
     return p.detail
-  return undefined
+  // the old swap only happened when something came back, and never to a step cut off at the
+  // end of a turn, so plenty of old steps still hold their input. A command matches its own
+  // summary ("Ran mkdir -p media/x"); other tools' input was their arguments as indented JSON.
+  const detail = p.detail ?? ''
+  if (p.name === 'Bash') {
+    const line = detail.split('\n')[0]
+    const hf = /npx\s+hyperframes(?:@[\w.-]+)?\s+(\w+)/.exec(line)
+    return p.summary === `Ran ${hf ? hf[1] : line.slice(0, 80)}` ? p.detail : undefined
+  }
+  return /^\{(?:\}|\n {2}")/.test(detail) ? p.detail : undefined
 }
 
 /**

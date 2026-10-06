@@ -55,7 +55,7 @@ export function MakingOverlay(): ReactElement {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.25, ease: EASE }}
-            className="absolute inset-x-0 bottom-3 flex justify-center px-3"
+            className="@container absolute inset-x-0 bottom-3 flex justify-center px-3"
           >
             <Pill making={making} />
           </motion.div>
@@ -294,7 +294,7 @@ function Checklist({
           >
             <RowIcon status={r.status} />
             {r.status === 'running' ? (
-              <TextShimmer className="min-w-0 truncate font-medium [--text-3:rgba(255,255,255,0.55)] [--text:#fff]">
+              <TextShimmer className="min-w-0 truncate font-medium [--text-3:rgba(255,255,255,0.72)] [--text:#fff]">
                 {r.text}
               </TextShimmer>
             ) : (
@@ -361,16 +361,20 @@ function Pill({ making }: { making: Making }): ReactElement {
   const { status, left } = useStatus(making, true)
   const setPeek = useMaking((s) => s.setPeek)
   return (
-    <div className="pointer-events-auto flex max-w-full min-w-0 items-center gap-2 rounded-full bg-black/65 py-1 pr-1 pl-3 text-[11.5px] text-white shadow-[0_6px_20px_rgba(0,0,0,0.25)] ring-1 ring-white/10 backdrop-blur-md">
+    <div
+      title={status}
+      className="pointer-events-auto flex max-w-full min-w-0 items-center gap-2 rounded-full bg-black/65 py-1 pr-1 pl-3 text-[11.5px] text-white shadow-[0_6px_20px_rgba(0,0,0,0.25)] ring-1 ring-white/10 backdrop-blur-md"
+    >
       <span className="relative flex size-2 shrink-0">
         <span className="absolute inset-0 animate-ping rounded-full bg-[#8f7bff]/60 [animation-duration:1.6s]" />
         <span className="relative size-2 rounded-full bg-[#8f7bff]" />
       </span>
-      {/* in a narrow frame the status gives way first, then the time */}
-      <span key={status} className="rise-in min-w-0 shrink-[100] truncate">
+      {/* in a narrow frame the status gives way (a few letters of it say nothing); the time
+          left always reads whole */}
+      <span key={status} className="rise-in hidden min-w-0 truncate @[210px]:block">
         {status}
       </span>
-      <span className="min-w-0 truncate text-white/60 tabular-nums">{left}</span>
+      <span className="shrink-0 text-white/60 tabular-nums @max-[209px]:text-white/85">{left}</span>
       <button
         type="button"
         aria-label="Cover the preview until Luca is done"

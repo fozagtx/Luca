@@ -128,7 +128,7 @@ export function ExportSheet(): ReactElement {
         <div className="text-[11px] text-text-3">
           {/* no worker count: main picks it from this Mac's cores and memory as the render starts */}
           Format MP4 (H.264, VideoToolbox)
-          {freeMB !== null ? ` · ${Math.round(freeMB / 1024)} GB memory` : ''}
+          {freeMB !== null ? ` · ${Math.round(freeMB / 1024)} GB of memory free` : ''}
         </div>
         {running ? (
           <div className="rounded-[6px] bg-bg-muted px-3 py-2 text-[12px] text-text-2">
@@ -174,6 +174,8 @@ export function ExportBar(): ReactElement | null {
     []
   )
   if (!p || dismissed) return null
+  // on Home, App's toast says how an export ended
+  if (!hasProject && p.status !== 'running') return null
   if (p.status === 'running') {
     const progress = Number.isFinite(p.progress) ? Math.max(0, Math.min(1, p.progress)) : 0
     return (
@@ -238,7 +240,7 @@ export function ExportBar(): ReactElement | null {
           Reveal in Finder
         </Button>
       ) : null}
-      {p.status !== 'done' && hasProject ? (
+      {p.status !== 'done' ? (
         <Button size="sm" variant="ghost" onClick={() => setExport(true)}>
           Export again
         </Button>

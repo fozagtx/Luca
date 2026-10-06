@@ -584,7 +584,7 @@ const APPROVAL_MODES: { mode: ApprovalMode; title: string; body: string }[] = [
   {
     mode: 'full',
     title: 'Full access',
-    body: 'Every step runs without asking. Edits still stay inside the project folder and media/ and renders/ stay untouched.'
+    body: 'Every step runs without asking. Luca still only edits inside the project folder, and never changes your media or renders.'
   }
 ]
 
@@ -613,7 +613,7 @@ function ApprovalsPill({ disabled }: { disabled: boolean }): ReactElement {
       </Tip>
       <Menu.Portal>
         <Menu.Positioner side="top" align="start" sideOffset={6} className="z-50">
-          <Menu.Popup className="tip-popup min-w-[280px] rounded-[10px] border border-border bg-bg p-1 shadow-popover outline-none">
+          <Menu.Popup className="tip-popup w-[300px] rounded-[10px] border border-border bg-bg p-1 shadow-popover outline-none">
             <div className="px-2.5 pt-1.5 pb-1 text-[11px] text-text-3">
               How should Luca’s steps be approved?
             </div>

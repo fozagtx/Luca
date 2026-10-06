@@ -747,6 +747,8 @@ const Strip = memo(function Strip({
           decoding="async"
           draggable={false}
           alt=""
+          // a frame that isn't there (yet) leaves the strip's own background, not a broken image
+          onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
         />
       )
     }

@@ -33,6 +33,7 @@ export function Chat(): ReactElement {
   useEffect(() => {
     void load()
   }, [projectDir, load])
+  const setup = state === 'needs-login' || state === 'missing-claude'
 
   return (
     <section className="flex h-full flex-col bg-panel">
@@ -44,13 +45,13 @@ export function Chat(): ReactElement {
           {state === 'error' && projectDir ? <RestartButton /> : null}
         </div>
       </header>
-      {state === 'needs-login' || state === 'missing-claude' ? (
+      {setup ? (
         // pinned above the conversation so it stays in view however long the chat is
         <div className="shrink-0 px-3.5 pt-3">
           <Onboarding state={state} detail={detail} />
         </div>
       ) : null}
-      <Messages messages={messages} disabled={!projectDir} />
+      <Messages messages={messages} disabled={!projectDir} setup={setup} />
       <QueueTray />
       <Composer noProject={!projectDir} />
     </section>
@@ -119,10 +120,13 @@ function RestartButton(): ReactElement {
 
 function Messages({
   messages,
-  disabled
+  disabled,
+  setup
 }: {
   messages: ChatMessage[]
   disabled: boolean
+  /** The setup card is up: it already introduces Luca. */
+  setup: boolean
 }): ReactElement {
   const working = useChat((s) => s.state === 'working')
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom()
@@ -152,7 +156,9 @@ function Messages({
           ref={contentRef}
           className={cn('flex min-h-full flex-col px-3 pb-4', empty && 'justify-center')}
         >
-          <LucaProfile compact={!empty} live={working} />
+          {/* an empty chat under the setup card would push Luca's face out of sight on a
+              short window (the card's tiles already show it) */}
+          {empty && setup ? null : <LucaProfile compact={!empty} live={working} />}
           {empty ? (
             <div className="mx-auto w-full max-w-[340px] pt-1">
               <Suggestions start={disabled} />

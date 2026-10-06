@@ -73,7 +73,16 @@ const ARROW_STEP: Record<string, number> = {
  * White type straight on the moving gradient: a tight shadow for the letters' edges and a wide
  * one for the pale parts of the gradient, so it reads wherever the colours drift.
  */
-const ON_GRADIENT = 'text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.3),0_1px_14px_rgba(0,0,0,0.45)]'
+const ON_GRADIENT =
+  'text-white [text-shadow:0_1px_2px_rgba(11,6,48,0.45),0_0_10px_rgba(11,6,48,0.45),0_2px_24px_rgba(11,6,48,0.5)]'
+
+/**
+ * A soft dimmed patch behind a small label on the gradient (the pale glow drifts under the
+ * labels too, and their letters' own shadow is too small to carry them). It deepens whatever
+ * colour is there instead of laying grey over it, so it reads as part of the gradient.
+ */
+const SHADE =
+  'relative isolate before:pointer-events-none before:absolute before:-inset-x-8 before:-inset-y-4 before:-z-10 before:backdrop-brightness-[0.4] before:backdrop-saturate-[1.3] before:[mask-image:radial-gradient(closest-side,#000_30%,transparent)]'
 
 const TYPE_ICONS: Record<VideoTypeId, LucideIcon> = {
   launch: Rocket,
@@ -89,6 +98,12 @@ export function EmptyState(): ReactElement {
       <HomeGradient />
       {/* a light scrim keeps the gradient soft behind the cards; legibility is on the blocks */}
       <div aria-hidden className="pointer-events-none absolute inset-0 bg-bg/25" />
+      {/* dusk up top, where the white hero type sits: the pale glow drifts up there too, and
+          this keeps the top as deep as the gradient means it to be (blue up top, glow low) */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[320px] bg-[linear-gradient(to_bottom,rgba(11,6,48,0.5),rgba(11,6,48,0.52)_60%,rgba(11,6,48,0.3)_80%,transparent)]"
+      />
       <div className="scroll relative h-full">
         <div className="flex min-h-full flex-col items-center px-8">
           {/* top-aligned: opening the form or switching a style never re-centers the card */}
@@ -152,13 +167,8 @@ function StartCard(): ReactElement {
   return (
     // isolate: the glow while the project starts sits behind the card
     <section className="isolate flex flex-col items-center gap-6">
-      {/* the hero sits straight on the gradient: white type with a soft shadow reads in both themes */}
+      {/* the hero sits straight on the gradient, on the dusk up top: white type reads in both themes */}
       <div className="relative flex w-full flex-col items-center gap-3 pt-2 text-center">
-        {/* a soft shade under the words: the pale end of the gradient drifts behind them too */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -inset-x-10 -top-6 -bottom-4 -z-10 bg-[radial-gradient(closest-side,rgba(0,0,0,0.3),transparent)]"
-        />
         <img
           src={logo}
           alt=""
@@ -722,8 +732,8 @@ function Recent(): ReactElement | null {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between px-2 py-1">
-        <h2 className={cn('text-[13px] font-semibold', ON_GRADIENT)}>Recent</h2>
-        <span className={cn('text-[11px] font-medium', ON_GRADIENT)}>
+        <h2 className={cn('text-[13px] font-semibold', SHADE, ON_GRADIENT)}>Recent</h2>
+        <span className={cn('text-[11px] font-medium', SHADE, ON_GRADIENT)}>
           {recent.length} project{recent.length === 1 ? '' : 's'}
         </span>
       </div>

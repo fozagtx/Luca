@@ -27,13 +27,15 @@ export function CopyImageButton({
   label?: boolean
   className?: string
 }): ReactElement {
-  const [copied, setCopied] = useState(false)
+  // the picture that was copied: stepping to the next one in the viewer doesn't say "Copied"
+  const [copiedSrc, setCopiedSrc] = useState<string | null>(null)
+  const copied = copiedSrc === src
   const copy = (e: MouseEvent): void => {
     e.stopPropagation()
     copyImage(src).then(
       () => {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1400)
+        setCopiedSrc(src)
+        setTimeout(() => setCopiedSrc((c) => (c === src ? null : c)), 1400)
       },
       () => toast('Luca couldn’t copy this image')
     )

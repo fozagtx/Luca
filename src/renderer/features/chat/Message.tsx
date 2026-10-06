@@ -427,8 +427,10 @@ export function AssistantMessage({
       {groups.map((g, i) => {
         if (g.kind === 'steps')
           return (
+            // keyed by its first step: a step main drops mid-turn can't shift which group
+            // keeps which open state
             <Steps
-              key={i}
+              key={g.parts[0].id}
               parts={g.parts}
               live={!!m.pending}
               stopped={!!m.stopped}

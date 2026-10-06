@@ -136,7 +136,7 @@ export default function App(): ReactElement {
     ui.setGoto(false)
     usePlayer.getState().toggleGrab(false)
   }, [hasProject, setSidebar])
-  // Home has no export bar: an export still running from the project just closed says when it ends
+  // on Home the export bar shows only while it runs: an export that ends there says so here
   useEffect(
     () =>
       luca.export.onProgress((p) => {
@@ -184,10 +184,8 @@ export default function App(): ReactElement {
     <TooltipProvider>
       <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg text-text">
         <Toolbar />
-        {/* kept mounted on Home (only hidden) so an export that is still running keeps its progress */}
-        <div className={hasProject ? 'contents' : 'hidden'}>
-          <ExportBar />
-        </div>
+        {/* on Home too: an export still running from the project just closed keeps its bar and Cancel */}
+        <ExportBar />
         {settings ? (
           <Group
             elementRef={outerEl}
@@ -211,6 +209,8 @@ export default function App(): ReactElement {
               defaultSize={sidebarOpen ? 280 : 0}
               minSize={232}
               maxSize={420}
+              // folded away it stays mounted: inert keeps Tab out of what can't be seen
+              inert={!sidebarOpen}
               className={cn('panel', !sidebarOpen && 'panel-collapsed')}
             >
               <Sidebar />
@@ -274,6 +274,7 @@ export default function App(): ReactElement {
               defaultSize={368}
               minSize={308}
               maxSize={540}
+              inert={!chatOpen}
               className={cn('panel', !chatOpen && 'panel-collapsed')}
             >
               <ErrorBoundary label="the chat">

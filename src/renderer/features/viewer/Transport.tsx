@@ -40,6 +40,9 @@ export function Transport(): ReactElement {
   // the player's length is 0 until the preview is ready; the timeline knows it sooner
   const timelineDuration = useTimeline((s) => s.timeline?.duration ?? 0)
   const length = Math.max(duration, timelineDuration)
+  // zoom as people read it: 100% is the whole video fitting the timeline (as Zoom to Fit does)
+  const viewportWidth = useTimeline((s) => s.viewportWidth)
+  const fit = viewportWidth > 24 && length > 0 ? (viewportWidth - 24) / length : 0
 
   return (
     <div className="@container grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-t border-border bg-panel px-3">
@@ -152,8 +155,11 @@ export function Transport(): ReactElement {
             <Minus size={14} strokeWidth={1.75} />
           </Button>
         </Tip>
-        <span className="hidden w-12 text-center font-mono text-[10px] tabular-nums text-text-3 @[560px]:inline">
-          {zoom < 10 ? zoom.toFixed(1) : Math.round(zoom)}px/s
+        <span
+          title="Zoom: 100% fits the whole video"
+          className="hidden w-12 text-center font-mono text-[10px] tabular-nums text-text-3 @[560px]:inline"
+        >
+          {fit ? `${Math.round((zoom / fit) * 100)}%` : null}
         </span>
         <Tip label="Zoom in" shortcut="⌘+">
           <Button

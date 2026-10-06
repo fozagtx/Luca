@@ -18,6 +18,9 @@ function relative(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+/** A checkpoint's message as people know it: Luca's own edits were saved as "Claude: …" before. */
+const labelOf = (message: string): string => message.replace(/^Claude: /, 'Luca: ')
+
 export function HistoryPopover(): ReactElement {
   const projectDir = useProject((s) => s.project?.dir ?? null)
   const open = useUi((s) => s.historyOpen)
@@ -69,7 +72,7 @@ export function HistoryPopover(): ReactElement {
     try {
       await luca.history.restore(c.sha)
       // restoring adds a version on top, so it can be undone like any other change
-      toast(`Restored “${c.message}”`, {
+      toast(`Restored “${labelOf(c.message)}”`, {
         action: undoAction
       })
     } catch (err) {
@@ -136,8 +139,8 @@ export function HistoryPopover(): ReactElement {
                       )}
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[12px] text-text" title={c.message}>
-                        {c.message}
+                      <div className="truncate text-[12px] text-text" title={labelOf(c.message)}>
+                        {labelOf(c.message)}
                       </div>
                       <div className="text-[11px] text-text-3">
                         {relative(c.date)} · {c.files} file{c.files === 1 ? '' : 's'} ·{' '}
@@ -155,7 +158,7 @@ export function HistoryPopover(): ReactElement {
                         )}
                         disabled={busy !== null}
                         loading={busy === c.sha}
-                        aria-label={`Restore “${c.message}”`}
+                        aria-label={`Restore “${labelOf(c.message)}”`}
                         onClick={() => void restore(c)}
                       >
                         {busy === c.sha ? null : <RotateCcw size={12} />}

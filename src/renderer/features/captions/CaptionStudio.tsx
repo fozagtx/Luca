@@ -371,7 +371,16 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="overflow-hidden rounded-[12px] ring-1 ring-border">
+      {/* a portrait video previews in a frame of its own shape, so lines wrap and sit (and
+          read at the size) they will in the video; its poster softly fills the sides */}
+      <div className="relative flex justify-center overflow-hidden rounded-[12px] bg-[#111] ring-1 ring-border">
+        {portrait && poster ? (
+          <div
+            aria-hidden
+            className="absolute inset-0 scale-110 bg-cover bg-center opacity-40 blur-2xl"
+            style={{ backgroundImage: `url(${poster})` }}
+          />
+        ) : null}
         <CaptionPreview
           cfg={cfg}
           faces={faces}
@@ -379,6 +388,7 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
           height={portrait ? 280 : 208}
           portrait={portrait}
           background={poster}
+          className={portrait ? 'aspect-[9/16] shadow-[0_0_24px_rgba(0,0,0,0.35)]' : 'w-full'}
         />
       </div>
 

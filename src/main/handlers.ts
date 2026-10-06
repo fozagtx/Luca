@@ -167,7 +167,7 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     if (e.isError && !e.stopped) return
     followCaptions(p)
     followFonts(p)
-    checkpoint(p.dir, 'Claude: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72)).catch(
+    checkpoint(p.dir, 'Luca: ' + (activeAgent()?.lastUserText() ?? 'edit').slice(0, 72)).catch(
       warnCheckpoint
     )
     // projects without a source video take their thumbnail from the composition itself
