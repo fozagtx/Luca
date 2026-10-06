@@ -14,6 +14,7 @@ import { cn } from '../../lib/cn'
 import { useElapsed } from '../../lib/elapsed'
 import { useChat } from '../../stores/chat'
 import { progressOf, secondsLeft, timeLeftLabel, useMaking, type Making } from '../../stores/making'
+import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
 import { activityOf, lowerFirst, nowOf, type ToolPart } from '../chat/activity'
@@ -30,6 +31,8 @@ export function MakingOverlay(): ReactElement {
   const projectId = useProject((s) => s.project?.id)
   const working = useChat((s) => s.state === 'working')
   const making = useMaking((s) => (s.making?.projectId === projectId ? s.making : null))
+  // a frame grabbed while Luca works mustn't carry the light around its edges
+  const grab = usePlayer((s) => s.grab)
   return (
     <div className="pointer-events-none absolute inset-0 z-30 rounded-[4px]">
       <AnimatePresence>
@@ -59,7 +62,7 @@ export function MakingOverlay(): ReactElement {
         ) : null}
       </AnimatePresence>
       {/* last, so the light runs over the veil too */}
-      <EdgeGlow inset on={working || !!making} strong={!!making} />
+      <EdgeGlow inset on={(working || !!making) && !grab} strong={!!making} />
     </div>
   )
 }

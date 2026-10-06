@@ -32,6 +32,12 @@ const inOverlay = (t: EventTarget | null): boolean =>
 
 const hasProject = (): boolean => !!useProject.getState().project
 
+/** Zoom to Fit: the timeline knows the length before the preview has loaded. */
+function zoomToFit(): void {
+  const tl = useTimeline.getState()
+  tl.zoomToFit(Math.max(usePlayer.getState().duration, tl.timeline?.duration ?? 0, 1))
+}
+
 /** Open the chat if it's hidden and put the caret in the message box. */
 async function focusChat(): Promise<void> {
   const ui = useUi.getState()
@@ -139,7 +145,7 @@ function onProject(cmd: string, arg: unknown): void {
       useTimeline.getState().zoomBy(0.8)
       break
     case 'zoom-fit':
-      useTimeline.getState().zoomToFit(Math.max(player.duration, 1))
+      zoomToFit()
       break
     case 'history':
       ui.setHistory(!ui.historyOpen)
@@ -202,6 +208,18 @@ export function useShortcuts(): void {
         return
       }
       if (isEditable(e.target) || inOverlay(e.target)) return
+      // a sheet or popover is open (focus can sit outside it, on its backdrop): its keys
+      // aren't the video's either
+      if (
+        ui.exportOpen ||
+        ui.captionsOpen ||
+        ui.colorOpen ||
+        ui.gotoOpen ||
+        ui.paletteOpen ||
+        ui.shortcutsOpen ||
+        ui.historyOpen
+      )
+        return
       // Home has no video or timeline: there only the chat and this list answer to keys, and
       // Space or the arrows keep doing what they do for the focused button or the page
       const project = hasProject()
@@ -217,7 +235,7 @@ export function useShortcuts(): void {
         } else if (e.key === '0') {
           // the same as View → Zoom to Fit and the timeline's own button
           e.preventDefault()
-          tl.zoomToFit(Math.max(player.duration, 1))
+          zoomToFit()
         }
         return
       }
