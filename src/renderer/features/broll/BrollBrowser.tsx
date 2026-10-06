@@ -244,7 +244,7 @@ function Card({
             'absolute top-1 right-1 flex size-6 items-center justify-center rounded-full shadow-sm transition-[opacity,transform] duration-150',
             picked
               ? 'bg-accent text-accent-fg'
-              : 'scale-90 bg-white/90 text-[#111] opacity-0 group-hover:scale-100 group-hover:opacity-100'
+              : 'scale-90 bg-white/90 text-[#111] opacity-0 group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100'
           )}
         >
           {picked ? <Check size={13} strokeWidth={2.5} /> : <Plus size={13} strokeWidth={2.25} />}

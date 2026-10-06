@@ -33,7 +33,7 @@ import { Segmented } from '../../components/ui/segmented'
 import { Sheet } from '../../components/ui/sheet'
 import { cn } from '../../lib/cn'
 import { luca } from '../../lib/luca'
-import { errorMessage, useProject } from '../../stores/project'
+import { errorMessage, undoAction, useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
 import { CaptionPreview } from './CaptionPreview'
 import { ensurePreviewFont, useSampleGroups } from './preview-lib'
@@ -80,6 +80,9 @@ export function CaptionStudio(): ReactElement {
   const open = useUi((s) => s.captionsOpen)
   const setOpen = useUi((s) => s.setCaptions)
   const project = useProject((s) => s.project)
+  // closing or switching the project closes it, so it doesn't pop open over the next one
+  const projectId = project?.id ?? null
+  useEffect(() => useUi.getState().setCaptions(false), [projectId])
   return (
     <Sheet
       open={open && !!project}
@@ -105,9 +108,12 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [link, setLink] = useState('')
   const [customOpen, setCustomOpen] = useState<boolean | null>(null)
+  const [starting, setStarting] = useState(false)
   const portrait = isPortrait(project.aspect)
   const poster = recent.find((r) => r.dir === project.dir)?.thumb ?? null
 
+  /** Bumped by "Try again" after the first load failed. */
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let live = true
     void Promise.all([luca.captions.state(), luca.captions.words()])
@@ -121,9 +127,21 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
     return () => {
       live = false
     }
-  }, [version])
+  }, [version, attempt])
 
-  useEffect(() => luca.clean.onStatus(setClean), [])
+  // a transcription already running when the sheet opens shows as one, not as a Transcribe button
+  useEffect(() => {
+    let live = true
+    void luca.clean
+      .status()
+      .then((s) => live && setClean((c) => c ?? s))
+      .catch(() => undefined)
+    const off = luca.clean.onStatus(setClean)
+    return () => {
+      live = false
+      off()
+    }
+  }, [])
 
   // every preview font, loaded once
   useEffect(() => {
@@ -163,7 +181,7 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
       const { lines } = await luca.captions.apply(cfg)
       toast(`Captions on the timeline · ${lines} lines`, {
         description: `${captionStyle(cfg.style).name}${cfg.overrides ? ', customized,' : ''} in ${cfg.font}`,
-        action: { label: 'Undo', onClick: () => void luca.history.undo() }
+        action: undoAction
       })
       onDone()
     } catch (e) {
@@ -174,10 +192,11 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
   }
   const remove = async (): Promise<void> => {
     setBusy('remove')
+    setError(null)
     try {
       await luca.captions.remove()
       toast('Captions removed', {
-        action: { label: 'Undo', onClick: () => void luca.history.undo() }
+        action: undoAction
       })
       onDone()
     } catch (e) {
@@ -188,6 +207,7 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
   }
   const addFont = async (): Promise<void> => {
     setBusy('font')
+    setError(null)
     try {
       const before = new Set(state?.fonts.map((f) => f.family))
       const fonts = await luca.captions.addFonts()
@@ -227,6 +247,25 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
       setBusy(null)
     }
   }
+
+  // nothing to show yet, and nothing coming: say why instead of loading forever
+  if ((!cfg || !state || words === null) && error)
+    return (
+      <div className="flex flex-col items-center gap-3 px-6 py-8 text-center">
+        <div className="text-[14px] font-semibold text-text">Captions didn’t open</div>
+        <p className="max-w-[420px] text-[12.5px] leading-[1.55] text-text-2 select-text">
+          {error}
+        </p>
+        <Button
+          onClick={() => {
+            setError(null)
+            setAttempt((n) => n + 1)
+          }}
+        >
+          Try again
+        </Button>
+      </div>
+    )
 
   if (!cfg || !state || words === null)
     return (
@@ -280,8 +319,18 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
             </p>
             <GenerateButton
               label="Transcribe now"
-              generatingLabel="Transcribing"
-              onClick={() => void luca.clean.transcribe().catch((e) => setError(errorMessage(e)))}
+              generatingLabel="Starting"
+              generating={starting}
+              disabled={starting}
+              onClick={() => {
+                // until the first progress comes back, so a second click doesn't start another
+                setStarting(true)
+                setError(null)
+                void luca.clean
+                  .transcribe()
+                  .catch((e) => setError(errorMessage(e)))
+                  .finally(() => setStarting(false))
+              }}
             />
           </>
         )}
@@ -350,7 +399,7 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
                 onClick={() => setCfg(configFor(s.id, { ...cfg, accent: undefined }))}
                 style={{ animationDelay: `${i * 25}ms` }}
                 className={cn(
-                  'rise-in group overflow-hidden rounded-[10px] bg-bg text-left ring-1 transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5',
+                  'rise-in group flex flex-col overflow-hidden rounded-[10px] bg-bg text-left ring-1 transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5',
                   on
                     ? 'shadow-[0_0_0_2px_var(--accent)] ring-transparent'
                     : 'ring-border hover:ring-border-strong'
@@ -672,7 +721,9 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
                   ariaLabel="Weight"
                 />
               ) : (
-                <span className="text-[11px] text-text-3">{cfg.font} comes in one weight</span>
+                <span className="max-w-full truncate text-[11px] text-text-3">
+                  {cfg.font} comes in one weight
+                </span>
               )}
             </Row>
           </>
@@ -685,7 +736,8 @@ function Studio({ onDone }: { onDone: () => void }): ReactElement {
         </div>
       ) : null}
 
-      <div className="-mx-5 flex items-center gap-2 border-t border-border px-5 pt-3">
+      {/* stays in view while the styles and options scroll: the way out is always on screen */}
+      <div className="sticky -bottom-4 z-10 -mx-5 -mb-4 flex items-center gap-2 border-t border-border bg-bg px-5 pt-3 pb-4">
         {state.applied ? (
           <Button variant="ghost" onClick={() => void remove()} loading={busy === 'remove'}>
             <Trash2 size={13} /> Remove captions

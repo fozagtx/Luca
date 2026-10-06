@@ -6,7 +6,7 @@ import { BUNDLED_LUTS } from '../../../shared/luts'
 import { Sheet } from '../../components/ui/sheet'
 import { cn } from '../../lib/cn'
 import { luca } from '../../lib/luca'
-import { errorMessage, useProject } from '../../stores/project'
+import { errorMessage, undoAction, useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
 import { gradePoster, loadLut } from './preview-lut'
 
@@ -19,6 +19,9 @@ export function ColorStudio(): ReactElement {
   const open = useUi((s) => s.colorOpen)
   const setOpen = useUi((s) => s.setColor)
   const project = useProject((s) => s.project)
+  // closing or switching the project closes it, so it doesn't pop open over the next one
+  const projectId = project?.id ?? null
+  useEffect(() => useUi.getState().setColor(false), [projectId])
   return (
     <Sheet
       open={open && !!project}
@@ -108,6 +111,9 @@ function Studio(): ReactElement {
   }
 
   const pick = (lut: string | null): void => {
+    // picking what is already on the footage changes nothing: no new version, no toast
+    const on = state?.grade ?? null
+    if (lut === null ? !on : on?.lut === lut && Math.round(on.intensity * 100) === intensity) return
     if (lut === null) {
       void luca.color
         .remove()
@@ -115,7 +121,7 @@ function Studio(): ReactElement {
           setState(s)
           setSelected(null)
           toast('Color grade removed', {
-            action: { label: 'Undo', onClick: () => void luca.history.undo() }
+            action: undoAction
           })
         })
         .catch((e) => setError(errorMessage(e)))
@@ -124,7 +130,7 @@ function Studio(): ReactElement {
     const name = BUNDLED_LUTS.find((l) => l.id === lut)?.name ?? lut
     void apply(lut, intensity).then(() =>
       toast(`${name} on your footage · ${intensity}%`, {
-        action: { label: 'Undo', onClick: () => void luca.history.undo() }
+        action: undoAction
       })
     )
   }
@@ -138,8 +144,15 @@ function Studio(): ReactElement {
 
   const commitSlide = (value: number): void => {
     if (debounce.current) clearTimeout(debounce.current)
+    debounce.current = null
     if (selected) void apply(selected, value, true)
   }
+  useEffect(
+    () => () => {
+      if (debounce.current) clearTimeout(debounce.current)
+    },
+    []
+  )
 
   const empty = state !== null && state.targets === 0
 
@@ -161,7 +174,8 @@ function Studio(): ReactElement {
             <LutCard
               name="None"
               note="Original footage"
-              selected={selected === null}
+              // nothing is marked until the grade on the footage is known
+              selected={state !== null && selected === null}
               onClick={() => pick(null)}
             >
               {poster ? (
@@ -204,6 +218,10 @@ function Studio(): ReactElement {
             aria-label="Intensity"
             onChange={(e) => slide(Number(e.target.value))}
             onPointerUp={(e) => commitSlide(Number((e.target as HTMLInputElement).value))}
+            // the arrow keys and Page Up/Down move it too, and keep a version once let go
+            onKeyUp={(e) => {
+              if (debounce.current) commitSlide(Number((e.target as HTMLInputElement).value))
+            }}
             className="min-w-0 flex-1 accent-[var(--accent)] disabled:opacity-40"
           />
           <span className="w-9 text-right text-[12px] text-text-2 tabular-nums">{intensity}%</span>
@@ -240,7 +258,7 @@ function LutCard({
       type="button"
       onClick={onClick}
       className={cn(
-        'rise-in group overflow-hidden rounded-[10px] bg-bg text-left ring-1 transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5',
+        'rise-in group flex flex-col overflow-hidden rounded-[10px] bg-bg text-left ring-1 transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5',
         selected
           ? 'shadow-[0_0_0_2px_var(--accent)] ring-transparent'
           : 'ring-border hover:ring-border-strong'

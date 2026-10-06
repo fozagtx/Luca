@@ -1,9 +1,9 @@
 import type { Clip } from '@shared/types'
 import { toast } from 'sonner'
-import { luca } from '../../lib/luca'
 import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
 import { usePlayer } from '../../stores/player'
+import { undoAction } from '../../stores/project'
 import { useTimeline } from '../../stores/timeline'
 import { useUi } from '../../stores/ui'
 
@@ -42,29 +42,37 @@ export function linkedAudio(c: Clip): Clip | null {
   return null
 }
 
-const undo = { label: 'Undo', onClick: () => void luca.history.undo() }
+/** A locked track keeps its clips as they are, whichever way the edit was asked for. */
+function refuseLocked(c: Clip): boolean {
+  if (!useTimeline.getState().locked.includes(c.track)) return false
+  toast('This track is locked', { description: 'Unlock it in the timeline to edit its clips.' })
+  return true
+}
 
 export async function deleteClip(c: Clip): Promise<void> {
+  if (refuseLocked(c)) return
   const audio = linkedAudio(c)
   const tl = useTimeline.getState()
   if (tl.selected === c.ref) tl.select(null)
   const ok = await tl.edit({ op: 'delete', ref: c.ref, ...(audio ? { with: [audio.ref] } : {}) })
   if (ok)
     toast(audio ? `Deleted ${clipName(c)} and its audio` : `Deleted ${clipName(c)}`, {
-      action: undo
+      action: undoAction
     })
 }
 
 export async function splitClip(c: Clip, at = usePlayer.getState().currentTime): Promise<void> {
+  if (refuseLocked(c)) return
   if (at <= c.start + 0.05 || at >= c.end - 0.05) {
     toast('Move the playhead inside the clip to split it')
     return
   }
   if (await useTimeline.getState().edit({ op: 'split', ref: c.ref, time: at }))
-    toast(`Split ${clipName(c)} at ${clock(at)}`, { action: undo })
+    toast(`Split ${clipName(c)} at ${clock(at)}`, { action: undoAction })
 }
 
 export async function trimToPlayhead(c: Clip, side: 'start' | 'end'): Promise<void> {
+  if (refuseLocked(c)) return
   const at = usePlayer.getState().currentTime
   if (at <= c.start + 0.05 || at >= c.end - 0.05) {
     toast('Move the playhead inside the clip to trim it')
@@ -75,7 +83,7 @@ export async function trimToPlayhead(c: Clip, side: 'start' | 'end'): Promise<vo
     .edit(
       side === 'start' ? { op: 'trim', ref: c.ref, start: at } : { op: 'trim', ref: c.ref, end: at }
     )
-  if (ok) toast(`Trimmed the ${side} of ${clipName(c)}`, { action: undo })
+  if (ok) toast(`Trimmed the ${side} of ${clipName(c)}`, { action: undoAction })
 }
 
 export function clipToChat(c: Clip): void {

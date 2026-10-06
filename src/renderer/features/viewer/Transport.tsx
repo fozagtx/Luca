@@ -16,7 +16,7 @@ import { Button } from '../../components/ui/button'
 import { Tip } from '../../components/ui/tooltip'
 import { timecode } from '../../lib/timecode'
 import { usePlayer } from '../../stores/player'
-import { useTimeline } from '../../stores/timeline'
+import { MAX_ZOOM, MIN_ZOOM, useTimeline } from '../../stores/timeline'
 import { useUi } from '../../stores/ui'
 import { PlayheadTimecode } from './PlayheadTimecode'
 
@@ -37,9 +37,12 @@ export function Transport(): ReactElement {
   const zoomBy = useTimeline((s) => s.zoomBy)
   const zoomToFit = useTimeline((s) => s.zoomToFit)
   const hasTimeline = useTimeline((s) => s.timeline !== null)
+  // the player's length is 0 until the preview is ready; the timeline knows it sooner
+  const timelineDuration = useTimeline((s) => s.timeline?.duration ?? 0)
+  const length = Math.max(duration, timelineDuration)
 
   return (
-    <div className="grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-t border-border bg-panel px-3">
+    <div className="@container grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-t border-border bg-panel px-3">
       <div className="flex items-center gap-1">
         <Tip label={muted ? 'Unmute' : 'Mute'} shortcut="M">
           <Button variant="icon" onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
@@ -131,7 +134,10 @@ export function Transport(): ReactElement {
               <PlayheadTimecode />
             </button>
           </Tip>
-          <span className="timecode text-text-3">/ {timecode(duration, fps)}</span>
+          {/* a narrow centre column keeps the playhead and drops the length */}
+          <span className="timecode hidden text-text-3 @[620px]:inline">
+            / {timecode(length, fps)}
+          </span>
         </div>
       </div>
 
@@ -139,20 +145,20 @@ export function Transport(): ReactElement {
         <Tip label="Zoom out" shortcut="⌘−">
           <Button
             variant="icon"
-            disabled={!hasTimeline}
+            disabled={!hasTimeline || zoom <= MIN_ZOOM}
             onClick={() => zoomBy(0.8)}
             aria-label="Zoom out"
           >
             <Minus size={14} strokeWidth={1.75} />
           </Button>
         </Tip>
-        <span className="w-12 text-center font-mono text-[10px] tabular-nums text-text-3">
-          {Math.round(zoom)}px/s
+        <span className="hidden w-12 text-center font-mono text-[10px] tabular-nums text-text-3 @[560px]:inline">
+          {zoom < 10 ? zoom.toFixed(1) : Math.round(zoom)}px/s
         </span>
         <Tip label="Zoom in" shortcut="⌘+">
           <Button
             variant="icon"
-            disabled={!hasTimeline}
+            disabled={!hasTimeline || zoom >= MAX_ZOOM}
             onClick={() => zoomBy(1.25)}
             aria-label="Zoom in"
           >
@@ -162,8 +168,8 @@ export function Transport(): ReactElement {
         <Tip label="Zoom to fit" shortcut="⌘0">
           <Button
             variant="icon"
-            disabled={!hasTimeline}
-            onClick={() => zoomToFit(duration)}
+            disabled={!hasTimeline || length <= 0}
+            onClick={() => zoomToFit(length)}
             aria-label="Zoom to fit"
           >
             <Maximize2 size={14} strokeWidth={1.5} />

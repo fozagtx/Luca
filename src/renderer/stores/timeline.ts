@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type { Clip, Timeline, TimelineEdit } from '../../shared/types'
 import { luca } from '../lib/luca'
+import { usePlayer } from './player'
+import { errorMessage } from './project'
 
 /** A clip being moved or trimmed right now, for the live readout in the timeline header. */
 export type TimelineDrag = { ref: string; mode: 'move' | 'trim'; start: number; end: number }
@@ -39,9 +41,13 @@ export type Thumbs = { dir: string; count: number; interval: number }
 export type Peaks = { peaksPerSecond: number; peaks: number[] }
 
 let loadSeq = 0
-/** Bumped on reset so frames of the previous project never land in the next one. */
+/** Bumped on reset so frames, peaks and edit results of the previous project never land in the next one. */
 let mediaSeq = 0
 const requested = new Set<string>()
+
+/** Pixels per second, from a whole long video at a glance to single frames. */
+export const MIN_ZOOM = 0.5
+export const MAX_ZOOM = 600
 
 export const useTimeline = create<TimelineStore>((set, get) => ({
   timeline: null,
@@ -65,10 +71,15 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
     try {
       const t = await luca.timeline.get()
       if (seq !== loadSeq) return
-      set({ timeline: t, loading: false, error: null })
+      // a clip Luca removed (or split into new ones) can't stay selected
+      const sel = get().selected
+      const kept = sel && t.tracks.some((tr) => tr.clips.some((c) => c.ref === sel)) ? sel : null
+      set({ timeline: t, loading: false, error: null, selected: kept })
+      // timecodes and frame steps follow the composition's frame rate (whole frames)
+      if (t.fps > 0) usePlayer.getState().setFps(Math.max(1, Math.round(t.fps)))
     } catch (err) {
       if (seq !== loadSeq) return
-      set({ loading: false, error: err instanceof Error ? err.message : String(err) })
+      set({ loading: false, error: errorMessage(err) })
     }
   },
   loadMedia: async ({ video, audio }) => {
@@ -101,10 +112,19 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
     loadSeq++
     mediaSeq++
     requested.clear()
-    set({ timeline: null, thumbs: {}, peaks: {}, selected: null, error: null, locked: [] })
+    set({
+      timeline: null,
+      loading: false,
+      thumbs: {},
+      peaks: {},
+      selected: null,
+      error: null,
+      locked: [],
+      drag: null
+    })
   },
   select: (selected) => set({ selected }),
-  setZoom: (zoom) => set({ zoom: Math.min(600, Math.max(10, zoom)) }),
+  setZoom: (zoom) => set({ zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom)) }),
   zoomBy: (f) => get().setZoom(get().zoom * f),
   viewportWidth: 0,
   setViewportWidth: (viewportWidth) => set({ viewportWidth }),
@@ -116,6 +136,7 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   edit: async (e) => {
     const t = get().timeline
     if (!t) return false
+    const seq = mediaSeq
     const patch = (
       fn: (c: Clip) => Clip,
       refs = new Set(e.op === 'mute' || e.op === 'volume' ? e.refs : [e.ref])
@@ -141,10 +162,16 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
       }
     }
     if (optimistic) set({ timeline: optimistic })
-    const res = await luca.timeline.edit(e)
+    const res = await luca.timeline
+      .edit(e)
+      .catch((err: unknown) => ({ ok: false, error: errorMessage(err) }))
+    // another project opened meanwhile: this result is about the last one
+    if (seq !== mediaSeq) return false
     if (!res.ok) {
-      set({ timeline: t, error: res.error ?? 'Edit failed' })
-      setTimeout(() => set((s) => (s.error === res.error ? { error: null } : {})), 4000)
+      const error = res.error || 'That edit didn’t work'
+      // put the clips back, unless a newer timeline has replaced the guess since
+      set((s) => ({ error, ...(optimistic && s.timeline === optimistic ? { timeline: t } : {}) }))
+      setTimeout(() => set((s) => (s.error === error ? { error: null } : {})), 4000)
     }
     return res.ok
   }

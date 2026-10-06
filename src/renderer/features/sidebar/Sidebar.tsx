@@ -3,6 +3,7 @@ import type { ReactElement, ReactNode } from 'react'
 import { ErrorBoundary } from '../../components/ui/error-boundary'
 import { Segmented, type SegmentedItem } from '../../components/ui/segmented'
 import { Tip } from '../../components/ui/tooltip'
+import { useProject } from '../../stores/project'
 import { useUi, type SidebarTab } from '../../stores/ui'
 import { BrollTab } from './broll/BrollTab'
 import { LooksTab } from './looks/LooksTab'
@@ -58,6 +59,7 @@ export function PaneHead({
 
 export function Sidebar(): ReactElement {
   const tab = useUi((s) => s.tab)
+  const projectId = useProject((s) => s.project?.id ?? '')
   const setTab = useUi((s) => s.setTab)
   const setSidebar = useUi((s) => s.setSidebar)
   const title = tabs.find((t) => t.id === tab)?.title ?? tab
@@ -77,7 +79,8 @@ export function Sidebar(): ReactElement {
         </Tip>
       </div>
       <div className="min-h-0 flex-1 border-t border-border">
-        <ErrorBoundary key={tab} label={`the ${title} tab`}>
+        {/* keyed by project too: another project's tab starts fresh, with nothing of the last one */}
+        <ErrorBoundary key={`${tab}:${projectId}`} label={`the ${title} tab`}>
           {tab === 'transcript' && <TranscriptTab />}
           {tab === 'broll' && <BrollTab />}
           {tab === 'looks' && <LooksTab />}

@@ -1,6 +1,7 @@
 import type { Look } from '@shared/types'
 import { Check, CircleAlert, MoreHorizontal, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
+import { toast } from 'sonner'
 import { Button } from '../../../components/ui/button'
 import { GenerateButton } from '../../../components/ui/generate-button'
 import { Input } from '../../../components/ui/input'
@@ -13,6 +14,7 @@ import { PaneHead } from '../Sidebar'
 import { relativeDate } from '../../../lib/format'
 
 type LookCard = Look & { thumb: string | null }
+type Busy = { slug: string; what: 'apply' | 'update' | 'delete' }
 
 export function LooksTab(): ReactElement {
   const project = useProject((s) => s.project)
@@ -21,7 +23,9 @@ export function LooksTab(): ReactElement {
   const [saving, setSaving] = useState(false)
   const [naming, setNaming] = useState(false)
   const [name, setName] = useState('')
-  const [busy, setBusy] = useState<string | null>(null)
+  const [busy, setBusy] = useState<Busy | null>(null)
+  /** A Look asked to be deleted, waiting for a yes on its card (Looks can't be got back). */
+  const [confirming, setConfirming] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
@@ -29,34 +33,49 @@ export function LooksTab(): ReactElement {
     setLooks(l)
     setActive(a)
   }, [])
+  const reload = useCallback(() => load().catch((e: unknown) => setError(errorMessage(e))), [load])
   useEffect(() => {
-    const t = setTimeout(() => void load().catch((e) => setError(errorMessage(e))), 0)
+    const t = setTimeout(() => void reload(), 0)
     return () => clearTimeout(t)
-  }, [load, project])
+  }, [reload, project])
+
+  /** Apply, update or delete a Look; the list is re-read either way (a Look can half apply). */
+  const act = useCallback(
+    async (slug: string, what: Busy['what']): Promise<void> => {
+      const look = looks?.find((l) => l.slug === slug)
+      const label = look ? `“${look.name}”` : 'the Look'
+      setBusy({ slug, what })
+      setError(null)
+      setConfirming(null)
+      try {
+        if (what === 'apply') await luca.looks.apply(slug)
+        else if (what === 'update') {
+          await luca.looks.update(slug)
+          toast(`Updated ${label} from this project`)
+        } else {
+          await luca.looks.remove(slug)
+          toast(`Deleted ${label}`)
+        }
+      } catch (e) {
+        setError(errorMessage(e))
+      } finally {
+        setBusy(null)
+        await reload()
+      }
+    },
+    [reload, looks]
+  )
 
   useEffect(
     () =>
-      luca.menu.onCommand(async (cmd, arg) => {
+      luca.menu.onCommand((cmd, arg) => {
         const slug = typeof arg === 'string' ? arg : null
         if (!slug) return
-        try {
-          if (cmd === 'look-apply') {
-            setBusy(slug)
-            await luca.looks.apply(slug)
-          } else if (cmd === 'look-update') {
-            setBusy(slug)
-            await luca.looks.update(slug)
-          } else if (cmd === 'look-delete') {
-            await luca.looks.remove(slug)
-          } else return
-          await load()
-        } catch (e) {
-          setError(errorMessage(e))
-        } finally {
-          setBusy(null)
-        }
+        if (cmd === 'look-apply') void act(slug, 'apply')
+        else if (cmd === 'look-update') void act(slug, 'update')
+        else if (cmd === 'look-delete') setConfirming(slug)
       }),
-    [load]
+    [act]
   )
 
   const save = async (): Promise<void> => {
@@ -72,19 +91,6 @@ export function LooksTab(): ReactElement {
       setError(errorMessage(e))
     } finally {
       setSaving(false)
-    }
-  }
-
-  const apply = async (slug: string): Promise<void> => {
-    setBusy(slug)
-    setError(null)
-    try {
-      await luca.looks.apply(slug)
-      await load()
-    } catch (e) {
-      setError(errorMessage(e))
-    } finally {
-      setBusy(null)
     }
   }
 
@@ -144,7 +150,8 @@ export function LooksTab(): ReactElement {
               key={l.slug}
               className={cn(
                 'card card-hover group relative p-1.5',
-                active === l.slug && 'ring-2 ring-accent ring-offset-1 ring-offset-bg'
+                active === l.slug && 'ring-2 ring-accent ring-offset-1 ring-offset-bg',
+                confirming === l.slug && 'ring-2 ring-danger/60 ring-offset-1 ring-offset-bg'
               )}
               onContextMenu={(e) => {
                 e.preventDefault()
@@ -157,26 +164,54 @@ export function LooksTab(): ReactElement {
                     <Check size={10} strokeWidth={2.5} /> Active
                   </span>
                 ) : null}
+                {busy?.slug === l.slug && busy.what !== 'apply' ? (
+                  <span className="absolute inset-0 flex items-center justify-center gap-1.5 bg-black/45 text-[10.5px] font-medium text-white">
+                    <span className="btn-spinner" aria-hidden />
+                    {busy.what === 'update' ? 'Updating…' : 'Deleting…'}
+                  </span>
+                ) : null}
               </Thumb>
               <div className="flex items-center gap-1 px-1 pt-1.5 pb-1">
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[11.5px] font-medium text-text">{l.name}</div>
                   <div className="truncate text-[10px] text-text-3">
                     {relativeDate(l.createdAt)}
-                    {l.catalogItems.length > 0 && ` · ${l.catalogItems.length} items`}
+                    {l.catalogItems.length > 0 &&
+                      ` · ${l.catalogItems.length} item${l.catalogItems.length === 1 ? '' : 's'}`}
                   </div>
                 </div>
                 <Button
                   variant="icon"
                   className="h-6 w-6 shrink-0 text-text-3 hover:text-text"
+                  disabled={busy !== null}
                   onClick={() => void luca.menu.popupLook(l.slug)}
-                  aria-label="Look menu"
+                  aria-label={`More for ${l.name}`}
                 >
                   <MoreHorizontal size={13} />
                 </Button>
               </div>
               <div className="px-1 pb-1">
-                {active === l.slug ? (
+                {confirming === l.slug ? (
+                  <div className="flex gap-1" role="group" aria-label={`Delete ${l.name}?`}>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      className="flex-1"
+                      autoFocus
+                      onClick={() => void act(l.slug, 'delete')}
+                    >
+                      Delete
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setConfirming(null)}
+                      onKeyDown={(e) => e.key === 'Escape' && setConfirming(null)}
+                    >
+                      Keep
+                    </Button>
+                  </div>
+                ) : active === l.slug ? (
                   <Button variant="outline" size="sm" className="w-full" disabled>
                     Applied
                   </Button>
@@ -186,9 +221,9 @@ export function LooksTab(): ReactElement {
                     hue={210}
                     label="Apply Look"
                     generatingLabel="Applying"
-                    generating={busy === l.slug}
+                    generating={busy?.slug === l.slug && busy.what === 'apply'}
                     disabled={!project || busy !== null}
-                    onClick={() => void apply(l.slug)}
+                    onClick={() => void act(l.slug, 'apply')}
                     className="w-full"
                   />
                 )}

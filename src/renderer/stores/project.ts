@@ -1,4 +1,5 @@
 import type { ApprovalMode, Project, RecentProject, Settings } from '@shared/types'
+import { toast } from 'sonner'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
 
@@ -21,6 +22,11 @@ type ProjectStore = {
   setError: (e: string | null) => void
 }
 
+/** The broadcasts are listened to once, however often init runs (StrictMode runs effects twice). */
+let listening = false
+/** Counts project:opened broadcasts, so a slower read at start can't undo a newer one. */
+let openedCount = 0
+
 export const useProject = create<ProjectStore>((set, get) => ({
   project: null,
   recent: [],
@@ -32,31 +38,40 @@ export const useProject = create<ProjectStore>((set, get) => ({
   error: null,
 
   init: async () => {
+    // listen before asking, so a project opened meanwhile (from Finder, at launch) isn't missed
+    if (!listening) {
+      listening = true
+      luca.project.onOpened((p) => {
+        openedCount++
+        set({ project: p, version: 0, previewVersion: 0 })
+        void get().refreshRecent()
+      })
+      luca.project.onRecentChanged(() => void get().refreshRecent())
+      luca.project.onChanged((e) =>
+        set({
+          version: e.version,
+          changedPaths: e.paths,
+          ...(e.composition ? { previewVersion: e.version } : {})
+        })
+      )
+    }
+    const seen = openedCount
     const [project, recent, settings] = await Promise.all([
       luca.project.current(),
       luca.project.recent(),
       luca.settings.get()
     ])
-    set({ project, recent, settings })
-    luca.project.onOpened((p) => {
-      set({ project: p, version: 0, previewVersion: 0 })
-      void get().refreshRecent()
-    })
-    luca.project.onRecentChanged(() => void get().refreshRecent())
-    luca.project.onChanged((e) =>
-      set({
-        version: e.version,
-        changedPaths: e.paths,
-        ...(e.composition ? { previewVersion: e.version } : {})
-      })
-    )
+    set(openedCount === seen ? { project, recent, settings } : { recent, settings })
   },
 
   open: async (dir) => {
     set({ loading: true, error: null })
     try {
       const p = await luca.project.open(dir)
-      set({ project: p, version: 0, previewVersion: 0 })
+      // the broadcast usually got here first; changes since then keep their versions
+      set((s) =>
+        s.project?.id === p.id ? { project: p } : { project: p, version: 0, previewVersion: 0 }
+      )
     } catch (err) {
       set({ error: errorMessage(err) })
       throw err
@@ -79,4 +94,13 @@ export function errorMessage(err: unknown): string {
   const m = err instanceof Error ? err.message : String(err)
   // Electron prefixes IPC errors with "Error invoking remote method 'x': Error: "
   return m.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+}
+
+/** The Undo on a toast after an edit: takes back the last version, and says so if it can't. */
+export const undoAction = {
+  label: 'Undo',
+  onClick: (): void =>
+    void luca.history
+      .undo()
+      .catch((err: unknown) => toast.error('Couldn’t undo', { description: errorMessage(err) }))
 }

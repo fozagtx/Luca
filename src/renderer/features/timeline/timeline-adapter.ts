@@ -14,12 +14,15 @@ export type RowMeta = { kind: ClipKind | 'strip'; label: string; index: number }
  */
 export function toRows(
   t: Timeline,
-  duration: number
+  duration: number,
+  /** The Frames row: only when there is footage to show frames of. */
+  strip = true
 ): { rows: TimelineRow[]; meta: Map<string, RowMeta>; clips: Map<string, Clip> } {
   const meta = new Map<string, RowMeta>()
   const clips = new Map<string, Clip>()
-  const rows: TimelineRow[] = [
-    {
+  const rows: TimelineRow[] = []
+  if (strip) {
+    rows.push({
       id: STRIP_ROW,
       rowHeight: STRIP_HEIGHT,
       actions: [
@@ -32,9 +35,9 @@ export function toRows(
           flexible: false
         }
       ]
-    }
-  ]
-  meta.set(STRIP_ROW, { kind: 'strip', label: '', index: -1 })
+    })
+    meta.set(STRIP_ROW, { kind: 'strip', label: '', index: -1 })
+  }
   const order: Record<ClipKind, number> = { video: 0, block: 1, component: 1, caption: 2, audio: 3 }
   const tracks = [...t.tracks].sort((a, b) => order[a.kind] - order[b.kind] || a.index - b.index)
   for (const tr of tracks) {
@@ -72,7 +75,13 @@ export function rulerStep(pxPerSecond: number): { scale: number; splits: number 
     [10, 5],
     [15, 3],
     [30, 6],
-    [60, 6]
+    [60, 6],
+    // long videos zoomed out to fit
+    [120, 4],
+    [300, 5],
+    [600, 10],
+    [1800, 6],
+    [3600, 6]
   ]
   let best = steps[steps.length - 1]
   for (const s of steps) {

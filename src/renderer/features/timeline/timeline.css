@@ -26,6 +26,10 @@
   letter-spacing: -0.01em;
   transform: translate(50%, -110%);
 }
+/* the first label (0:00) starts at the edge instead of being cut in half by it */
+.timeline-editor-time-unit[style*='left: 0px'] .timeline-editor-time-unit-scale {
+  transform: translate(calc(100% - 6px), -110%);
+}
 .timeline-editor-edit-area {
   margin-top: 10px;
 }
@@ -288,6 +292,10 @@
 .luca-clip-locked {
   cursor: not-allowed;
   opacity: 0.75;
+}
+/* a locked clip can't be trimmed: no handles that say it can */
+.luca-clip-locked .luca-clip-handle {
+  display: none;
 }
 .luca-clip-selected .luca-clip-handle {
   background: var(--color-accent);

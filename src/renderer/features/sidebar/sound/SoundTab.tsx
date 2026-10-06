@@ -16,6 +16,7 @@ const fmt = (t: number): string => formatDuration(Math.max(0, t))
 export function SoundTab(): ReactElement {
   const project = useProject((s) => s.project)
   const timeline = useTimeline((s) => s.timeline)
+  const timelineError = useTimeline((s) => s.error)
   const clips = timeline ? soundClips(timeline) : []
   return (
     <div className="flex h-full flex-col">
@@ -24,6 +25,12 @@ export function SoundTab(): ReactElement {
         <EmptyPane
           title="Add your video first"
           hint="Each sound on the timeline gets a level here once your video is in."
+        />
+      ) : !timeline ? (
+        // the timeline panel reads it; until then there is nothing to list yet
+        <EmptyPane
+          title={timelineError ? 'The timeline didn’t load' : 'Reading the timeline…'}
+          hint={timelineError ?? undefined}
         />
       ) : clips.length === 0 ? (
         <EmptyPane
@@ -48,6 +55,12 @@ function SoundRow({ clip, name }: { clip: Clip; name: string }): ReactElement {
   const pct = drag ?? Math.round(volume * 100)
   const setVolume = (p: number): void => {
     void useTimeline.getState().edit({ op: 'volume', refs: [clip.ref], volume: p / 100 })
+  }
+  /** Write the level the slider was left at (once), and let the timeline drive it again. */
+  const commit = (): void => {
+    if (drag === null) return
+    if (drag !== Math.round(volume * 100)) setVolume(drag)
+    setDrag(null)
   }
   const toggleMute = (): void => {
     void useTimeline.getState().edit({ op: 'mute', refs: [clip.ref], muted: volume > 0 })
@@ -80,15 +93,10 @@ function SoundRow({ clip, name }: { clip: Clip; name: string }): ReactElement {
           value={pct}
           aria-label={`${name} level`}
           onChange={(e) => setDrag(Number(e.target.value))}
-          onPointerUp={() => {
-            if (drag !== null) {
-              setVolume(drag)
-              setDrag(null)
-            }
-          }}
-          onKeyUp={(e) => {
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') setVolume(pct)
-          }}
+          // arrows, Page Up/Down and Home/End move it too: every way of letting go writes it
+          onPointerUp={commit}
+          onKeyUp={commit}
+          onBlur={commit}
           className="volume min-w-0 flex-1"
         />
         <span

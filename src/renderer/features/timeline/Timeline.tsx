@@ -20,8 +20,9 @@ import {
   Volume2,
   VolumeX
 } from 'lucide-react'
-import { memo, useEffect, useMemo, useRef, type ReactElement } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, type ReactElement } from 'react'
 import type { Clip, Timeline as TimelineData } from '../../../shared/types'
+import { Button } from '../../components/ui/button'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { luca } from '../../lib/luca'
@@ -52,6 +53,8 @@ import { Waveform } from './Waveform'
 
 const LABEL_WIDTH = 132
 const START_LEFT = 8
+/** Narrowest a frame in the Frames row gets before frames are skipped. */
+const MIN_FRAME_WIDTH = 36
 
 const KIND_LABEL: Record<RowMeta['kind'], string> = {
   strip: '',
@@ -105,7 +108,8 @@ function TrackHead({
       />
       <span className="min-w-0 flex-1 truncate">{KIND_LABEL[meta.kind]}</span>
       <div
-        className="luca-track-tools opacity-0 transition-opacity duration-150 group-hover/head:opacity-100 data-[on=true]:opacity-100"
+        // shown on hover, when on, and when reached with Tab
+        className="luca-track-tools opacity-0 transition-opacity duration-150 group-hover/head:opacity-100 focus-within:opacity-100 data-[on=true]:opacity-100"
         data-on={muted || locked}
       >
         {sound ? (
@@ -176,13 +180,27 @@ export function Timeline(): ReactElement {
       <TimelineHead />
       {timeline ? (
         <Tracks key={project.id} projectId={project.id} />
+      ) : error ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+          <span className="text-[12px] font-medium text-text-2">The timeline didn’t load</span>
+          <span className="max-w-[460px] text-[11.5px] leading-[1.45] text-text-3 select-text">
+            {error}
+          </span>
+          <Button size="sm" onClick={() => void load()}>
+            Try again
+          </Button>
+        </div>
       ) : (
         <div className="flex flex-1 items-center justify-center text-[12px] text-text-3">
-          {error ?? <span className="shimmer-text">Reading the timeline…</span>}
+          <span className="shimmer-text">Reading the timeline…</span>
         </div>
       )}
       {error && timeline ? (
-        <div className="fade-in pointer-events-none absolute bottom-3 left-1/2 z-20 max-w-[80%] -translate-x-1/2 truncate rounded-[8px] bg-danger px-2.5 py-1.5 text-[11px] text-white shadow-popover">
+        <div
+          role="alert"
+          title={error}
+          className="fade-in pointer-events-none absolute bottom-3 left-1/2 z-20 max-w-[80%] -translate-x-1/2 truncate rounded-[8px] bg-danger px-2.5 py-1.5 text-[11px] text-white shadow-popover"
+        >
           {error}
         </div>
       ) : null}
@@ -196,29 +214,35 @@ function TimelineHead(): ReactElement {
   const drag = useTimeline((s) => s.drag)
   const timeline = useTimeline((s) => s.timeline)
   const fps = usePlayer((s) => s.fps)
+  const lockedTracks = useTimeline((s) => s.locked)
   const setCaptions = useUi((s) => s.setCaptions)
   // re-read on every timeline change so the chip follows edits to the clip
   const clip = timeline ? findClip(selected) : null
   const dragClip = drag ? findClip(drag.ref) : null
   const Icon = clip ? KIND_ICON[clip.kind] : Film
   const linked = clip ? linkedAudio(clip) : null
+  // a locked track's clips keep still: no splitting, trimming or deleting from here either
+  const locked = clip ? lockedTracks.includes(clip.track) : false
 
   const act = (
     label: string,
     icon: ReactElement,
     run: () => void,
-    opts: { shortcut?: string; danger?: boolean; text?: string } = {}
+    opts: { shortcut?: string; danger?: boolean; text?: string; disabled?: boolean } = {}
   ): ReactElement => (
-    <Tip label={label} shortcut={opts.shortcut}>
+    <Tip label={opts.disabled ? `${label} (the track is locked)` : label} shortcut={opts.shortcut}>
       <button
         type="button"
         onClick={run}
         aria-label={label}
+        aria-disabled={opts.disabled || undefined}
         className={cn(
           'inline-flex h-7 min-w-7 shrink-0 items-center justify-center gap-1.5 rounded-[6px] px-1.5 text-[11.5px] font-medium transition-[background-color,color,transform] duration-150 active:scale-95',
           opts.danger
             ? 'text-danger hover:bg-danger/10'
-            : 'text-text-2 hover:bg-hover hover:text-text'
+            : 'text-text-2 hover:bg-hover hover:text-text',
+          // still hoverable for the tooltip that says why
+          opts.disabled && 'cursor-default opacity-40 hover:bg-transparent active:scale-100'
         )}
       >
         {icon}
@@ -251,21 +275,25 @@ function TimelineHead(): ReactElement {
               {clock(clip.end - clip.start)}
             </span>
           </span>
+          {locked ? (
+            <Lock size={12} strokeWidth={2} className="mr-1 shrink-0 text-text-3" aria-hidden />
+          ) : null}
           {act('Split at playhead', <Scissors size={13} />, () => void splitClip(clip), {
             shortcut: 'S',
-            text: 'Split'
+            text: 'Split',
+            disabled: locked
           })}
           {act(
             'Trim start to playhead',
             <ArrowLeftToLine size={13} />,
             () => void trimToPlayhead(clip, 'start'),
-            { shortcut: '[', text: 'Trim start' }
+            { shortcut: '[', text: 'Trim start', disabled: locked }
           )}
           {act(
             'Trim end to playhead',
             <ArrowRightToLine size={13} />,
             () => void trimToPlayhead(clip, 'end'),
-            { shortcut: ']', text: 'Trim end' }
+            { shortcut: ']', text: 'Trim end', disabled: locked }
           )}
           {clip.kind === 'caption'
             ? act('Change the caption style', <Paintbrush size={13} />, () => setCaptions(true), {
@@ -285,7 +313,7 @@ function TimelineHead(): ReactElement {
             linked ? 'Delete this clip and its audio' : 'Delete this clip',
             <Trash2 size={13} />,
             () => void deleteClip(clip),
-            { shortcut: '⌫', danger: true, text: 'Delete' }
+            { shortcut: '⌫', danger: true, text: 'Delete', disabled: locked }
           )}
         </div>
       ) : (
@@ -313,33 +341,90 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
   const ref = useRef<TimelineState>(null)
   const dragging = useRef(false)
   const viewportRef = useRef<HTMLDivElement>(null)
+  const headsRef = useRef<HTMLDivElement>(null)
+  /** Where the editor is scrolled to, for the track heads and following the playhead. */
+  const scrolled = useRef({ left: 0, top: 0 })
   const setViewportWidth = useTimeline((s) => s.setViewportWidth)
 
+  // A project opens with its whole length in view, and stays fitted as the panes settle and Luca
+  // makes the video longer or shorter, until the person zooms: from then on the zoom is theirs.
+  const autoFit = useRef(true)
+  const fitting = useRef(false)
+  const fit = useCallback((): void => {
+    const tl = useTimeline.getState()
+    const d = tl.timeline?.duration ?? 0
+    if (!autoFit.current || tl.viewportWidth <= 0 || !(d > 0)) return
+    fitting.current = true
+    tl.zoomToFit(d)
+    fitting.current = false
+  }, [])
+  useEffect(
+    () =>
+      useTimeline.subscribe((s, prev) => {
+        if (s.zoom !== prev.zoom && !fitting.current) autoFit.current = false
+      }),
+    []
+  )
   useEffect(() => {
     const el = viewportRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => setViewportWidth(el.clientWidth))
+    const measure = (): void => {
+      setViewportWidth(el.clientWidth)
+      fit()
+    }
+    const ro = new ResizeObserver(measure)
     ro.observe(el)
-    setViewportWidth(el.clientWidth)
+    measure()
     return () => ro.disconnect()
-  }, [setViewportWidth])
+  }, [setViewportWidth, fit])
+  useEffect(fit, [timeline.duration, fit])
 
   const duration = Math.max(timeline.duration, playerDuration, 1)
-  const { rows, meta, clips } = useMemo(() => toRows(timeline, duration), [timeline, duration])
   const stripClips = useMemo(() => footageClips(timeline), [timeline])
+  const hasStrip = stripClips.length > 0
+  const { rows, meta, clips } = useMemo(
+    () => toRows(timeline, duration, hasStrip),
+    [timeline, duration, hasStrip]
+  )
   const { scale, splits } = rulerStep(zoom)
+  const empty = clips.size === 0
 
   // Player → cursor (skip while the user drags the cursor), set directly on the editor: as a
   // render dependency the playhead re-rendered every track, clip and thumbnail on every frame.
+  // When the playhead leaves the visible stretch (playing, or a seek from elsewhere), the view
+  // pages along so it stays in sight.
   useEffect(() => {
     const follow = (t: number): void => {
-      if (!dragging.current) ref.current?.setTime(t)
+      if (dragging.current) return
+      ref.current?.setTime(t)
+      const width = viewportRef.current?.clientWidth ?? 0
+      if (width <= 0) return
+      const x = START_LEFT + t * useTimeline.getState().zoom
+      const { left } = scrolled.current
+      if (x < left || x > left + width - 24) ref.current?.setScrollLeft(Math.max(0, x - 48))
     }
     follow(usePlayer.getState().currentTime)
     return usePlayer.subscribe((s, prev) => {
       if (s.currentTime !== prev.currentTime) follow(s.currentTime)
     })
   }, [])
+
+  // zooming keeps the playhead where it is on screen (or, when it's out of view, the time at the
+  // left edge), instead of everything sliding away from under the person
+  useEffect(
+    () =>
+      useTimeline.subscribe((s, prev) => {
+        if (s.zoom === prev.zoom) return
+        const width = viewportRef.current?.clientWidth ?? 0
+        const { left } = scrolled.current
+        const t = usePlayer.getState().currentTime
+        const x = START_LEFT + t * prev.zoom - left
+        const anchor = x >= 0 && x <= width ? t : Math.max(0, (left - START_LEFT) / prev.zoom)
+        const at = x >= 0 && x <= width ? x : 0
+        ref.current?.setScrollLeft(Math.max(0, START_LEFT + anchor * s.zoom - at))
+      }),
+    []
+  )
 
   const snapPoints = useMemo(() => {
     const pts = new Set<number>([0, duration])
@@ -407,21 +492,38 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
 
   return (
     <div className="flex min-h-0 flex-1">
-      <div className="luca-track-heads shrink-0" style={{ width: LABEL_WIDTH }}>
-        <div className="flex h-8 items-end border-b border-border px-3 pb-1 font-mono text-[10.5px] text-text-2 tabular-nums">
+      <div
+        className="luca-track-heads flex shrink-0 flex-col overflow-hidden"
+        style={{ width: LABEL_WIDTH }}
+        // the heads have no scrollbar of their own: wheel over them scrolls the tracks
+        onWheel={(e) => {
+          if (e.deltaY) ref.current?.setScrollTop(Math.max(0, scrolled.current.top + e.deltaY))
+        }}
+      >
+        <div className="flex h-8 shrink-0 items-end border-b border-border px-3 pb-1 font-mono text-[10.5px] text-text-2 tabular-nums">
           <PlayheadTimecode />
         </div>
-        <div style={{ height: 10 }} />
-        {rows.map((r) => (
-          <TrackHead
-            key={r.id}
-            meta={meta.get(r.id)!}
-            clips={trackClips(r.id)}
-            height={r.rowHeight ?? ROW_HEIGHT}
-          />
-        ))}
+        <div className="shrink-0" style={{ height: 10 }} />
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {/* moved with the tracks' vertical scroll, so each head stays beside its track */}
+          <div ref={headsRef} className="will-change-transform">
+            {rows.map((r) => (
+              <TrackHead
+                key={r.id}
+                meta={meta.get(r.id)!}
+                clips={trackClips(r.id)}
+                height={r.rowHeight ?? ROW_HEIGHT}
+              />
+            ))}
+          </div>
+        </div>
       </div>
       <div ref={viewportRef} className="relative min-w-0 flex-1">
+        {empty ? (
+          <div className="pointer-events-none absolute inset-x-0 top-8 bottom-0 z-10 flex items-center justify-center px-6 text-center text-[12px] text-text-3">
+            Nothing on the timeline yet. Clips show up here as Luca edits.
+          </div>
+        ) : null}
         <Editor
           ref={ref}
           editorData={editorRows}
@@ -438,8 +540,12 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
           gridSnap={false}
           dragLine
           style={{ width: '100%', height: '100%' }}
+          onScroll={({ scrollLeft, scrollTop }) => {
+            scrolled.current = { left: scrollLeft, top: scrollTop }
+            if (headsRef.current) headsRef.current.style.transform = `translateY(${-scrollTop}px)`
+          }}
           getActionRender={renderAction}
-          getScaleRender={(s) => <ScaleLabel seconds={s} fps={fps} />}
+          getScaleRender={(s) => <ScaleLabel seconds={s} fps={fps} frames={scale < 1} />}
           onClickTimeArea={(t) => {
             seek(Math.max(0, Math.min(duration, t)))
             return true
@@ -458,9 +564,10 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
             if (clip?.kind === 'caption') useUi.getState().setCaptions(true)
           }}
           onContextMenuAction={(e, { action }) => {
+            // first, so the Frames row doesn't get the app's own menu (Copy Image) either
+            e.preventDefault()
             const clip = clips.get(action.id)
             if (!clip) return
-            e.preventDefault()
             select(clip.ref)
             void luca.menu.popupClip({
               clipId: clip.ref,
@@ -469,6 +576,8 @@ function Tracks({ projectId }: { projectId: string }): ReactElement {
               end: clip.end
             })
           }}
+          // an empty stretch of a track has no menu of its own
+          onContextMenuRow={(e) => e.preventDefault()}
           onClickRow={(e) => {
             if (!(e.target as HTMLElement).closest('.timeline-editor-action')) select(null)
           }}
@@ -571,12 +680,16 @@ const ClipFace = memo(function ClipFace({
 
 const ScaleLabel = memo(function ScaleLabel({
   seconds,
-  fps
+  fps,
+  frames
 }: {
   seconds: number
   fps: number
+  /** Ticks under a second apart keep their frames, or neighbours would read the same. */
+  frames: boolean
 }): ReactElement {
-  return <span>{timecode(seconds, fps).replace(/:\d\d$/, '')}</span>
+  const tc = timecode(seconds, fps)
+  return <span>{frames ? tc : tc.replace(/:\d\d$/, '')}</span>
 })
 
 /** The footage clips the Frames row shows: every clip on the lowest video track. */
@@ -614,19 +727,24 @@ const Strip = memo(function Strip({
   const pieces: ReactElement[] = []
   for (const c of clips) {
     const t = c.src ? thumbs[c.src] : undefined
-    if (!t || t.count === 0) continue
+    if (!t || t.count === 0 || !(t.interval > 0)) continue
+    // zoomed out, one frame every few seconds: each stays wide enough to see, and a long video
+    // doesn't put thousands of images on the page
+    const every = Math.max(1, Math.ceil(MIN_FRAME_WIDTH / (t.interval * zoom)))
     const from = c.mediaStart ?? 0
-    const first = Math.floor(from / t.interval)
+    const first = Math.floor(from / t.interval / every) * every
     const last = Math.min(t.count, Math.ceil((from + c.end - c.start) / t.interval))
-    const w = t.interval * zoom
+    const w = t.interval * zoom * every
     const imgs: ReactElement[] = []
-    for (let i = first; i < last; i++) {
+    for (let i = first; i < last; i += every) {
       imgs.push(
         <img
           key={i}
           src={`/p/${encodeURIComponent(projectId)}/${t.dir}/${String(i + 1).padStart(4, '0')}.jpg`}
           style={{ width: w, height: STRIP_HEIGHT }}
           className="block shrink-0 object-cover"
+          loading="lazy"
+          decoding="async"
           draggable={false}
           alt=""
         />

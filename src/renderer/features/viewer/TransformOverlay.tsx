@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { cn } from '../../lib/cn'
 import { luca } from '../../lib/luca'
 import { usePlayer } from '../../stores/player'
+import { errorMessage, undoAction } from '../../stores/project'
 import { useTimeline } from '../../stores/timeline'
 import { findClip } from '../timeline/clip-actions'
 import { clock } from '../../lib/timecode'
@@ -158,6 +159,41 @@ export function TransformOverlay({
   }, [targetKey, elementOf, toBox])
   const shown = box && box.key === targetKey ? box.box : null
 
+  /** Put the element back where the gesture started, without saving anything. */
+  const cancelGesture = useCallback((): boolean => {
+    const g = gesture.current
+    if (!g) return false
+    gesture.current = null
+    live.current = null
+    setDragging(false)
+    setReadout(null)
+    const id = targetKey.slice(targetKey.indexOf('#') + 1)
+    const el = elementOf({ id, file: '' })
+    if (el) applyLive(el, g.from)
+    return true
+  }, [targetKey, elementOf])
+
+  // Esc: a drag in progress goes back to where it started; otherwise an element picked on the
+  // canvas is let go. Ahead of the app's own Esc (capture), which would also drop the clip.
+  const hasPicked = picked !== null
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return
+      const typing = (e.target as HTMLElement | null)?.closest?.(
+        'input, textarea, select, [contenteditable="true"]'
+      )
+      if (cancelGesture()) {
+        e.preventDefault()
+        e.stopPropagation()
+      } else if (hasPicked && !commenting && !typing) {
+        setPicked(null)
+        setHover(null)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [cancelGesture, hasPicked, commenting])
+
   if (grab || !player) return null
 
   const pick = (clientX: number, clientY: number): { el: HTMLElement; target: Target } | null => {
@@ -168,26 +204,34 @@ export function TransformOverlay({
     return pickable(d.elementFromPoint((clientX - rect.left) * k, (clientY - rect.top) * k))
   }
 
-  const persist = async (t: Target, l: Live, verb: string): Promise<void> => {
-    const res = await luca.timeline.transform({
-      file: t.file,
-      id: t.id,
-      translate: [round(l.tx), round(l.ty)],
-      scale: round(l.scale, 3)
-    })
+  /** Save where the element was put; if that fails it goes back to `from`, as it is on disk. */
+  const persist = async (t: Target, l: Live, verb: string, from: Live): Promise<void> => {
+    const res = await luca.timeline
+      .transform({
+        file: t.file,
+        id: t.id,
+        translate: [round(l.tx), round(l.ty)],
+        scale: round(l.scale, 3)
+      })
+      .catch((err: unknown) => ({ ok: false, error: errorMessage(err) }))
     if (res.ok)
       toast(`${verb} ${t.id.replace(/[-_]+/g, ' ')}`, {
-        action: { label: 'Undo', onClick: () => void luca.history.undo() }
+        action: undoAction
       })
-    else toast.error(res.error ?? 'Could not save the change')
+    else {
+      const el = elementOf(t)
+      if (el) applyLive(el, from)
+      toast.error(res.error ?? 'Could not save the change')
+    }
   }
 
   const onDown = (e: React.PointerEvent, mode: 'move' | 'scale'): void => {
     const el = elementOf(target)
-    if (!el || !target) return
+    // the main button only: a right-click or a second finger doesn't start a drag
+    if (!el || !target || e.button !== 0 || gesture.current) return
     e.stopPropagation()
     e.preventDefault()
-    player.pause()
+    usePlayer.getState().handle?.pause()
     setDragging(true)
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     const from = readLive(el)
@@ -261,7 +305,7 @@ export function TransformOverlay({
       Math.abs(l.tx - g.from.tx) > 0.5 ||
       Math.abs(l.ty - g.from.ty) > 0.5 ||
       Math.abs(l.scale - g.from.scale) > 0.002
-    if (moved) void persist(target, l, g.mode === 'move' ? 'Moved' : 'Resized')
+    if (moved) void persist(target, l, g.mode === 'move' ? 'Moved' : 'Resized', g.from)
   }
 
   const onClick = (e: React.MouseEvent): void => {
@@ -279,9 +323,10 @@ export function TransformOverlay({
   const reset = (): void => {
     const el = elementOf(target)
     if (!el || !target) return
+    const from = readLive(el)
     const l = { tx: 0, ty: 0, scale: 1 }
     applyLive(el, l)
-    void persist(target, l, 'Reset')
+    void persist(target, l, 'Reset', from)
   }
 
   const el = elementOf(target)
@@ -312,6 +357,8 @@ export function TransformOverlay({
           style={{ left: shown.x, top: shown.y, width: shown.w, height: shown.h }}
           onPointerDown={(e) => onDown(e, 'move')}
           onPointerUp={onUp}
+          // the system took the pointer away (a gesture, a dialog): nothing is saved
+          onPointerCancel={cancelGesture}
           onClick={(e) => e.stopPropagation()}
         >
           {(['nw', 'ne', 'sw', 'se'] as const).map((c) => (
@@ -319,6 +366,7 @@ export function TransformOverlay({
               key={c}
               onPointerDown={(e) => onDown(e, 'scale')}
               onPointerUp={onUp}
+              onPointerCancel={cancelGesture}
               className={cn(
                 'absolute size-2.5 rounded-[3px] border-[1.5px] border-accent bg-white shadow-sm transition-transform duration-100 hover:scale-125',
                 c === 'nw' && '-top-[6px] -left-[6px] cursor-nwse-resize',
@@ -345,7 +393,7 @@ export function TransformOverlay({
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation()
-                  player.pause()
+                  usePlayer.getState().handle?.pause()
                   setCommenting(targetKey)
                 }}
                 className="pop-in inline-flex items-center gap-1 rounded-[5px] bg-bg/95 px-1.5 py-[3px] text-[10px] leading-none font-medium text-text shadow-sm hover:bg-bg"

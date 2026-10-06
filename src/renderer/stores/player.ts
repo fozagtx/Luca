@@ -51,8 +51,9 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
   setReady: (ready) => set({ ready }),
   setLoadError: (loadError) => set({ loadError }),
   setPlaying: (playing) => set({ playing }),
-  setTime: (currentTime) => set({ currentTime }),
-  setDuration: (duration) => set({ duration }),
+  // a player still loading can report NaN; the timecodes and timeline want a number
+  setTime: (currentTime) => set({ currentTime: Number.isFinite(currentTime) ? currentTime : 0 }),
+  setDuration: (duration) => set({ duration: Number.isFinite(duration) ? duration : 0 }),
   setFps: (fps) => set({ fps }),
   toggleGrab: (on) => set((s) => ({ grab: on ?? !s.grab })),
 
@@ -67,6 +68,7 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
   },
   seek: (t) => {
     const { handle, duration } = get()
+    if (!Number.isFinite(t)) return
     const clamped = Math.min(Math.max(0, t), duration || t)
     set({ currentTime: clamped })
     handle?.seek(clamped)
@@ -78,12 +80,23 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
   },
   nudge: (seconds) => get().seek(get().currentTime + seconds),
   toggleMute: () => {
-    const muted = !get().muted
-    set({ muted })
-    get().handle?.setMuted(muted)
+    const { muted, volume, handle } = get()
+    if (muted || volume === 0) {
+      // unmuting after the slider went to zero brings the sound back at full
+      const v = volume || 1
+      set({ muted: false, volume: v })
+      handle?.setVolume(v)
+      handle?.setMuted(false)
+    } else {
+      set({ muted: true })
+      handle?.setMuted(true)
+    }
   },
   setVolume: (volume) => {
-    set({ volume, muted: volume === 0 })
+    const muted = volume === 0
+    set({ volume, muted })
+    // the slider also unmutes: raising it after M would otherwise stay silent
     get().handle?.setVolume(volume)
+    get().handle?.setMuted(muted)
   }
 }))

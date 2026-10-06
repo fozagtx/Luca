@@ -1,12 +1,13 @@
 import { Popover } from '@base-ui/react/popover'
 import { History, RotateCcw } from 'lucide-react'
 import { useEffect, useState, type ReactElement } from 'react'
+import { toast } from 'sonner'
 import type { Checkpoint } from '../../../shared/types'
 import { Button } from '../../components/ui/button'
 import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
 import { luca } from '../../lib/luca'
-import { useProject } from '../../stores/project'
+import { errorMessage, undoAction, useProject } from '../../stores/project'
 import { useUi } from '../../stores/ui'
 
 function relative(iso: string): string {
@@ -21,16 +22,39 @@ export function HistoryPopover(): ReactElement {
   const projectDir = useProject((s) => s.project?.dir ?? null)
   const open = useUi((s) => s.historyOpen)
   const setHistory = useUi((s) => s.setHistory)
-  const [items, setItems] = useState<Checkpoint[]>([])
+  // another project's history is another list: it opens fresh when asked for
+  useEffect(() => useUi.getState().setHistory(false), [projectDir])
+  /** The list and why it couldn't be read, for the project they belong to. */
+  const [list, setList] = useState<{
+    dir: string | null
+    items: Checkpoint[]
+    error: string | null
+  } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  // null while the open project's list loads (another project's list is never shown)
+  const items = list && list.dir === projectDir ? list.items : null
+  const error = list && list.dir === projectDir ? list.error : null
 
   useEffect(() => {
     let alive = true
+    // changes can come quickly (Luca saving several): only the newest list is shown
+    let seq = 0
     const refresh = (): void => {
+      const mine = ++seq
       const p = projectDir ? luca.history.list() : Promise.resolve([])
-      void p.then((l) => {
-        if (alive) setItems(l)
-      })
+      void p.then(
+        (l) => {
+          if (alive && mine === seq) setList({ dir: projectDir, items: l, error: null })
+        },
+        (err: unknown) => {
+          if (!alive || mine !== seq) return
+          setList((prev) => ({
+            dir: projectDir,
+            items: prev?.dir === projectDir ? prev.items : [],
+            error: errorMessage(err)
+          }))
+        }
+      )
     }
     refresh()
     const off = luca.history.onChanged(refresh)
@@ -40,10 +64,16 @@ export function HistoryPopover(): ReactElement {
     }
   }, [projectDir])
 
-  const restore = async (sha: string): Promise<void> => {
-    setBusy(sha)
+  const restore = async (c: Checkpoint): Promise<void> => {
+    setBusy(c.sha)
     try {
-      await luca.history.restore(sha)
+      await luca.history.restore(c.sha)
+      // restoring adds a version on top, so it can be undone like any other change
+      toast(`Restored “${c.message}”`, {
+        action: undoAction
+      })
+    } catch (err) {
+      toast.error(`Couldn’t restore that version: ${errorMessage(err)}`)
     } finally {
       setBusy(null)
     }
@@ -72,14 +102,26 @@ export function HistoryPopover(): ReactElement {
           >
             <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
               <Popover.Title className="text-[13px] font-semibold text-text">History</Popover.Title>
-              <span className="text-[11px] text-text-3">
-                {items.length} checkpoint{items.length === 1 ? '' : 's'}
-              </span>
+              {items?.length ? (
+                <span className="text-[11px] text-text-3">
+                  {items.length} checkpoint{items.length === 1 ? '' : 's'}
+                </span>
+              ) : null}
             </div>
             <ul className="max-h-[360px] overflow-y-auto pb-1.5">
-              {items.length === 0 ? (
+              {items === null ? (
                 <li className="px-3 py-6 text-center text-[12px] text-text-3">
-                  No checkpoints yet.
+                  <span className="shimmer-text">Reading the history…</span>
+                </li>
+              ) : error && items.length === 0 ? (
+                <li className="px-3 py-6 text-center text-[12px] leading-[1.45] text-text-3">
+                  The history couldn’t be read.
+                  <span className="mt-1 block text-[11px] text-danger select-text">{error}</span>
+                </li>
+              ) : items.length === 0 ? (
+                <li className="px-3 py-6 text-center text-[12px] leading-[1.45] text-text-3">
+                  No checkpoints yet. Every change, Luca’s or yours, is saved here as a version you
+                  can go back to.
                 </li>
               ) : (
                 items.map((c) => (
@@ -94,21 +136,29 @@ export function HistoryPopover(): ReactElement {
                       )}
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[12px] text-text">{c.message}</div>
+                      <div className="truncate text-[12px] text-text" title={c.message}>
+                        {c.message}
+                      </div>
                       <div className="text-[11px] text-text-3">
                         {relative(c.date)} · {c.files} file{c.files === 1 ? '' : 's'} ·{' '}
                         <span className="font-mono">{c.shortSha}</span>
                       </div>
                     </div>
                     {!c.isHead && (
+                      // shown on hover, and when reached with Tab (an invisible button can't be)
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="invisible shrink-0 group-hover:visible"
+                        className={cn(
+                          'shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+                          busy === c.sha && 'opacity-100'
+                        )}
                         disabled={busy !== null}
-                        onClick={() => void restore(c.sha)}
+                        loading={busy === c.sha}
+                        aria-label={`Restore “${c.message}”`}
+                        onClick={() => void restore(c)}
                       >
-                        <RotateCcw size={12} />
+                        {busy === c.sha ? null : <RotateCcw size={12} />}
                         {busy === c.sha ? 'Restoring…' : 'Restore'}
                       </Button>
                     )}
