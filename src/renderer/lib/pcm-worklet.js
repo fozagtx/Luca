@@ -12,7 +12,6 @@ class LucaPcm extends AudioWorkletProcessor {
     this.sum = 0
   }
 
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
   process(inputs) {
     const ch = inputs[0] && inputs[0][0]
     if (!ch) return true

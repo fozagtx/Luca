@@ -29,6 +29,7 @@ export function ConnectTiles({
         className="relative z-20"
         style={{ marginLeft: overlap }}
         title="Codex support is coming"
+        role="img"
         aria-label="Codex (coming soon)"
       >
         <span className={cn(tile, 'bg-[#1c1917] opacity-60')} style={{ width: size, height: size }}>

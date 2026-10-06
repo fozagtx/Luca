@@ -18,6 +18,8 @@ export function useUpdateNotices(): void {
       if (s.updatedFrom && !greeted) {
         greeted = true
         toast.success(`Luca is updated to ${s.current}`, {
+          // one toast even when the status arrives twice (the first answer and an event)
+          id: 'luca-updated',
           description: `From ${s.updatedFrom}. Everything you had open is as you left it.`
         })
       }

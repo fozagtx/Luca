@@ -1,4 +1,11 @@
-import { useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+  type ReactNode
+} from 'react'
 import { cn } from '../../lib/cn'
 import { Tip } from './tooltip'
 
@@ -42,12 +49,26 @@ export function Segmented<T extends string>({
     return () => ro.disconnect()
   }, [value, items.length])
 
+  // a tab list: the arrows move the choice (and keep their frame-stepping job for the video
+  // elsewhere), Tab moves past the control
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+    if (!step) return
+    e.preventDefault()
+    e.stopPropagation()
+    const at = items.findIndex((it) => it.id === value)
+    const next = items[(at + step + items.length) % items.length]
+    onChange(next.id)
+    ref.current?.querySelector<HTMLElement>(`[data-id="${next.id}"]`)?.focus()
+  }
+
   return (
     <div
       ref={ref}
       role="tablist"
       aria-label={ariaLabel}
       data-icons={icons ? 'true' : undefined}
+      onKeyDown={onKeyDown}
       className={cn('seg', className)}
     >
       {thumb && (
@@ -64,6 +85,7 @@ export function Segmented<T extends string>({
             role="tab"
             data-id={it.id}
             aria-selected={value === it.id}
+            tabIndex={value === it.id ? 0 : -1}
             aria-label={it.label}
             className="seg-item"
             onClick={() => onChange(it.id)}

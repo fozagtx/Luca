@@ -33,7 +33,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       ['S', 'Split the selected clip at the playhead'],
       ['[  ]', 'Trim the start or end to the playhead'],
       ['⌫', 'Delete the selected clip'],
-      ['⌘=  ⌘-  ⌘0', 'Zoom in, out, reset'],
+      ['⌘=  ⌘-  ⌘0', 'Zoom in, out, to fit'],
       ['⌘Z', 'Undo the last change']
     ]
   },
@@ -44,17 +44,24 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       ['⌘O', 'Open a project'],
       ['⇧⌘W', 'Home: close the project'],
       ['⇧⌘R', 'Show the project in Finder'],
+      ['⌘E', 'Export'],
+      ['⌘Y', 'History: earlier versions']
+    ]
+  },
+  {
+    title: 'Tools',
+    rows: [
       ['⇧⌘E', 'Clean edit'],
-      ['⌘Y', 'Versions']
+      ['⇧⌘L', 'Color'],
+      ['⌘1 – ⌘4', 'Transcript, B-roll, Looks, Sound'],
+      ['⇧⌘S', 'Show or hide the sidebar']
     ]
   },
   {
     title: 'Everywhere',
     rows: [
       ['⌘K', 'Search commands'],
-      ['⌘E', 'Export'],
-      ['⌘1 – ⌘3', 'Transcript, B-roll, Looks'],
-      ['⇧⌘S  ⇧⌘C', 'Show or hide the sidebar and the chat'],
+      ['⇧⌘C', 'Show or hide the chat'],
       ['⇧⌘D', 'Light or dark'],
       ['?  ⌘/', 'This list']
     ]

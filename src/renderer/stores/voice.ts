@@ -137,7 +137,8 @@ export const useVoice = create<VoiceStore>((set, get) => ({
     if (!useUi.getState().chatOpen) useUi.getState().toggleChat()
     const id = ++sid
     set({ ...OFF, mode, phase: 'connecting', startedAt: Date.now(), error: null, needsKey: null })
-    if (!(await luca.env.hasAssemblyAiKey())) {
+    // a key that can't be read is asked for again, rather than leaving the mic "connecting"
+    if (!(await luca.env.hasAssemblyAiKey().catch(() => false))) {
       if (id === sid) set({ ...OFF, needsKey: mode })
       return
     }

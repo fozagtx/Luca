@@ -1,6 +1,7 @@
 import { Command } from 'cmdk'
 import {
   AudioLines,
+  Captions,
   Clock,
   Contrast,
   Crosshair,
@@ -8,6 +9,7 @@ import {
   History,
   House,
   ImagePlay,
+  Keyboard,
   Mic,
   Moon,
   RefreshCw,
@@ -25,7 +27,7 @@ import { useStart } from '../../stores/start'
 import { useUi } from '../../stores/ui'
 import { useUpdates } from '../../stores/updates'
 import { useVoice } from '../../stores/voice'
-import { goHome } from './go-home'
+import { goHome, openProject } from './go-home'
 
 type Item = {
   id: string
@@ -39,12 +41,11 @@ type Item = {
 export function CommandPalette(): ReactElement {
   const open = useUi((s) => s.paletteOpen)
   const setOpen = useUi((s) => s.setPalette)
-  const ui = useUi()
-  const project = useProject((s) => s.project)
-  const openProject = useProject((s) => s.open)
-  const toggleGrab = usePlayer((s) => s.toggleGrab)
+  const theme = useUi((s) => s.theme)
+  const hasProject = useProject((s) => !!s.project)
+  const ui = useUi.getState
 
-  const items: Item[] = [
+  const all: Item[] = [
     {
       id: 'new',
       label: 'Edit a Video…',
@@ -78,7 +79,7 @@ export function CommandPalette(): ReactElement {
       label: 'Export…',
       shortcut: '⌘E',
       icon: <Upload size={14} strokeWidth={1.5} />,
-      run: () => ui.setExport(true),
+      run: () => ui().setExport(true),
       needsProject: true
     },
     {
@@ -87,7 +88,7 @@ export function CommandPalette(): ReactElement {
       shortcut: '⌘2',
       icon: <ImagePlay size={14} strokeWidth={1.5} />,
       run: () => {
-        ui.setTab('broll')
+        ui().setTab('broll')
         requestAnimationFrame(() => document.getElementById('broll-search')?.focus())
       },
       needsProject: true
@@ -95,15 +96,24 @@ export function CommandPalette(): ReactElement {
     {
       id: 'look',
       label: 'Apply Look…',
+      shortcut: '⌘3',
       icon: <Palette size={14} strokeWidth={1.5} />,
-      run: () => ui.setTab('looks'),
+      run: () => ui().setTab('looks'),
+      needsProject: true
+    },
+    {
+      id: 'captions',
+      label: 'Captions…',
+      icon: <Captions size={14} strokeWidth={1.5} />,
+      run: () => ui().setCaptions(true),
       needsProject: true
     },
     {
       id: 'color',
       label: 'Color…',
+      shortcut: '⇧⌘L',
       icon: <Contrast size={14} strokeWidth={1.5} />,
-      run: () => ui.setColor(true),
+      run: () => ui().setColor(true),
       needsProject: true
     },
     {
@@ -111,29 +121,28 @@ export function CommandPalette(): ReactElement {
       label: 'Clean edit',
       shortcut: '⇧⌘E',
       icon: <Scissors size={14} strokeWidth={1.5} />,
-      run: () => ui.setTab('transcript'),
+      run: () => ui().setTab('transcript'),
       needsProject: true
     },
+    // talking works on Home too: what you say is the brief for the video on the start card
     {
       id: 'dictate',
       label: 'Dictate a message',
       icon: <Mic size={14} strokeWidth={1.5} />,
-      run: () => void useVoice.getState().start('dictate'),
-      needsProject: true
+      run: () => void useVoice.getState().start('dictate')
     },
     {
       id: 'voice',
       label: 'Voice mode: talk with Luca',
       icon: <AudioLines size={14} strokeWidth={1.5} />,
-      run: () => void useVoice.getState().start('converse'),
-      needsProject: true
+      run: () => void useVoice.getState().start('converse')
     },
     {
       id: 'grab',
       label: 'Toggle Grab',
       shortcut: 'G',
       icon: <Crosshair size={14} strokeWidth={1.5} />,
-      run: () => toggleGrab(),
+      run: () => usePlayer.getState().toggleGrab(),
       needsProject: true
     },
     {
@@ -141,28 +150,35 @@ export function CommandPalette(): ReactElement {
       label: 'History',
       shortcut: '⌘Y',
       icon: <History size={14} strokeWidth={1.5} />,
-      run: () => ui.setHistory(true),
+      run: () => ui().setHistory(true),
       needsProject: true
     },
     {
       id: 'theme',
-      label: ui.theme === 'dark' ? 'Appearance: Light' : 'Appearance: Dark',
+      label: theme === 'dark' ? 'Appearance: Light' : 'Appearance: Dark',
       shortcut: '⇧⌘D',
       icon:
-        ui.theme === 'dark' ? (
+        theme === 'dark' ? (
           <Sun size={14} strokeWidth={1.5} />
         ) : (
           <Moon size={14} strokeWidth={1.5} />
         ),
-      run: () => ui.toggleTheme()
+      run: () => ui().toggleTheme()
     },
     {
       id: 'goto',
       label: 'Go to timecode…',
       shortcut: '⌘G',
       icon: <Clock size={14} strokeWidth={1.5} />,
-      run: () => ui.setGoto(true),
+      run: () => ui().setGoto(true),
       needsProject: true
+    },
+    {
+      id: 'shortcuts',
+      label: 'Keyboard Shortcuts',
+      shortcut: '⌘/',
+      icon: <Keyboard size={14} strokeWidth={1.5} />,
+      run: () => ui().setShortcuts(true)
     },
     {
       id: 'updates',
@@ -171,6 +187,8 @@ export function CommandPalette(): ReactElement {
       run: () => void useUpdates.getState().check()
     }
   ]
+  // Home has no project to work on: its commands aren't offered there at all
+  const items = hasProject ? all : all.filter((it) => !it.needsProject)
 
   return (
     <Command.Dialog
@@ -192,12 +210,11 @@ export function CommandPalette(): ReactElement {
           <Command.Item
             key={it.id}
             value={it.label}
-            disabled={it.needsProject && !project}
             onSelect={() => {
               setOpen(false)
               it.run()
             }}
-            className="flex h-8 items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] text-text data-[selected=true]:bg-hover data-[disabled=true]:opacity-40"
+            className="flex h-8 items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] text-text data-[selected=true]:bg-hover"
           >
             <span className="text-text-2">{it.icon}</span>
             <span className="flex-1">{it.label}</span>

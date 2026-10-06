@@ -37,6 +37,16 @@ type UiStore = {
   setWindowActive: (a: boolean) => void
 }
 
+/**
+ * Main sets the system appearance to the saved theme before the window opens, so it is right
+ * from the first frame instead of flashing light until the settings load.
+ */
+const startTheme: Theme =
+  typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light'
+document.documentElement.classList.toggle('dark', startTheme === 'dark')
+
 export const useUi = create<UiStore>((set, get) => ({
   // hidden until asked for (⇧⌘S): Luca makes the first edit from what was picked on the start card
   sidebarOpen: false,
@@ -51,7 +61,7 @@ export const useUi = create<UiStore>((set, get) => ({
   captionsOpen: false,
   colorOpen: false,
   shortcutsOpen: false,
-  theme: 'light',
+  theme: startTheme,
   setTheme: (theme, persist = true) => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
     set({ theme })

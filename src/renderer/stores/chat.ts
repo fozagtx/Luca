@@ -77,6 +77,8 @@ let attachQueue: Promise<void> = Promise.resolve()
 /** The pending file main is working on, the one its progress events are about. */
 let attachingNow = -1
 let progressBound = false
+/** The latest history load: one for a project left meanwhile mustn't land in the next. */
+let loadSeq = 0
 
 /** A dropped or pasted file as main takes it: its path, or a clipboard picture's bytes. */
 async function mediaInput(file: File | string): Promise<MediaInput | null> {
@@ -162,7 +164,9 @@ export const useChat = create<ChatStore>((set, get) => ({
   },
 
   load: async () => {
+    const seq = ++loadSeq
     const [messages, status] = await Promise.all([luca.agent.history(), luca.agent.state()])
+    if (seq !== loadSeq) return
     set({ messages, state: status.state as AgentState, detail: status.detail })
   },
 
@@ -288,7 +292,11 @@ export const useChat = create<ChatStore>((set, get) => ({
   },
   retry: async () => {
     set({ state: 'starting', detail: undefined, error: null })
-    await luca.agent.restart()
-    await get().load()
+    try {
+      await luca.agent.restart()
+    } finally {
+      // a restart that failed leaves the real state to show, not "Waking up…"
+      await get().load()
+    }
   }
 }))

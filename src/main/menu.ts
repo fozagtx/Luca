@@ -3,13 +3,36 @@ import { join } from 'node:path'
 import { Channels } from './ipc'
 import { looksDir } from './looks'
 import { getSettings } from './settings'
+import { currentProject, onProjectChange } from './state'
 
 function send(cmd: string, arg?: unknown): void {
   const w = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
   w?.webContents.send(Channels.menuCommand, { cmd, arg })
 }
 
+/**
+ * A command that works on the open project. Home has none, so it is greyed out there (the
+ * renderer ignores it too, for the keys that reach it some other way).
+ */
+function onProject(item: MenuItemConstructorOptions): MenuItemConstructorOptions {
+  return { ...item, enabled: currentProject() !== null }
+}
+
+/** The last projects opened, newest first, as File → Open Recent lists them. */
+function recentItems(): MenuItemConstructorOptions[] {
+  const recent = getSettings().recentProjects.slice(0, 10)
+  if (!recent.length) return [{ label: 'No Recent Projects', enabled: false }]
+  return recent.map((r) => ({ label: r.name, click: () => send('open-recent', r.dir) }))
+}
+
+let following = false
+
 export function buildAppMenu(): void {
+  // opening or closing a project changes what can be done (and what was opened last)
+  if (!following) {
+    following = true
+    onProjectChange(() => buildAppMenu())
+  }
   const template: MenuItemConstructorOptions[] = [
     {
       label: app.name,
@@ -31,16 +54,20 @@ export function buildAppMenu(): void {
       submenu: [
         { label: 'Edit a Video…', accelerator: 'Cmd+N', click: () => send('new-project') },
         { label: 'Open Project…', accelerator: 'Cmd+O', click: () => send('open-project') },
-        { label: 'Open Recent', submenu: [{ label: 'Clear Menu', enabled: false }] },
+        { label: 'Open Recent', submenu: recentItems() },
         { type: 'separator' },
-        {
+        onProject({
           label: 'Close Project and Go Home',
           accelerator: 'Cmd+Shift+W',
           click: () => send('close-project')
-        },
+        }),
         { type: 'separator' },
-        { label: 'Export…', accelerator: 'Cmd+E', click: () => send('export') },
-        { label: 'Reveal in Finder', accelerator: 'Cmd+Shift+R', click: () => send('reveal') },
+        onProject({ label: 'Export…', accelerator: 'Cmd+E', click: () => send('export') }),
+        onProject({
+          label: 'Reveal in Finder',
+          accelerator: 'Cmd+Shift+R',
+          click: () => send('reveal')
+        }),
         { type: 'separator' },
         { role: 'close' }
       ]
@@ -48,29 +75,36 @@ export function buildAppMenu(): void {
     {
       label: 'Edit',
       submenu: [
+        // stays on at Home: ⌘Z also takes back typing in the start card's and the chat's fields
         { label: 'Undo Checkpoint', accelerator: 'Cmd+Z', click: () => send('undo') },
+        // ⇧⌘Z in a text field: macOS only redoes typing through the menu
+        { role: 'redo' },
         { type: 'separator' },
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
         { role: 'selectAll' },
         { type: 'separator' },
-        { label: 'Split at Playhead', click: () => send('split') },
-        { label: 'Delete Clip', click: () => send('delete-clip') },
+        onProject({ label: 'Split at Playhead', click: () => send('split') }),
+        onProject({ label: 'Delete Clip', click: () => send('delete-clip') }),
         { type: 'separator' },
-        { label: 'Clean Edit…', accelerator: 'Cmd+Shift+E', click: () => send('clean-edit') },
-        { label: 'Captions…', click: () => send('captions') },
-        { label: 'Color…', accelerator: 'Cmd+Shift+L', click: () => send('color') }
+        onProject({
+          label: 'Clean Edit…',
+          accelerator: 'Cmd+Shift+E',
+          click: () => send('clean-edit')
+        }),
+        onProject({ label: 'Captions…', click: () => send('captions') }),
+        onProject({ label: 'Color…', accelerator: 'Cmd+Shift+L', click: () => send('color') })
       ]
     },
     {
       label: 'View',
       submenu: [
-        {
+        onProject({
           label: 'Toggle Sidebar',
           accelerator: 'Cmd+Shift+S',
           click: () => send('toggle-sidebar')
-        },
+        }),
         { label: 'Toggle Chat', accelerator: 'Cmd+Shift+C', click: () => send('toggle-chat') },
         { type: 'separator' },
         {
@@ -97,17 +131,30 @@ export function buildAppMenu(): void {
           ]
         },
         { type: 'separator' },
-        { label: 'Transcript', accelerator: 'Cmd+1', click: () => send('tab', 'transcript') },
-        { label: 'B-roll', accelerator: 'Cmd+2', click: () => send('tab', 'broll') },
-        { label: 'Looks', accelerator: 'Cmd+3', click: () => send('tab', 'looks') },
+        onProject({
+          label: 'Transcript',
+          accelerator: 'Cmd+1',
+          click: () => send('tab', 'transcript')
+        }),
+        onProject({ label: 'B-roll', accelerator: 'Cmd+2', click: () => send('tab', 'broll') }),
+        onProject({ label: 'Looks', accelerator: 'Cmd+3', click: () => send('tab', 'looks') }),
+        onProject({ label: 'Sound', accelerator: 'Cmd+4', click: () => send('tab', 'sound') }),
         { type: 'separator' },
-        { label: 'Toggle Grab', click: () => send('toggle-grab') },
-        { label: 'History', accelerator: 'Cmd+Y', click: () => send('history') },
+        onProject({ label: 'Toggle Grab', click: () => send('toggle-grab') }),
+        onProject({ label: 'History', accelerator: 'Cmd+Y', click: () => send('history') }),
         { label: 'Command Palette…', accelerator: 'Cmd+K', click: () => send('palette') },
         { type: 'separator' },
-        { label: 'Zoom Timeline In', accelerator: 'Cmd+=', click: () => send('zoom-in') },
-        { label: 'Zoom Timeline Out', accelerator: 'Cmd+-', click: () => send('zoom-out') },
-        { label: 'Zoom to Fit', accelerator: 'Cmd+0', click: () => send('zoom-fit') },
+        onProject({
+          label: 'Zoom Timeline In',
+          accelerator: 'Cmd+=',
+          click: () => send('zoom-in')
+        }),
+        onProject({
+          label: 'Zoom Timeline Out',
+          accelerator: 'Cmd+-',
+          click: () => send('zoom-out')
+        }),
+        onProject({ label: 'Zoom to Fit', accelerator: 'Cmd+0', click: () => send('zoom-fit') }),
         { type: 'separator' },
         { role: 'togglefullscreen' },
         ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' } as MenuItemConstructorOptions])
@@ -116,17 +163,17 @@ export function buildAppMenu(): void {
     {
       label: 'Playback',
       submenu: [
-        { label: 'Play / Pause', click: () => send('play-pause') },
-        { label: 'Go to Start', click: () => send('seek-start') },
-        { label: 'Go to End', click: () => send('seek-end') },
+        onProject({ label: 'Play / Pause', click: () => send('play-pause') }),
+        onProject({ label: 'Go to Start', click: () => send('seek-start') }),
+        onProject({ label: 'Go to End', click: () => send('seek-end') }),
         { type: 'separator' },
-        { label: 'Step Back One Frame', click: () => send('frame-back') },
-        { label: 'Step Forward One Frame', click: () => send('frame-forward') },
-        { label: 'Back One Second', click: () => send('second-back') },
-        { label: 'Forward One Second', click: () => send('second-forward') },
+        onProject({ label: 'Step Back One Frame', click: () => send('frame-back') }),
+        onProject({ label: 'Step Forward One Frame', click: () => send('frame-forward') }),
+        onProject({ label: 'Back One Second', click: () => send('second-back') }),
+        onProject({ label: 'Forward One Second', click: () => send('second-forward') }),
         { type: 'separator' },
-        { label: 'Go to Timecode…', accelerator: 'Cmd+G', click: () => send('goto') },
-        { label: 'Mute', click: () => send('mute') }
+        onProject({ label: 'Go to Timecode…', accelerator: 'Cmd+G', click: () => send('goto') }),
+        onProject({ label: 'Mute', click: () => send('mute') })
       ]
     },
     {

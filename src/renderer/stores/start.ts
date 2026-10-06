@@ -211,7 +211,9 @@ export const useStart = create<StartStore>((set, get) => ({
         }
       }
     }),
-  setNotes: (notes) => set((s) => ({ edit: { ...s.edit, notes } })),
+  // typing the brief answers "Tell Luca what the video is about first"
+  setNotes: (notes) =>
+    set((s) => ({ edit: { ...s.edit, notes }, ...(s.error === NO_BRIEF ? { error: null } : {}) })),
   addNotes: (text) => {
     const words = text.trim()
     if (!words) return

@@ -63,6 +63,7 @@ export function AssemblyAiKeyCard({
           autoFocus={autoFocus}
           onChange={(e) => setKey(e.target.value)}
           placeholder="AssemblyAI API key"
+          aria-label="AssemblyAI API key"
           onKeyDown={(e) => e.key === 'Enter' && void save()}
         />
         <Button variant="primary" onClick={() => void save()} disabled={!key.trim()}>

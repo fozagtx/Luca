@@ -3,7 +3,9 @@ import { ArrowDown, Check, ChevronRight, Copy, LogIn, RotateCcw } from 'lucide-r
 import { memo, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useStickToBottom } from '../../components/ai/use-stick-to-bottom'
 import { Button } from '../../components/ui/button'
+import { Tip } from '../../components/ui/tooltip'
 import { cn } from '../../lib/cn'
+import { luca } from '../../lib/luca'
 import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
 import { Composer } from './Composer'
@@ -36,8 +38,10 @@ export function Chat(): ReactElement {
     <section className="flex h-full flex-col bg-panel">
       <header className="panel-head shrink-0">
         <span className="panel-title">Chat</span>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1.5">
           <Status />
+          {/* Claude Code stopped with an error: the next message starts it again, or this does */}
+          {state === 'error' && projectDir ? <RestartButton /> : null}
         </div>
       </header>
       {state === 'needs-login' || state === 'missing-claude' ? (
@@ -65,12 +69,51 @@ const STATUS: Record<string, { label: string; dot: string }> = {
 
 function Status(): ReactElement {
   const state = useChat((s) => s.state)
+  const detail = useChat((s) => s.detail)
   const s = STATUS[state] ?? { label: state, dot: 'bg-text-3' }
   return (
-    <span className="flex items-center gap-1.5 text-[11px] text-text-3">
-      <span className={cn('size-1.5 rounded-full transition-colors', s.dot)} />
+    <span
+      role="status"
+      // what Claude Code said, for the states that have something to say
+      title={state === 'error' ? detail : undefined}
+      className="flex items-center gap-1.5 text-[11px] text-text-3"
+    >
+      <span aria-hidden className={cn('size-1.5 rounded-full transition-colors', s.dot)} />
       {s.label}
     </span>
+  )
+}
+
+/**
+ * Start Claude Code again. When that fails (the project closed meanwhile), the chat shows where
+ * Luca really stands instead of staying on "Waking up…".
+ */
+async function restartLuca(): Promise<void> {
+  const chat = useChat.getState()
+  try {
+    await chat.retry()
+  } catch {
+    await chat.load().catch(() => undefined)
+  }
+}
+
+function RestartButton(): ReactElement {
+  const [busy, setBusy] = useState(false)
+  return (
+    <Tip label="Start Luca again" side="bottom">
+      <Button
+        size="sm"
+        variant="ghost"
+        loading={busy}
+        onClick={() => {
+          setBusy(true)
+          void restartLuca().finally(() => setBusy(false))
+        }}
+      >
+        <RotateCcw size={11} />
+        Restart
+      </Button>
+    </Tip>
   )
 }
 
@@ -159,19 +202,21 @@ function Messages({
 
 function Onboarding({ state, detail }: { state: string; detail?: string }): ReactElement {
   const signIn = useChat((s) => s.signIn)
-  const retry = useChat((s) => s.retry)
   const [cmd, setCmd] = useState('npm install -g @anthropic-ai/claude-code')
   const [copied, setCopied] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
   const [checking, setChecking] = useState(false)
   useEffect(() => {
-    void window.luca.env.installClaudeCommand().then(setCmd)
+    void luca.env
+      .installClaudeCommand()
+      .then(setCmd)
+      .catch(() => undefined)
   }, [])
 
   const check = async (): Promise<void> => {
     setChecking(true)
     try {
-      await retry()
+      await restartLuca()
     } finally {
       setChecking(false)
     }

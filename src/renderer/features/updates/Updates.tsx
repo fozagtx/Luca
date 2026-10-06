@@ -119,8 +119,9 @@ function Body({ s }: { s: UpdateStatus }): ReactElement {
           </p>
           {notes.length ? (
             <ul className="mt-2 list-disc pl-4">
-              {notes.map((n) => (
-                <li key={n}>{n}</li>
+              {notes.map((n, i) => (
+                // release notes can repeat a line
+                <li key={i}>{n}</li>
               ))}
             </ul>
           ) : null}

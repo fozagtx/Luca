@@ -121,7 +121,8 @@
   --border-strong: rgba(255, 255, 255, 0.16);
   --text: #f4f4f5;
   --text-2: #a1a1aa;
-  --text-3: #71717a;
+  /* 4.5:1 on the panels and fields, like light mode's: hints stay readable in the dark */
+  --text-3: #85858e;
   --accent: #3b9dff;
   --accent-fg: #ffffff;
   --secondary: hsl(211 60% 14%);
@@ -173,6 +174,14 @@ body,
   user-select: none;
   -webkit-user-select: none;
 }
+/* Before the app's script runs, the page follows the system appearance, which main has already
+   set to the saved theme: a dark window opens dark instead of flashing white first */
+@media (prefers-color-scheme: dark) {
+  html:not(.dark),
+  html:not(.dark) body {
+    background: #0f0f10;
+  }
+}
 
 button,
 input,
@@ -216,25 +225,29 @@ input:disabled {
   -webkit-app-region: no-drag;
 }
 
-*:focus {
-  outline: none;
-}
-/* Keyboard focus ring on controls; text fields show focus through their own border instead. */
-*:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  outline-offset: 1px;
-}
-input:is(
-    :not([type]),
-    [type='text'],
-    [type='search'],
-    [type='email'],
-    [type='number'],
-    [type='password'],
-    [type='url']
-  ):focus-visible,
-textarea:focus-visible {
-  outline: none;
+/* In the base layer, so a control's own classes can still adjust its ring (an inset offset
+   inside a clipping card) or drop it (menu items, which highlight their row instead). */
+@layer base {
+  *:focus {
+    outline: none;
+  }
+  /* Keyboard focus ring on controls; text fields show focus through their own border instead. */
+  *:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    outline-offset: 1px;
+  }
+  input:is(
+      :not([type]),
+      [type='text'],
+      [type='search'],
+      [type='email'],
+      [type='number'],
+      [type='password'],
+      [type='url']
+    ):focus-visible,
+  textarea:focus-visible {
+    outline: none;
+  }
 }
 
 .timecode {
@@ -826,9 +839,13 @@ body.inactive ::selection {
   animation-play-state: paused;
 }
 
-/* The veil over a video Luca is still making: its own frame, blurred, under slow coloured light */
+/* The veil over a video Luca is still making: its own frame, blurred, under slow coloured light.
+   Dark enough, and darker still behind the words and steps in the middle, that a bright card in
+   the frame doesn't show through as a lighter block behind them. */
 .making-veil {
-  background: rgba(8, 10, 22, 0.58);
+  background:
+    radial-gradient(70% 50% at 50% 50%, rgba(8, 10, 22, 0.4), transparent 80%),
+    rgba(8, 10, 22, 0.72);
   backdrop-filter: blur(26px) saturate(1.25);
 }
 .making-aurora {
@@ -856,7 +873,12 @@ body.inactive ::selection {
 @media (prefers-reduced-motion: reduce) {
   .edge-glow-line,
   .edge-glow-soft::before,
-  .making-aurora {
+  .making-aurora,
+  .step-spinner,
+  .progress-fill::after,
+  .pop-in,
+  .rise-in,
+  .shimmer-text {
     animation: none !important;
   }
 }

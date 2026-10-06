@@ -82,86 +82,78 @@ export function Toolbar(): ReactElement {
           fullscreen ? 'pl-3' : 'pl-[92px]'
         )}
       >
-        <Tip label="Home: close this project" shortcut="⇧⌘W">
-          <Button
-            variant="icon"
-            disabled={!project}
-            onClick={() => void goHome()}
-            aria-label="Home"
-          >
-            <House size={16} strokeWidth={1.5} />
-          </Button>
-        </Tip>
-        <Tip label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'} shortcut="⇧⌘S">
-          <Button
-            variant="icon"
-            active={sidebarOpen}
-            // Transcript, B-roll and Looks work on the open project: nothing to show on Home
-            disabled={!project}
-            onClick={() => setSidebar(!sidebarOpen)}
-            aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-            aria-pressed={sidebarOpen}
-          >
-            {sidebarOpen ? (
-              <PanelLeftClose size={16} strokeWidth={1.5} />
-            ) : (
-              <PanelLeftOpen size={16} strokeWidth={1.5} />
-            )}
-          </Button>
-        </Tip>
+        {/* Home has no project to close and no sidebar: its tools appear when a project opens */}
+        {project ? (
+          <div className="fade-in flex items-center gap-1">
+            <Tip label="Home: close this project" shortcut="⇧⌘W">
+              <Button variant="icon" onClick={() => void goHome()} aria-label="Home">
+                <House size={16} strokeWidth={1.5} />
+              </Button>
+            </Tip>
+            <Tip label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'} shortcut="⇧⌘S">
+              <Button
+                variant="icon"
+                active={sidebarOpen}
+                onClick={() => setSidebar(!sidebarOpen)}
+                aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+                aria-pressed={sidebarOpen}
+              >
+                {sidebarOpen ? (
+                  <PanelLeftClose size={16} strokeWidth={1.5} />
+                ) : (
+                  <PanelLeftOpen size={16} strokeWidth={1.5} />
+                )}
+              </Button>
+            </Tip>
+          </div>
+        ) : null}
       </div>
 
-      <span className="max-w-[40vw] min-w-0 truncate px-3 text-[13px] font-semibold tracking-[-0.01em] text-text">
+      <span
+        title={project?.name}
+        className="max-w-[40vw] min-w-0 truncate px-3 text-[13px] font-semibold tracking-[-0.01em] text-text"
+      >
         {project?.name ?? 'Luca'}
       </span>
 
       <div className="flex items-center justify-end gap-1 pr-3">
-        <Tip label="Grab an element or frame" shortcut="G">
-          <Button
-            variant="ghost"
-            active={grab}
-            disabled={!project}
-            onClick={() => toggleGrab()}
-            aria-label="Grab"
-            aria-pressed={grab}
-          >
-            <Crosshair size={15} strokeWidth={1.75} />
-            Grab
-          </Button>
-        </Tip>
-        <Tip label="Captions: styles and fonts">
-          <Button
-            variant="ghost"
-            disabled={!project}
-            onClick={() => setCaptions(true)}
-            aria-label="Captions"
-          >
-            <Captions size={15} strokeWidth={1.75} />
-            Captions
-          </Button>
-        </Tip>
-        <Tip label="Color: LUTs for your footage">
-          <Button
-            variant="ghost"
-            disabled={!project}
-            onClick={() => setColor(true)}
-            aria-label="Color"
-          >
-            <Contrast size={15} strokeWidth={1.75} />
-            Color
-          </Button>
-        </Tip>
-        <HistoryPopover />
-        <AnimatedButton
-          size="sm"
-          className="ml-1"
-          disabled={!project}
-          onClick={() => setExport(true)}
-        >
-          <Upload size={14} strokeWidth={1.75} />
-          Export
-        </AnimatedButton>
-        <div className="mx-1.5 h-4 w-px bg-border" />
+        {/* the project's tools: Home is only the start card, so they show once a project is open */}
+        {project ? (
+          <div className="fade-in flex items-center gap-1">
+            <Tip label="Grab an element or frame" shortcut="G">
+              <Button
+                variant="ghost"
+                active={grab}
+                onClick={() => toggleGrab()}
+                aria-label="Grab"
+                aria-pressed={grab}
+              >
+                <Crosshair size={15} strokeWidth={1.75} />
+                Grab
+              </Button>
+            </Tip>
+            <Tip label="Captions: styles and fonts">
+              <Button variant="ghost" onClick={() => setCaptions(true)} aria-label="Captions">
+                <Captions size={15} strokeWidth={1.75} />
+                Captions
+              </Button>
+            </Tip>
+            <Tip label="Color: LUTs for your footage" shortcut="⇧⌘L">
+              <Button variant="ghost" onClick={() => setColor(true)} aria-label="Color">
+                <Contrast size={15} strokeWidth={1.75} />
+                Color
+              </Button>
+            </Tip>
+            <HistoryPopover />
+            <Tip label="Export a video file" shortcut="⌘E">
+              <AnimatedButton size="sm" className="ml-1" onClick={() => setExport(true)}>
+                <Upload size={14} strokeWidth={1.75} />
+                Export
+              </AnimatedButton>
+            </Tip>
+            <div className="mx-1.5 h-4 w-px bg-border" />
+          </div>
+        ) : null}
         <ThemeToggle />
         <Tip label={chatOpen ? 'Hide chat' : 'Show chat'} shortcut="⇧⌘C">
           <Button

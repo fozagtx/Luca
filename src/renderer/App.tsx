@@ -8,7 +8,7 @@ import {
   type PanelImperativeHandle,
   type PanelSize
 } from 'react-resizable-panels'
-import { Toaster } from 'sonner'
+import { toast, Toaster } from 'sonner'
 import { ErrorBoundary } from './components/ui/error-boundary'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Chat } from './features/chat/Chat'
@@ -29,6 +29,7 @@ import { Viewer } from './features/viewer/Viewer'
 import { cn } from './lib/cn'
 import { luca } from './lib/luca'
 import { useChat } from './stores/chat'
+import { usePlayer } from './stores/player'
 import { useProject } from './stores/project'
 import { useUi } from './stores/ui'
 
@@ -36,6 +37,8 @@ const sep =
   'group/sep relative shrink-0 bg-transparent outline-none flex items-center justify-center ' +
   'after:rounded-full after:bg-border-strong after:opacity-0 after:transition-[opacity,background-color] after:duration-150 ' +
   'hover:after:opacity-100 data-[separator=active]:after:bg-accent data-[separator=active]:after:opacity-100 ' +
+  // keyboard focus (the arrows resize) shows the grip, as the outline is off
+  'focus-visible:after:bg-accent focus-visible:after:opacity-100 ' +
   'data-[separator=disabled]:pointer-events-none'
 const sepV = `${sep} w-1.5 cursor-col-resize after:h-8 after:w-[3px]`
 const sepH = `${sep} h-1.5 cursor-row-resize after:h-[3px] after:w-8`
@@ -57,8 +60,9 @@ function outerLayout(sizes: number[] | undefined, sidebarOpen: boolean): Layout 
 /**
  * Keeps a collapsible side panel and its toggle in the UI store in step: the toolbar button,
  * the menu and ⇧⌘S change the store and the panel follows (animated); dragging the panel shut
- * or open updates the store. A panel that starts hidden has no width to go back to (the library
- * would open it at its minimum), so the first time it opens at `firstSize`.
+ * or open updates the store. It opens again at the width it had: the library would scale that
+ * with the window meanwhile, or open a panel that started hidden at its minimum, so the first
+ * time it opens at `firstSize`.
  */
 function useSidePanel(
   open: boolean,
@@ -71,13 +75,15 @@ function useSidePanel(
   onResize: (s: PanelSize, id?: string | number, prev?: PanelSize) => void
 } {
   const ref = usePanelRef()
-  const shown = useRef(false)
+  /** The last settled open width, in pixels. */
+  const width = useRef<number | null>(null)
   useEffect(() => {
     const p = ref.current
     if (!p) return
     if (open && p.isCollapsed()) {
       animate()
-      if (!shown.current && firstSize !== undefined) p.resize(firstSize)
+      const to = width.current ?? firstSize
+      if (to !== undefined) p.resize(to)
       else p.expand()
     } else if (!open && !p.isCollapsed()) {
       animate()
@@ -85,7 +91,7 @@ function useSidePanel(
     }
   }, [open, ref, animate, firstSize])
   const onResize = (s: PanelSize, _id?: string | number, prev?: PanelSize): void => {
-    if (s.inPixels >= 1) shown.current = true
+    if (s.inPixels >= 1 && !animating()) width.current = s.inPixels
     // only real size changes by the user count: the library also reports the same size when props
     // change, and the in-between sizes of a toggle's glide
     if (animating() || !prev || Math.abs(prev.inPixels - s.inPixels) < 0.5) return
@@ -117,10 +123,36 @@ export default function App(): ReactElement {
   useEffect(() => {
     void init()
   }, [init])
-  // Home belongs to the start card: the sidebar stays out of the way there
+  // Home belongs to the start card: the sidebar and the project's sheets and modes close there,
+  // so none of them pops back open over the next project
   useEffect(() => {
-    if (!hasProject) setSidebar(false)
+    if (hasProject) return
+    const ui = useUi.getState()
+    setSidebar(false)
+    ui.setCaptions(false)
+    ui.setColor(false)
+    ui.setExport(false)
+    ui.setHistory(false)
+    ui.setGoto(false)
+    usePlayer.getState().toggleGrab(false)
   }, [hasProject, setSidebar])
+  // Home has no export bar: an export still running from the project just closed says when it ends
+  useEffect(
+    () =>
+      luca.export.onProgress((p) => {
+        if (useProject.getState().project) return
+        const file = p.outputPath
+        if (p.status === 'done')
+          toast.success('Export finished', {
+            description: file?.split('/').pop(),
+            ...(file
+              ? { action: { label: 'Reveal', onClick: () => void luca.export.reveal(file) } }
+              : {})
+          })
+        else if (p.status === 'error') toast.error('Export failed', { description: p.error })
+      }),
+    []
+  )
   useEffect(() => {
     if (settings) setTheme(settings.theme, false)
   }, [settings, setTheme])
@@ -152,7 +184,10 @@ export default function App(): ReactElement {
     <TooltipProvider>
       <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg text-text">
         <Toolbar />
-        <ExportBar />
+        {/* kept mounted on Home (only hidden) so an export that is still running keeps its progress */}
+        <div className={hasProject ? 'contents' : 'hidden'}>
+          <ExportBar />
+        </div>
         {settings ? (
           <Group
             elementRef={outerEl}
@@ -171,6 +206,8 @@ export default function App(): ReactElement {
               onResize={sidebar.onResize}
               collapsible
               collapsedSize={0}
+              // side panels keep their width as the window resizes: the video takes the change
+              groupResizeBehavior="preserve-pixel-size"
               defaultSize={sidebarOpen ? 280 : 0}
               minSize={232}
               maxSize={420}
@@ -206,6 +243,7 @@ export default function App(): ReactElement {
                   <Separator className={sepH} />
                   <Panel
                     id="timeline"
+                    groupResizeBehavior="preserve-pixel-size"
                     defaultSize={280}
                     minSize={200}
                     maxSize={560}
@@ -232,6 +270,7 @@ export default function App(): ReactElement {
               onResize={chat.onResize}
               collapsible
               collapsedSize={0}
+              groupResizeBehavior="preserve-pixel-size"
               defaultSize={368}
               minSize={308}
               maxSize={540}

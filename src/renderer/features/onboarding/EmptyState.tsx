@@ -49,8 +49,9 @@ import { cn } from '../../lib/cn'
 import { formatDuration, relativeDate } from '../../lib/format'
 import { luca } from '../../lib/luca'
 import { useChat } from '../../stores/chat'
-import { useProject } from '../../stores/project'
-import { attachmentOf, kindOf, useStart, type Attachment } from '../../stores/start'
+import { errorMessage, useProject } from '../../stores/project'
+import { attachmentOf, kindOf, NO_BRIEF, useStart, type Attachment } from '../../stores/start'
+import { openProject } from '../command/go-home'
 import { AssemblyAiKeyCard } from './AssemblyAiKeyCard'
 import { CreateProgressList } from './CreateProgress'
 import { HomeGradient } from './HomeGradient'
@@ -59,6 +60,20 @@ const STYLE_ITEMS: SegmentedItem<StyleId>[] = STYLES.map((s) => ({
   id: s.id,
   label: s.name
 }))
+
+/** How far an arrow key moves the choice in a radio group. */
+const ARROW_STEP: Record<string, number> = {
+  ArrowRight: 1,
+  ArrowDown: 1,
+  ArrowLeft: -1,
+  ArrowUp: -1
+}
+
+/**
+ * White type straight on the moving gradient: a tight shadow for the letters' edges and a wide
+ * one for the pale parts of the gradient, so it reads wherever the colours drift.
+ */
+const ON_GRADIENT = 'text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.3),0_1px_14px_rgba(0,0,0,0.45)]'
 
 const TYPE_ICONS: Record<VideoTypeId, LucideIcon> = {
   launch: Rocket,
@@ -91,7 +106,6 @@ export function EmptyState(): ReactElement {
 function StartCard(): ReactElement {
   const { files, busy, progress, seen, error } = useStart()
   const { addFiles, pickFiles, addNotes, create } = useStart()
-  const openProject = useProject((s) => s.open)
   const loading = useProject((s) => s.loading)
   const [over, setOver] = useState(false)
   const [briefOpen, setBriefOpen] = useState(false)
@@ -113,33 +127,48 @@ function StartCard(): ReactElement {
     }
     setSince(Date.now())
     await create()
+    // a brief too short to start from: the caret goes where the words are missing
+    if (useStart.getState().error === NO_BRIEF) document.getElementById('start-notes')?.focus()
   }
   const onDrop = (e: DragEvent): void => {
     e.preventDefault()
     setOver(false)
+    if (busy) return
     const paths = [...e.dataTransfer.files].map((f) => luca.project.pathForFile(f)).filter(Boolean)
-    if (paths.length) addFiles(paths)
+    const usable = paths.filter((p) => attachmentOf(p))
+    if (usable.length < e.dataTransfer.files.length)
+      toast('Luca can use videos, voiceovers and images', {
+        description: usable.length
+          ? 'Other files were left out.'
+          : 'Drop a video, a voiceover or a few screenshots.'
+      })
+    if (usable.length) addFiles(usable)
   }
   const openDir = async (): Promise<void> => {
     const dir = await luca.project.pickProjectDir()
-    if (dir) await openProject(dir).catch(() => undefined)
+    if (dir) await openProject(dir)
   }
 
   return (
     // isolate: the glow while the project starts sits behind the card
     <section className="isolate flex flex-col items-center gap-6">
       {/* the hero sits straight on the gradient: white type with a soft shadow reads in both themes */}
-      <div className="flex w-full flex-col items-center gap-3 pt-2 text-center">
+      <div className="relative flex w-full flex-col items-center gap-3 pt-2 text-center">
+        {/* a soft shade under the words: the pale end of the gradient drifts behind them too */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -inset-x-10 -top-6 -bottom-4 -z-10 bg-[radial-gradient(closest-side,rgba(0,0,0,0.3),transparent)]"
+        />
         <img
           src={logo}
           alt=""
           draggable={false}
           className="size-16 rounded-[16px] shadow-[0_10px_24px_rgba(0,0,0,0.18)] transition-transform duration-300 hover:scale-105 hover:-rotate-2"
         />
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-white [text-shadow:0_1px_12px_rgba(0,0,0,0.35)]">
+        <h1 className={cn('text-[22px] font-semibold tracking-[-0.02em]', ON_GRADIENT)}>
           Describe it. Luca makes the explainer.
         </h1>
-        <p className="max-w-[520px] text-[13px] leading-relaxed text-white/85 [text-shadow:0_1px_12px_rgba(0,0,0,0.35)]">
+        <p className={cn('max-w-[520px] text-[13px] leading-relaxed', ON_GRADIENT)}>
           Launch films, concept explainers, tutorials and talking videos. Say what it’s about, pick
           motion design or a classic edit, and Luca makes the whole thing.
         </p>
@@ -147,9 +176,12 @@ function StartCard(): ReactElement {
 
       <div
         onDragOver={(e) => {
-          if (busy) return
+          // files only: dragged text or a link is nothing to start from
+          if (busy || !e.dataTransfer.types.includes('Files')) return
           e.preventDefault()
-          if (!over) setOver(true)
+          // the reference slot takes its own drop, and stays in sight for it
+          const want = !(e.target as Element).closest?.('[data-drop="reference"]')
+          if (over !== want) setOver(want)
         }}
         onDragLeave={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
@@ -172,7 +204,7 @@ function StartCard(): ReactElement {
 
         {busy ? (
           <div className="rise-in flex flex-col gap-4 p-5">
-            <div className="text-[13px] font-semibold text-text">
+            <div className="truncate text-[13px] font-semibold text-text" title={lead?.name}>
               {videos.length > 1
                 ? `Starting from your ${videos.length} videos`
                 : `Starting from ${lead?.name ?? 'your brief'}`}
@@ -210,7 +242,17 @@ function StartCard(): ReactElement {
               <Button size="lg" onClick={() => void pickFiles()}>
                 Choose files
               </Button>
-              <Button size="lg" variant="ghost" onClick={() => setBriefOpen(true)}>
+              <Button
+                size="lg"
+                variant="ghost"
+                onClick={() => {
+                  setBriefOpen(true)
+                  // straight to the words, the brief being what's missing; the form opens in place
+                  requestAnimationFrame(() =>
+                    document.getElementById('start-notes')?.focus({ preventScroll: true })
+                  )
+                }}
+              >
                 Start from a brief
               </Button>
             </div>
@@ -218,8 +260,12 @@ function StartCard(): ReactElement {
         )}
       </div>
 
-      {error && !busy ? (
-        <div className="fade-in -mt-2 w-full rounded-[10px] border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[12px] text-danger select-text">
+      {/* the open form says it by its Make it button, which stays in view */}
+      {error && !busy && !formOpen ? (
+        <div
+          role="alert"
+          className="fade-in -mt-2 w-full rounded-[10px] border border-danger/30 bg-input px-3 py-2 text-[12px] text-danger shadow-card select-text"
+        >
           {error}
         </div>
       ) : null}
@@ -240,11 +286,12 @@ function StartCard(): ReactElement {
 
 /** The card's form: the style, the kind of video, a reference, the steps, the brief, and go. */
 function EditForm({ onGo }: { onGo: () => void }): ReactElement {
-  const { files, footage, aspect, aspectFrom, edit, busy, reference } = useStart()
+  const { files, footage, aspect, aspectFrom, edit, busy, reference, error } = useStart()
   const { setAspect, setType, setStyle, toggleStep, setNotes, setReference, clearReference } =
     useStart()
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [keyLater, setKeyLater] = useState(false)
+  const [refOver, setRefOver] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const kind = kindOf(files)
   const brief = kind === 'brief'
@@ -266,11 +313,23 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
   const dropReference = (e: DragEvent): void => {
     e.preventDefault()
     e.stopPropagation()
+    setRefOver(false)
     const video = [...e.dataTransfer.files]
       .map((f) => luca.project.pathForFile(f))
       .filter(Boolean)
       .find((p) => attachmentOf(p)?.kind === 'video')
     if (video) setReference(video)
+    else toast('A reference is a video', { description: 'Drop an .mp4, .mov or .webm file.' })
+  }
+  // the type cards are one radio group: the arrows move the choice, Tab moves past the group
+  const typeKey = (e: KeyboardEvent<HTMLDivElement>): void => {
+    const step = ARROW_STEP[e.key]
+    if (!step) return
+    e.preventDefault()
+    const at = VIDEO_TYPES.findIndex((t) => t.id === edit.type)
+    const next = VIDEO_TYPES[(at + step + VIDEO_TYPES.length) % VIDEO_TYPES.length]
+    setType(next.id)
+    e.currentTarget.querySelector<HTMLElement>(`[data-type="${next.id}"]`)?.focus()
   }
 
   useEffect(() => {
@@ -295,7 +354,9 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
   }
 
   return (
-    <div className="rise-in flex flex-col">
+    // a container: the type cards go four across only when the card itself is wide enough
+    // (@4xl is 728 px here, the root font being 13 px)
+    <div className="rise-in @container flex flex-col">
       <div className="flex flex-col gap-5 p-4">
         <Tiles />
 
@@ -316,7 +377,8 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
           <div
             role="radiogroup"
             aria-label="What kind of video is it?"
-            className="grid grid-cols-2 gap-2 md:grid-cols-4"
+            onKeyDown={typeKey}
+            className="grid grid-cols-2 gap-2 @4xl:grid-cols-4"
           >
             {VIDEO_TYPES.map((t) => {
               const Icon = TYPE_ICONS[t.id]
@@ -327,6 +389,8 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
                   type="button"
                   role="radio"
                   aria-checked={on}
+                  tabIndex={on ? 0 : -1}
+                  data-type={t.id}
                   onClick={() => setType(t.id)}
                   className={cn(
                     'flex h-full flex-col gap-2 rounded-[12px] border p-2.5 text-left transition-[background-color,border-color,box-shadow] duration-150',
@@ -368,7 +432,7 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
             {reference ? (
               <div className="flex items-center gap-2 rounded-[10px] border border-border bg-bg px-2.5 py-2">
                 <Clapperboard size={14} strokeWidth={1.7} className="shrink-0 text-text-3" />
-                <span className="min-w-0 flex-1 truncate text-[12px] text-text">
+                <span className="min-w-0 flex-1 truncate text-[12px] text-text" title={reference}>
                   {reference.split('/').pop()}
                 </span>
                 <button
@@ -383,10 +447,21 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
             ) : (
               <button
                 type="button"
+                data-drop="reference"
                 onClick={() => void pickReference()}
-                onDragOver={(e) => e.preventDefault()}
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes('Files')) return
+                  e.preventDefault()
+                  if (!refOver) setRefOver(true)
+                }}
+                onDragLeave={() => setRefOver(false)}
                 onDrop={dropReference}
-                className="flex items-center justify-center gap-2 rounded-[10px] border border-dashed border-border-strong px-3 py-2.5 text-[12px] text-text-3 transition-colors hover:border-accent hover:text-accent"
+                className={cn(
+                  'flex items-center justify-center gap-2 rounded-[10px] border border-dashed px-3 py-2.5 text-[12px] transition-colors hover:border-accent hover:text-accent',
+                  refOver
+                    ? 'border-accent bg-accent/[0.04] text-accent'
+                    : 'border-border-strong text-text-3'
+                )}
               >
                 <Film size={14} strokeWidth={1.7} />
                 Pick a video or drop it here
@@ -448,7 +523,8 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
               placeholder={videoType(edit.type).example}
               rows={brief ? 3 : 2}
               required={brief}
-              className="block w-full resize-none rounded-[10px] border border-border bg-bg px-3 py-2.5 text-[13px] leading-[20px] text-text transition-colors placeholder:text-text-3 focus:border-border-strong"
+              // clear of the sticky Make it bar when the caret is sent here
+              className="block w-full scroll-mb-28 resize-none rounded-[10px] border border-border bg-bg px-3 py-2.5 text-[13px] leading-[20px] text-text transition-colors placeholder:text-text-3 focus:border-border-strong"
             />
             {brief ? (
               <span className="text-[11px] leading-[1.4] text-text-3">
@@ -459,27 +535,34 @@ function EditForm({ onGo }: { onGo: () => void }): ReactElement {
         </Field>
       </div>
 
-      <div className="sticky bottom-0 z-10 -mx-px flex flex-wrap items-center gap-2 rounded-b-[18px] border-t border-border bg-input px-4 py-3">
-        <span className="text-[12px] font-medium text-text-2">Format</span>
-        {/* 'auto' follows the first video's shape; a concrete ratio crops it to fit */}
-        <FormatMenu
-          value={aspect}
-          footage={aspectFrom ? footage[aspectFrom] : undefined}
-          onChange={setAspect}
-        />
-        {aspect !== 'auto' && shape && shape !== aspect ? (
-          <span className="fade-in text-[11px] text-text-3">Cropped from {shape}</span>
-        ) : aspect === 'auto' && shape ? (
-          <span className="fade-in text-[11px] text-text-3">From your video</span>
+      <div className="sticky bottom-0 z-10 -mx-px rounded-b-[18px] border-t border-border bg-input">
+        {error && !busy ? (
+          <div role="alert" className="fade-in px-4 pt-2.5 text-[12px] text-danger select-text">
+            {error}
+          </div>
         ) : null}
-        <GenerateButton
-          className="ml-auto"
-          label="Make it"
-          generatingLabel="Starting"
-          generating={busy}
-          disabled={busy}
-          onClick={onGo}
-        />
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <span className="text-[12px] font-medium text-text-2">Format</span>
+          {/* 'auto' follows the first video's shape; a concrete ratio crops it to fit */}
+          <FormatMenu
+            value={aspect}
+            footage={aspectFrom ? footage[aspectFrom] : undefined}
+            onChange={setAspect}
+          />
+          {aspect !== 'auto' && shape && shape !== aspect ? (
+            <span className="fade-in text-[11px] text-text-3">Cropped from {shape}</span>
+          ) : aspect === 'auto' && shape ? (
+            <span className="fade-in text-[11px] text-text-3">From your video</span>
+          ) : null}
+          <GenerateButton
+            className="ml-auto"
+            label="Make it"
+            generatingLabel="Starting"
+            generating={busy}
+            disabled={busy}
+            onClick={onGo}
+          />
+        </div>
       </div>
     </div>
   )
@@ -621,7 +704,7 @@ function AttachmentTile({
         type="button"
         aria-label={`Remove ${file.name}`}
         onClick={onRemove}
-        className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-bg text-text-2 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:text-text"
+        className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-bg text-text-2 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:text-text focus-visible:opacity-100"
       >
         <X size={11} />
       </button>
@@ -631,17 +714,16 @@ function AttachmentTile({
 
 function Recent(): ReactElement | null {
   const recent = useProject((s) => s.recent)
-  const open = useProject((s) => s.open)
   const loading = useProject((s) => s.loading)
   const busy = useStart((s) => s.busy)
+  // the card being opened shows it is on its way (opening can take a moment)
+  const [opening, setOpening] = useState<string | null>(null)
   if (recent.length === 0 || busy) return null
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between px-2 py-1">
-        <h2 className="text-[13px] font-semibold text-white [text-shadow:0_1px_12px_rgba(0,0,0,0.35)]">
-          Recent
-        </h2>
-        <span className="text-[11px] text-white/70 [text-shadow:0_1px_12px_rgba(0,0,0,0.35)]">
+        <h2 className={cn('text-[13px] font-semibold', ON_GRADIENT)}>Recent</h2>
+        <span className={cn('text-[11px] font-medium', ON_GRADIENT)}>
           {recent.length} project{recent.length === 1 ? '' : 's'}
         </span>
       </div>
@@ -654,8 +736,13 @@ function Recent(): ReactElement | null {
           >
             <button
               type="button"
-              className="block w-full p-1.5 text-left"
-              onClick={() => void open(r.dir).catch(() => undefined)}
+              // the card clips overflow, so the focus ring sits inside it
+              className="block w-full rounded-[10px] p-1.5 text-left focus-visible:outline-offset-[-2px]"
+              onClick={() => {
+                setOpening(r.dir)
+                void openProject(r.dir).finally(() => setOpening(null))
+              }}
+              aria-busy={opening === r.dir || undefined}
               disabled={loading}
               title={r.dir}
             >
@@ -673,6 +760,11 @@ function Recent(): ReactElement | null {
                 {r.duration ? (
                   <span className="absolute right-1.5 bottom-1.5 rounded-[4px] bg-black/70 px-1.5 py-[2px] font-mono text-[10px] text-white tabular-nums">
                     {formatDuration(r.duration)}
+                  </span>
+                ) : null}
+                {opening === r.dir ? (
+                  <span className="fade-in absolute inset-0 flex items-center justify-center bg-black/40 text-white">
+                    <span className="btn-spinner" />
                   </span>
                 ) : null}
               </Thumb>
@@ -701,7 +793,7 @@ function RecentMenu({ dir, name }: { dir: string; name: string }): ReactElement 
     <Menu.Root onOpenChange={(o) => !o && setConfirm(false)}>
       <Menu.Trigger
         aria-label={`More for ${name}`}
-        className="absolute right-2.5 bottom-3 flex size-6 items-center justify-center rounded-[6px] text-text-3 opacity-0 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-hover hover:text-text data-[popup-open]:opacity-100"
+        className="absolute right-2.5 bottom-3 flex size-6 items-center justify-center rounded-[6px] text-text-3 opacity-0 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-hover hover:text-text focus-visible:opacity-100 data-[popup-open]:opacity-100"
       >
         <MoreHorizontal size={15} />
       </Menu.Trigger>
@@ -729,7 +821,9 @@ function RecentMenu({ dir, name }: { dir: string; name: string }): ReactElement 
                       void refresh()
                       toast(`Moved ${name} to the Trash`)
                     })
-                    .catch((e) => toast.error(String(e)))
+                    .catch((e) =>
+                      toast.error('Couldn’t move it to the Trash', { description: errorMessage(e) })
+                    )
                 }}
               >
                 <Trash2 size={13} /> Click again to move to Trash

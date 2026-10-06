@@ -12,20 +12,27 @@ export function GotoSheet(): ReactElement {
   const seek = usePlayer((s) => s.seek)
   const fps = usePlayer((s) => s.fps)
   const [value, setValue] = useState('')
+  const [invalid, setInvalid] = useState(false)
 
   const go = (): void => {
     const t = parseTimecode(value, fps)
-    if (t !== null) {
-      seek(t)
-      setOpen(false)
-      setValue('')
+    // a time that can't be read says so instead of doing nothing
+    if (t === null) {
+      setInvalid(true)
+      return
     }
+    seek(t)
+    setOpen(false)
+    setValue('')
   }
 
   return (
     <Sheet
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(o) => {
+        setOpen(o)
+        if (!o) setInvalid(false)
+      }}
       title="Go to timecode"
       width={360}
       footer={
@@ -42,11 +49,22 @@ export function GotoSheet(): ReactElement {
       >
         <Input
           autoFocus
+          aria-label="Timecode"
+          aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? 'goto-error' : undefined}
           className="timecode h-8 text-[13px]"
           placeholder="00:00:12:04 or 12.5"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value)
+            setInvalid(false)
+          }}
         />
+        {invalid ? (
+          <p id="goto-error" className="fade-in mt-1.5 text-[11px] text-danger">
+            Type a time like 00:00:12:04, 1:02 or 12.5
+          </p>
+        ) : null}
       </form>
     </Sheet>
   )
