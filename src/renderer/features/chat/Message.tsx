@@ -27,6 +27,7 @@ import { TextShimmer, TypingDots } from '../../components/ai/text-shimmer'
 import { Button } from '../../components/ui/button'
 import { Thumb } from '../../components/ui/thumb'
 import { cn } from '../../lib/cn'
+import { formatElapsed, useElapsed } from '../../lib/elapsed'
 import { formatDuration } from '../../lib/format'
 import { clock } from '../../lib/timecode'
 import { useChat } from '../../stores/chat'
@@ -189,10 +190,13 @@ export function VideoBadge({
 function CopyText({ text }: { text: string }): ReactElement {
   const [copied, setCopied] = useState(false)
   const copy = (): void => {
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1400)
-    })
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1400)
+      })
+      .catch(() => undefined)
   }
   return (
     <button
@@ -372,24 +376,9 @@ function group(parts: ChatContentPart[]): Group[] {
   return out
 }
 
-function useElapsed(since: string, active: boolean): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!active) return
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [active])
-  return Math.max(0, Math.round((now - new Date(since).getTime()) / 1000))
-}
-
-function duration(s: number): string {
-  if (s < 60) return `${s}s`
-  return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`
-}
-
 /** "Luca is thinking" row (prompt-kit ThinkingBar), with elapsed time and a Stop link. */
 function Thinking({ since, onStop }: { since: string; onStop: () => void }): ReactElement {
-  const secs = useElapsed(since, true)
+  const secs = useElapsed(Date.parse(since))
   return (
     <div className="fade-in flex items-center gap-2 text-[12px]">
       <span className="flex size-4 items-center justify-center text-accent">
@@ -397,7 +386,7 @@ function Thinking({ since, onStop }: { since: string; onStop: () => void }): Rea
       </span>
       <TextShimmer className="font-medium">Luca is thinking…</TextShimmer>
       <span className="ml-auto flex items-center gap-2 text-[11px] text-text-3 tabular-nums">
-        {secs >= 3 ? duration(secs) : null}
+        {secs >= 3 ? formatElapsed(secs) : null}
         <button
           type="button"
           onClick={onStop}
@@ -489,7 +478,7 @@ export function AssistantMessage({
           <CopyText text={m.text.trim()} />
           {m.durationMs ? (
             <span className="px-1 tabular-nums">
-              Worked for {duration(Math.round(m.durationMs / 1000))}
+              Worked for {formatElapsed(Math.round(m.durationMs / 1000))}
             </span>
           ) : null}
         </div>

@@ -21,7 +21,7 @@ import type {
   PermissionDecision,
   Project
 } from '../shared/types'
-import { alwaysAllowRule, describeActivity, shellWords } from '../shared/activity'
+import { alwaysAllowRule, describeActivity, readPartialJson, shellWords } from '../shared/activity'
 import { childEnv, HYPERFRAMES, run, which } from './env'
 import { Channels, broadcast, notifyInBackground } from './ipc'
 import { catalogTitle } from './library'
@@ -143,6 +143,28 @@ const LOST_SESSION = /No conversation found/i
 
 type ToolPart = Extract<ChatContentPart, { type: 'tool' }>
 
+/** A step whose input is streaming in, by its block's index in the reply being streamed. */
+type StreamingInput = { part: ToolPart; json: string; timer: NodeJS.Timeout | null }
+
+/** How often a step's input streaming in is sent on to the chat. */
+const INPUT_THROTTLE_MS = 100
+
+/** The most of a step's input or output kept for the chat (and saved in its history). */
+const MAX_DETAIL = 4000
+
+const clip = (s: string, max = MAX_DETAIL): string => (s.length > max ? `${s.slice(0, max)}\n…` : s)
+
+/**
+ * The end of a long text, from a line start when one is near: a file being written is followed
+ * at its newest line.
+ */
+function clipStart(s: string, max = MAX_DETAIL): string {
+  if (s.length <= max) return s
+  const cut = s.length - max
+  const nl = s.indexOf('\n', cut)
+  return `…\n${s.slice(nl >= 0 && nl - cut < 200 ? nl + 1 : cut)}`
+}
+
 function summarize(name: string, input: Record<string, unknown>): string {
   const rel = (p: unknown): string =>
     typeof p === 'string' ? p.replace(/^.*\/(compositions\/|media\/|index\.html)/, '$1') : ''
@@ -181,12 +203,27 @@ function firstSentence(text: string): string {
   return s.length > 140 ? `${s.slice(0, 139)}…` : s
 }
 
+/**
+ * What of a step's result the chat keeps: every step is saved in the history, so only what the
+ * step view shows. A successful edit answers with a snippet of the file the diff already shows,
+ * and a file read or a search shows only its first lines.
+ */
+function keptOutput(name: string, out: string, failed: boolean): string {
+  if (EDIT_TOOLS.includes(name)) return failed ? clip(out) : ''
+  if (name === 'Read' || name === 'Glob' || name === 'Grep') return clip(out, 1500)
+  return clip(out)
+}
+
+/** What a step does, for the step view: works on a partial input too (it grows as it streams). */
 function describeInput(name: string, input: Record<string, unknown>): string {
-  if (name === 'Bash') return String(input.command ?? '')
-  if (name === 'Edit')
-    return `--- ${String(input.old_string ?? '')}\n+++ ${String(input.new_string ?? '')}`
-  if (name === 'Write') return String(input.content ?? '')
-  return JSON.stringify(input, null, 2)
+  if (name === 'Bash') return clip(String(input.command ?? ''))
+  if (name === 'Edit') {
+    if (input.old_string === undefined && input.new_string === undefined) return ''
+    const half = MAX_DETAIL / 2
+    return `--- ${clip(String(input.old_string ?? ''), half)}\n+++ ${clip(String(input.new_string ?? ''), half)}`
+  }
+  if (name === 'Write') return clipStart(String(input.content ?? ''))
+  return clip(JSON.stringify(input, null, 2))
 }
 
 /**
@@ -225,7 +262,15 @@ export class ProjectAgent {
   private stateDetail: string | undefined
   private messages: ChatMessage[] = []
   private current: ChatMessage | null = null
+  /** The turn's steps by tool_use id, to find them when their input or result comes in. */
   private tools = new Map<string, ToolPart>()
+  /** Steps whose input is streaming in now, by block index in the reply being streamed. */
+  private inputs = new Map<number, StreamingInput>()
+  /**
+   * Steps shown as soon as they began streaming that no finished reply has confirmed yet. One
+   * still unconfirmed when the next reply starts never ran (the request was retried).
+   */
+  private unconfirmed = new Set<string>()
   private sessionId: string | null = null
   private turnStartedAt = 0
   private streamedText = ''
@@ -264,8 +309,11 @@ export class ProjectAgent {
         if (m.chips) m.chips = m.chips.flatMap(currentChip)
         // a turn cut off by a crash or quit was saved mid-step; those steps can't finish now
         for (const p of m.parts ?? []) {
-          if (p.type === 'tool' && p.status === 'running') p.status = 'error'
-          else if (p.type === 'permission' && !p.resolved) {
+          if (p.type === 'tool' && p.status === 'running') {
+            p.status = 'error'
+            // `detail` is still the input (see ChatContentPart)
+            p.output ??= ''
+          } else if (p.type === 'permission' && !p.resolved) {
             p.resolved = 'deny'
             p.cancelled = true
           }
@@ -479,7 +527,9 @@ export class ProjectAgent {
     this.working = true
     this.turnStartedAt = Date.now()
     this.streamedText = ''
+    this.endInputs()
     this.tools.clear()
+    this.unconfirmed.clear()
     this.current = {
       id: randomUUID(),
       role: 'assistant',
@@ -773,7 +823,8 @@ export class ProjectAgent {
     this.saveSession()
     await this.start()
     if (!this.working) return
-    if (this.q && this.asked) this.deliver({ ...this.asked, session_id: '' })
+    // stopped while the new session started: the request isn't asked again
+    if (this.q && this.asked && !this.interrupted) this.deliver({ ...this.asked, session_id: '' })
     else this.finishTurn(true, 'ended')
   }
 
@@ -795,31 +846,57 @@ export class ProjectAgent {
       case 'stream_event': {
         if (m.parent_tool_use_id) return
         const ev = m.event
-        if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
+        if (ev.type === 'message_start') {
+          // block indexes start over with every reply, and the last reply is over
+          this.endInputs()
+          this.dropUnconfirmed()
+        } else if (ev.type === 'content_block_start' && ev.content_block.type === 'tool_use') {
+          this.startStep(ev.index, ev.content_block.id, ev.content_block.name)
+        } else if (ev.type === 'content_block_delta' && ev.delta.type === 'input_json_delta') {
+          const s = this.inputs.get(ev.index)
+          if (!s) return
+          s.json += ev.delta.partial_json
+          s.timer ??= setTimeout(() => this.readInput(s, true), INPUT_THROTTLE_MS)
+        } else if (ev.type === 'content_block_stop') {
+          const s = this.inputs.get(ev.index)
+          if (!s) return
+          this.readInput(s, true)
+          this.inputs.delete(ev.index)
+        } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
           this.streamedText += ev.delta.text
           this.appendText(ev.delta.text)
         }
         return
       }
       case 'assistant': {
-        if (m.parent_tool_use_id) return
+        // a step can only belong to the turn being answered
+        if (m.parent_tool_use_id || !this.current) return
         for (const block of m.message.content) {
-          if (block.type === 'tool_use') {
-            const input = (block.input ?? {}) as Record<string, unknown>
-            const part: ToolPart = {
-              type: 'tool',
-              id: block.id,
-              name: block.name,
-              summary: summarize(block.name, input),
-              status: 'running',
-              detail: describeInput(block.name, input),
-              activity: describeActivity(block.name, input, catalogTitle)
-            }
+          if (block.type !== 'tool_use') continue
+          const input = (block.input ?? {}) as Record<string, unknown>
+          const whole = {
+            name: block.name,
+            summary: summarize(block.name, input),
+            detail: describeInput(block.name, input),
+            activity: describeActivity(block.name, input, catalogTitle)
+          }
+          // shown since its input began streaming: it gets the whole input, never a second row
+          const shown = this.tools.get(block.id)
+          this.unconfirmed.delete(block.id)
+          for (const [index, s] of this.inputs) {
+            if (s.part.id !== block.id) continue
+            if (s.timer) clearTimeout(s.timer)
+            this.inputs.delete(index)
+          }
+          const part: ToolPart = shown
+            ? Object.assign(shown, whole)
+            : { type: 'tool', id: block.id, status: 'running', startedAt: Date.now(), ...whole }
+          if (!shown) {
             this.tools.set(block.id, part)
             this.current?.parts?.push(part)
-            this.emit(part)
-            this.pushMessage(this.current)
           }
+          this.emit(part)
+          this.pushMessage(this.current)
         }
         return
       }
@@ -837,15 +914,18 @@ export class ProjectAgent {
             const b = block as { tool_use_id: string; is_error?: boolean; content?: unknown }
             const part = this.tools.get(b.tool_use_id)
             if (!part) continue
+            this.unconfirmed.delete(part.id)
             part.status = b.is_error ? (this.interrupted ? 'stopped' : 'error') : 'done'
             const out = Array.isArray(b.content)
-              ? (b.content as { type: string; text?: string }[]).map((c) => c.text ?? '').join('\n')
+              ? (b.content as { type: string; text?: string }[])
+                  .map((c) => c.text ?? '')
+                  .filter(Boolean)
+                  .join('\n')
               : typeof b.content === 'string'
                 ? b.content
                 : ''
-            if (out && part.name !== 'Edit' && part.name !== 'Write') {
-              part.detail = out.length > 4000 ? out.slice(0, 4000) + '\n…' : out
-            }
+            // kept beside the input, so the step view shows both what ran and what came back
+            part.output = keptOutput(part.name, out, !!b.is_error)
             if (part.name === 'mcp__luca__broll_search' && !b.is_error && part.activity) {
               try {
                 // the first line is the summary; previews follow it
@@ -929,12 +1009,94 @@ export class ProjectAgent {
     this.emit({ type: 'text-delta', id: this.current.id, text })
   }
 
+  /** A step shown the moment Claude starts writing it, before its input is whole. */
+  private startStep(index: number, id: string, name: string): void {
+    if (!this.current || this.tools.has(id)) return
+    const part: ToolPart = {
+      type: 'tool',
+      id,
+      name,
+      summary: summarize(name, {}).trimEnd(),
+      status: 'running',
+      detail: '',
+      startedAt: Date.now(),
+      activity: describeActivity(name, {}, catalogTitle)
+    }
+    this.tools.set(id, part)
+    this.unconfirmed.add(id)
+    this.inputs.set(index, { part, json: '', timer: null })
+    this.current.parts?.push(part)
+    this.emit(part)
+    this.pushMessage(this.current)
+  }
+
+  /**
+   * Read what has streamed in of a step's input into it, and (with `send`) tell the chat. Labels
+   * use only fields that are whole, so "Editing the “Intr” scene" never shows; the live detail
+   * shows the field being written as far as it goes.
+   */
+  private readInput(s: StreamingInput, send: boolean): void {
+    if (s.timer) clearTimeout(s.timer)
+    s.timer = null
+    const p = s.part
+    if (p.status !== 'running') return
+    const { value, open } = readPartialJson(s.json)
+    const known = { ...value }
+    if (open) delete known[open]
+    const detail = describeInput(p.name, value)
+    const summary = summarize(p.name, known).trimEnd()
+    const activity = describeActivity(p.name, known, catalogTitle)
+    const relabel =
+      summary !== p.summary ||
+      activity.active !== p.activity?.active ||
+      activity.done !== p.activity?.done ||
+      activity.kind !== p.activity?.kind
+    if (detail === p.detail && !relabel) return
+    p.detail = detail
+    if (relabel) {
+      p.summary = summary
+      p.activity = activity
+    }
+    if (send && this.current)
+      this.emit({
+        type: 'tool-input',
+        messageId: this.current.id,
+        id: p.id,
+        detail,
+        ...(relabel ? { summary, activity } : {})
+      })
+  }
+
+  /** Stop following streaming inputs; with `keep`, what came in so far stays in the steps. */
+  private endInputs(keep = false): void {
+    for (const s of this.inputs.values()) {
+      if (keep) this.readInput(s, false)
+      else if (s.timer) clearTimeout(s.timer)
+    }
+    this.inputs.clear()
+  }
+
+  /** Steps that began streaming but were never confirmed by the reply: they never ran. */
+  private dropUnconfirmed(): void {
+    if (!this.unconfirmed.size) return
+    const gone = this.unconfirmed
+    this.unconfirmed = new Set()
+    for (const id of gone) this.tools.delete(id)
+    if (!this.current?.parts) return
+    this.current.parts = this.current.parts.filter((p) => p.type !== 'tool' || !gone.has(p.id))
+    this.pushMessage(this.current)
+  }
+
   /** End the in-flight assistant message: open steps and permission cards can't finish now. */
   private settleCurrent(isError: boolean, stopped: boolean): void {
     if (!this.current) return
+    // a step cut off while its input streamed in keeps what Luca had written of it
+    this.endInputs(true)
+    this.unconfirmed.clear()
     for (const p of this.current.parts ?? []) {
       if (p.type === 'tool' && p.status === 'running') {
         p.status = stopped ? 'stopped' : 'error'
+        p.output ??= ''
         this.emit(p)
       } else if (p.type === 'permission' && !p.resolved) {
         p.resolved = 'deny'
@@ -975,6 +1137,8 @@ export class ProjectAgent {
         )
       this.current = null
     }
+    this.endInputs()
+    this.tools.clear()
     this.rewriteHistory()
     const end: Extract<AgentEvent, { type: 'turn-end' }> = {
       type: 'turn-end',

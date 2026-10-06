@@ -114,13 +114,19 @@ export type FootageInfo = { width: number; height: number; duration: number; asp
 export type AgentEvent =
   /** Streamed reply text for the assistant message `id`. */
   | { type: 'text-delta'; id: string; text: string }
+  /** A step started, got its whole input, or finished. */
+  | Extract<ChatContentPart, { type: 'tool' }>
+  /**
+   * A running step's input as it streams in (at most ~10 a second), for the live step view.
+   * `summary` and `activity` come along when what is known so far changes how the step reads.
+   */
   | {
-      type: 'tool'
+      type: 'tool-input'
+      /** The assistant message the step is in. */
+      messageId: string
       id: string
-      name: string
-      summary: string
-      status: ToolStatus
-      detail?: string
+      detail: string
+      summary?: string
       activity?: Activity
     }
   | { type: 'permission'; id: string; tool: string; input: unknown; rule?: string }
@@ -153,7 +159,16 @@ export type ChatContentPart =
       name: string
       summary: string
       status: ToolStatus
+      /**
+       * What the step does: the command, the edit (`--- old\n+++ new`), the content written, or
+       * the input as JSON; it grows while the input streams in. History saved before `output`
+       * existed replaced it with the output once the step finished (except Edit and Write).
+       */
       detail?: string
+      /** What the step returned; set (maybe empty) on every step that is no longer running. */
+      output?: string
+      /** When the step started (ms since epoch); older history doesn't have it. */
+      startedAt?: number
       /** Plain-language description (older history may not have it). */
       activity?: Activity
     }

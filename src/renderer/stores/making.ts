@@ -1,3 +1,4 @@
+import type { ActivityKind } from '@shared/activity'
 import type { StartKind } from '@shared/types'
 import { create } from 'zustand'
 import { luca } from '../lib/luca'
@@ -84,9 +85,15 @@ export function secondsLeft(m: Making, elapsed: number, finishingFor: number): n
   return m.finishingSince ? Math.min(left, FINISHING - finishingFor) : left
 }
 
+/** How far along the edit is (0..1, never full before it is done), or null once it runs over. */
+export function progressOf(m: Making, elapsed: number, finishingFor: number): number | null {
+  const left = secondsLeft(m, elapsed, finishingFor)
+  return left > 0 ? Math.min(0.96, elapsed / (elapsed + left)) : null
+}
+
 /**
  * "About 3 minutes left", "About 1 minute left", "Less than a minute left", "Almost done";
- * `short` for tight spots: "About 3 min left", "Under a minute".
+ * `short` for tight spots, so the step beside it keeps the room: "~3 min left", "Under a minute".
  */
 export function timeLeftLabel(left: number, overdueFor: number, short = false): string {
   if (left <= 0)
@@ -97,10 +104,14 @@ export function timeLeftLabel(left: number, overdueFor: number, short = false): 
       : 'Almost done'
   if (left < 50) return short ? 'Under a minute' : 'Less than a minute left'
   const minutes = left < 100 ? 1 : Math.round(left / 60)
-  return short
-    ? `About ${minutes} min left`
-    : `About ${minutes} minute${minutes === 1 ? '' : 's'} left`
+  return short ? `~${minutes} min left` : `About ${minutes} minute${minutes === 1 ? '' : 's'} left`
 }
+
+/**
+ * Steps that change the video. Looking, planning and commands Luca can't name also happen while
+ * it finishes, so they don't mean it went back to editing.
+ */
+const EDITING: ActivityKind[] = ['edit', 'add', 'media', 'search']
 
 let bound = false
 
@@ -115,14 +126,19 @@ function bind(): void {
     const m = useMaking.getState().making
     if (!m) return
     if (e.type === 'turn-start') update({ started: true })
-    else if (
-      e.type === 'tool' &&
-      m.started &&
-      !m.finishingSince &&
-      (e.activity?.kind === 'check' || e.activity?.kind === 'render')
-    )
-      update({ finishingSince: Date.now() })
-    else if (e.type === 'turn-end' && m.started) {
+    else if ((e.type === 'tool' || e.type === 'tool-input') && e.activity && m.started) {
+      // a step's input streams in, so what it is shows up as it starts or once it is whole
+      const kind = e.activity.kind
+      const starting = e.type === 'tool-input' || e.status === 'running'
+      // Luca checks the edit after every change, so only a check late in the edit is its end
+      if (kind === 'check' || kind === 'render') {
+        if (!m.finishingSince && Date.now() - m.since >= (m.expected * 1000) / 2)
+          update({ finishingSince: Date.now() })
+      } else if (m.finishingSince && starting && EDITING.includes(kind)) {
+        // back to editing after a check: not the last steps after all
+        update({ finishingSince: undefined })
+      }
+    } else if (e.type === 'turn-end' && m.started) {
       if (!e.isError) remember(m.kind, (Date.now() - m.since) / 1000 / m.guess)
       useMaking.setState({ making: null })
     }

@@ -47,6 +47,140 @@ export function friendlyTarget(path: unknown, titleOf?: TitleOf): string {
   return 'the project'
 }
 
+/** JSON string escapes and the characters they stand for. */
+const ESCAPES: Record<string, string> = {
+  '"': '"',
+  '\\': '\\',
+  '/': '/',
+  b: '\b',
+  f: '\f',
+  n: '\n',
+  r: '\r',
+  t: '\t'
+}
+const QUOTE_OR_ESCAPE = /["\\]/g
+const SCALAR = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/y
+
+/**
+ * A tool's input while it streams in: JSON that may be cut off anywhere. Finished values are read
+ * as they are; the one being written is kept as far as it goes (a string unescaped up to the cut,
+ * a half-written escape, number or word left out). `open` names the top-level field still being
+ * written, so a label can wait for a whole path while the live view shows the text growing.
+ */
+export function readPartialJson(src: string): {
+  value: Record<string, unknown>
+  open: string | null
+} {
+  const n = src.length
+  let i = 0
+  let open: string | null = null
+  const space = (): void => {
+    while (i < n && (src[i] === ' ' || src[i] === '\n' || src[i] === '\r' || src[i] === '\t')) i++
+  }
+  // each reader returns what it read (undefined when nothing usable) and whether it was whole
+  const string = (): [string, boolean] => {
+    let out = ''
+    i++
+    for (;;) {
+      QUOTE_OR_ESCAPE.lastIndex = i
+      const m = QUOTE_OR_ESCAPE.exec(src)
+      if (!m) {
+        out += src.slice(i)
+        break
+      }
+      out += src.slice(i, m.index)
+      i = m.index
+      if (src[i] === '"') {
+        i++
+        return [out, true]
+      }
+      const e = src[i + 1]
+      if (e === undefined) break
+      if (e === 'u') {
+        const hex = src.slice(i + 2, i + 6)
+        if (hex.length < 4) break
+        if (/^[\da-f]{4}$/i.test(hex)) out += String.fromCharCode(parseInt(hex, 16))
+        i += 6
+        continue
+      }
+      out += ESCAPES[e] ?? e
+      i += 2
+    }
+    i = n
+    // cut between the two halves of an emoji: the first half alone is no character
+    return [out.replace(/[\uD800-\uDBFF]$/, ''), false]
+  }
+  const value = (): [unknown, boolean] => {
+    space()
+    const c = src[i]
+    if (c === '"') return string()
+    if (c === '{') return object(false)
+    if (c === '[') return array()
+    SCALAR.lastIndex = i
+    const m = c === undefined ? null : SCALAR.exec(src)
+    // a number or word that reaches the cut may still be growing ("1" of "12", "nul")
+    if (!m || i + m[0].length >= n) {
+      i = n
+      return [undefined, false]
+    }
+    i += m[0].length
+    return [JSON.parse(m[0]), true]
+  }
+  const object = (top: boolean): [Record<string, unknown>, boolean] => {
+    const out: Record<string, unknown> = {}
+    i++
+    for (;;) {
+      space()
+      if (src[i] === '}') {
+        i++
+        return [out, true]
+      }
+      if (src[i] === ',') {
+        i++
+        continue
+      }
+      if (src[i] !== '"') break
+      const [key, whole] = string()
+      if (!whole) break
+      space()
+      if (src[i] !== ':') break
+      i++
+      const [v, done] = value()
+      if (v !== undefined) out[key] = v
+      if (!done) {
+        if (top) open = key
+        break
+      }
+    }
+    i = n
+    return [out, false]
+  }
+  const array = (): [unknown[], boolean] => {
+    const out: unknown[] = []
+    i++
+    for (;;) {
+      space()
+      if (src[i] === ']') {
+        i++
+        return [out, true]
+      }
+      if (src[i] === ',') {
+        i++
+        continue
+      }
+      if (i >= n) break
+      const [v, done] = value()
+      if (v !== undefined) out.push(v)
+      if (!done) break
+    }
+    i = n
+    return [out, false]
+  }
+  space()
+  if (src[i] !== '{') return { value: {}, open: null }
+  return { value: object(true)[0], open }
+}
+
 const act = (kind: ActivityKind, active: string, done: string): Activity => ({
   kind,
   active,

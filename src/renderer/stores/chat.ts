@@ -106,6 +106,30 @@ function appendText(messages: ChatMessage[], id: string, text: string): ChatMess
   return messages.map((x, j) => (j === i ? next : x))
 }
 
+/**
+ * A running step's input as it streams in: only that step and its message change identity, so
+ * the other (memoised) messages and steps don't re-render.
+ */
+function patchStep(
+  messages: ChatMessage[],
+  e: Extract<AgentEvent, { type: 'tool-input' }>
+): ChatMessage[] {
+  const i = messages.findLastIndex((m) => m.id === e.messageId)
+  const parts = messages[i]?.parts
+  const j = parts?.findIndex((p) => p.type === 'tool' && p.id === e.id) ?? -1
+  const p = parts?.[j]
+  // the step's own message (main's whole copy) catches up anyway; a finished step keeps its input
+  if (!parts || p?.type !== 'tool' || p.status !== 'running') return messages
+  const step = {
+    ...p,
+    detail: e.detail,
+    ...(e.summary !== undefined ? { summary: e.summary } : {}),
+    ...(e.activity ? { activity: e.activity } : {})
+  }
+  const next = { ...messages[i], parts: parts.map((x, k) => (k === j ? step : x)) }
+  return messages.map((x, k) => (k === i ? next : x))
+}
+
 export const useChat = create<ChatStore>((set, get) => ({
   messages: [],
   state: 'idle',
@@ -125,6 +149,10 @@ export const useChat = create<ChatStore>((set, get) => ({
       if (e.type === 'status') set({ state: e.state, detail: e.detail })
       else if (e.type === 'text-delta')
         set((s) => ({ messages: appendText(s.messages, e.id, e.text) }))
+      else if (e.type === 'tool-input') {
+        const messages = patchStep(get().messages, e)
+        if (messages !== get().messages) set({ messages })
+      }
     })
   },
 

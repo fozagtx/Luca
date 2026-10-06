@@ -1,11 +1,15 @@
 import type { ElementType, HTMLAttributes, ReactElement, ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 
-/** A light band that sweeps through muted text while something is in progress (prompt-kit TextShimmer). */
+/**
+ * A light band that sweeps through muted text while something is in progress (prompt-kit
+ * TextShimmer); it holds still for people who turned motion down.
+ */
 export function TextShimmer({
   as: Tag = 'span',
   duration,
   className,
+  style,
   children,
   ...props
 }: HTMLAttributes<HTMLElement> & {
@@ -15,8 +19,8 @@ export function TextShimmer({
 }): ReactElement {
   return (
     <Tag
-      className={cn('shimmer-text', className)}
-      style={duration ? { animationDuration: `${duration}s` } : undefined}
+      className={cn('shimmer-text motion-reduce:animate-none', className)}
+      style={duration ? { animationDuration: `${duration}s`, ...style } : style}
       {...props}
     >
       {children}
