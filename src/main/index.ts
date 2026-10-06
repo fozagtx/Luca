@@ -2,6 +2,7 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron'
 import { basename, extname, join } from 'node:path'
 import { bundledFontsDir, bundledLutsDir } from './resources'
+import { attachContextMenu } from './context-menu'
 import { registerHandlers } from './handlers'
 import { Channels, broadcast } from './ipc'
 import { buildAppMenu } from './menu'
@@ -60,6 +61,7 @@ function createWindow(): BrowserWindow {
     win.webContents.setVisualZoomLevelLimits(1, 1).catch(() => undefined)
     win.webContents.setZoomFactor(1)
   })
+  attachContextMenu(win)
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url)
     return { action: 'deny' }

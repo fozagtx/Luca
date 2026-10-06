@@ -1,4 +1,5 @@
 import { Menu } from '@base-ui/react/menu'
+import { PreviewCard } from '@base-ui/react/preview-card'
 import type { ApprovalMode } from '@shared/types'
 import {
   ArrowUp,
@@ -24,7 +25,8 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
   type MouseEvent,
-  type ReactElement
+  type ReactElement,
+  type ReactNode
 } from 'react'
 import { EdgeGlow } from '../../components/ui/edge-glow'
 import { Thumb } from '../../components/ui/thumb'
@@ -38,7 +40,9 @@ import { useProject } from '../../stores/project'
 import { kindOf, useStart, type Attachment } from '../../stores/start'
 import { useVoice } from '../../stores/voice'
 import { AssemblyAiKeyCard } from '../onboarding/AssemblyAiKeyCard'
-import { ChipPill } from './Message'
+import { ImageViewer } from './ImageViewer'
+import { chipKeys, visualOf, type Visual } from './images'
+import { ChipPill, VideoBadge } from './Message'
 import { VoiceRecorder } from './VoiceRecorder'
 
 const LINE = 20
@@ -67,6 +71,10 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const startVoice = useVoice((s) => s.start)
   const dismissVoice = useVoice((s) => s.dismiss)
   const [over, setOver] = useState(false)
+  // drag enters minus leaves: crossing into the box's own parts fires a leave for the box
+  const dragDepth = useRef(0)
+  const [view, setView] = useState({ index: 0, open: false })
+  const projectId = useProject((s) => s.project?.id)
   const grab = usePlayer((s) => s.grab)
   const toggleGrab = usePlayer((s) => s.toggleGrab)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -80,6 +88,17 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   // a file still on its way in would be missing from the message
   const canSend = (hasText || (noProject && media)) && attaching.length === 0
   const sendLabel = noProject ? 'Make it' : working ? 'Add to the queue' : 'Send'
+  // pictures and videos show as small tiles of themselves, everything else as a pill
+  const keys = chipKeys(chips)
+  const tiles: { i: number; key: string; visual: Visual }[] = []
+  const pills: { i: number; key: string }[] = []
+  chips.forEach((c, i) => {
+    const visual = visualOf(c, projectId)
+    if (visual) tiles.push({ i, key: keys[i], visual })
+    else pills.push({ i, key: keys[i] })
+  })
+  const addingTiles = attaching.filter((a) => a.media !== 'audio')
+  const addingPills = attaching.filter((a) => a.media === 'audio')
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -94,7 +113,8 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
     // Luca is busy: line it up in the queue instead of dropping it into the conversation
     if (!noProject && (working || useQueue.getState().items.some((i) => i.status !== 'review'))) {
       useQueue.getState().enqueue(text, chips, 'typed', { time: usePlayer.getState().currentTime })
-      useChat.setState({ draft: '', chips: [] })
+      // as send() does: a later suggestion mustn't think the emptied box is still its own
+      useChat.setState({ draft: '', chips: [], auto: null })
       return
     }
     // read at send time: subscribing would re-render the composer on every frame of playback
@@ -123,6 +143,13 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
     if (!paths.length) return
     if (noProject) useStart.getState().addFiles(paths)
     else void attach(paths)
+    // back to the words, as after a drop or a paste
+    ref.current?.focus()
+  }
+  /** Taking an attachment off leaves the caret in the box, not on a button that's gone. */
+  const unchip = (i: number): void => {
+    removeChip(i)
+    ref.current?.focus()
   }
   /** A picture on the clipboard (a screenshot) is attached; copied text still pastes as text. */
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
@@ -133,7 +160,16 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
     const real = files.filter((f) => luca.project.pathForFile(f))
     const take =
       real.length || text || noProject ? real : files.filter((f) => f.type.startsWith('image/'))
-    if (!take.length) return
+    if (!take.length) {
+      // a pasted screenshot on Home would otherwise vanish without a word
+      if (noProject && !text && files.some((f) => f.type.startsWith('image/'))) {
+        e.preventDefault()
+        useChat.setState({
+          error: 'To start from a pasted picture, save it as a file and drop it here.'
+        })
+      }
+      return
+    }
     e.preventDefault()
     addFiles(take)
   }
@@ -148,16 +184,26 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
     <div
       // isolate: the glow while Luca works sits behind the box, not behind the panel
       className="isolate shrink-0 px-3 pt-1 pb-3"
+      onDragEnter={(e) => {
+        if (fileDrop(e.dataTransfer)) dragDepth.current++
+      }}
       onDragOver={(e) => {
-        if (!fileDrop(e.dataTransfer)) return
+        // while the video is being set up, nothing more can be added
+        if (!fileDrop(e.dataTransfer) || disabled) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
         if (!over) setOver(true)
       }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        setOver(false)
+      onDragLeave={(e) => {
         if (!fileDrop(e.dataTransfer)) return
+        // only leaving the whole thing hides the hint; it would flicker over the box's own parts
+        dragDepth.current = Math.max(0, dragDepth.current - 1)
+        if (dragDepth.current === 0) setOver(false)
+      }}
+      onDrop={(e) => {
+        dragDepth.current = 0
+        setOver(false)
+        if (!fileDrop(e.dataTransfer) || disabled) return
         e.preventDefault()
         addFiles([...e.dataTransfer.files])
       }}
@@ -206,36 +252,59 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
           </div>
         ) : null}
         {noProject && startFiles.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+          <div className={cn('flex flex-wrap gap-2 px-3 pt-3', over && 'opacity-0')}>
             {startFiles.map((f) => (
-              <span key={f.path} className="pop-in group relative">
-                <Thumb
-                  src={startPreviews[f.path] ?? null}
-                  lazy={false}
-                  className="size-10 rounded-[7px] ring-1 ring-border"
-                  fallback={<KindIcon kind={f.kind} />}
-                />
-                <button
-                  type="button"
-                  aria-label={`Remove ${f.name}`}
-                  onClick={() => useStart.getState().removeFile(f.path)}
-                  className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full border border-border bg-bg text-text-2 opacity-0 group-hover:opacity-100"
-                >
-                  <X size={9} />
-                </button>
-              </span>
+              <Tile
+                key={f.path}
+                name={f.name}
+                src={startPreviews[f.path] ?? null}
+                video={f.kind === 'video'}
+                fallback={<KindIcon kind={f.kind} />}
+                onRemove={() => {
+                  useStart.getState().removeFile(f.path)
+                  ref.current?.focus()
+                }}
+              />
             ))}
           </div>
         ) : null}
-        {chips.length > 0 || attaching.length > 0 ? (
-          <div className="flex flex-wrap gap-1 px-3 pt-2.5">
-            {chips.map((c, i) => (
-              <ChipPill key={i} chip={c} onRemove={() => removeChip(i)} />
+        {tiles.length > 0 || addingTiles.length > 0 ? (
+          <div className={cn('flex flex-wrap gap-2 px-3 pt-3', over && 'opacity-0')}>
+            {tiles.map((t, n) => (
+              <Tile
+                key={t.key}
+                name={t.visual.name}
+                // the small still is plenty for a tile, and quick; the file stands in without one
+                src={t.visual.thumb ?? t.visual.src}
+                video={t.visual.video}
+                fallback={<KindIcon kind={t.visual.video ? 'video' : 'image'} />}
+                onOpen={() => setView({ index: n, open: true })}
+                onRemove={() => unchip(t.i)}
+              />
             ))}
-            {attaching.map((a) => (
+            {addingTiles.map((a) => (
+              <AddingTile key={a.id} file={a} />
+            ))}
+          </div>
+        ) : null}
+        {pills.length > 0 || addingPills.length > 0 ? (
+          <div className={cn('flex flex-wrap gap-1 px-3 pt-2.5', over && 'opacity-0')}>
+            {pills.map((p) => (
+              <ChipPill key={p.key} chip={chips[p.i]} onRemove={() => unchip(p.i)} />
+            ))}
+            {addingPills.map((a) => (
               <AddingPill key={a.id} file={a} />
             ))}
           </div>
+        ) : null}
+        {tiles.length > 0 ? (
+          <ImageViewer
+            items={tiles.map((t) => t.visual)}
+            index={view.index}
+            open={view.open}
+            onIndex={(index) => setView({ index, open: true })}
+            onOpenChange={(open) => setView((v) => ({ ...v, open }))}
+          />
         ) : null}
         {voiceMode ? (
           <VoiceRecorder />
@@ -277,26 +346,29 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                   <Paperclip size={14} strokeWidth={1.9} />
                 </button>
               </Tip>
-              <Tip label="Point at something in the preview" shortcut="G" side="top">
-                <button
-                  type="button"
-                  disabled={disabled || noProject}
-                  aria-pressed={grab}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    toggleGrab()
-                  }}
-                  className={cn(
-                    'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40',
-                    grab
-                      ? 'bg-secondary text-secondary-fg'
-                      : 'text-text-2 hover:bg-hover hover:text-text'
-                  )}
-                >
-                  <Crosshair size={13} strokeWidth={1.9} />
-                  {grab ? 'Click the preview' : 'Grab'}
-                </button>
-              </Tip>
+              {/* pointing needs a video in the preview: Home has none */}
+              {noProject ? null : (
+                <Tip label="Point at something in the preview" shortcut="G" side="top">
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    aria-pressed={grab}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleGrab()
+                    }}
+                    className={cn(
+                      'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-40',
+                      grab
+                        ? 'bg-secondary text-secondary-fg'
+                        : 'text-text-2 hover:bg-hover hover:text-text'
+                    )}
+                  >
+                    <Crosshair size={13} strokeWidth={1.9} />
+                    {grab ? 'Click the preview' : 'Grab'}
+                  </button>
+                </Tip>
+              )}
               <ApprovalsPill disabled={disabled} />
               <span className="ml-auto min-w-0 truncate pr-1 text-[10.5px] text-text-3">
                 {starting
@@ -383,7 +455,98 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   )
 }
 
-/** A file on its way into the project, with how far along a video is. */
+/**
+ * An attachment as a small square of itself (as in ChatGPT), with × to take it off and a
+ * larger look on hover; clicking it opens the viewer when there is one.
+ */
+function Tile({
+  name,
+  src,
+  video,
+  fallback,
+  onOpen,
+  onRemove
+}: {
+  name: string
+  src: string | null
+  video?: boolean
+  fallback?: ReactNode
+  onOpen?: () => void
+  onRemove: () => void
+}): ReactElement {
+  const picture = (
+    <Thumb src={src} alt={name} lazy={false} fallback={fallback} className="size-full">
+      {video ? <VideoBadge compact /> : null}
+    </Thumb>
+  )
+  const frame =
+    'block size-full overflow-hidden rounded-[10px] border border-border bg-bg-muted shadow-[0_1px_2px_rgba(0,0,0,0.04)]'
+  return (
+    <PreviewCard.Root>
+      <PreviewCard.Trigger
+        delay={350}
+        closeDelay={0}
+        render={<span className="pop-in group/tile relative block size-[52px] shrink-0" />}
+      >
+        {onOpen ? (
+          <button
+            type="button"
+            aria-label={`Open ${name}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpen()
+            }}
+            className={cn(frame, 'transition-[filter] duration-150 hover:brightness-95')}
+          >
+            {picture}
+          </button>
+        ) : (
+          <span className={frame} title={name}>
+            {picture}
+          </span>
+        )}
+        <button
+          type="button"
+          aria-label={`Remove ${name}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove()
+          }}
+          className="absolute -top-1.5 -right-1.5 flex size-[18px] items-center justify-center rounded-full border border-border bg-bg text-text-2 opacity-0 shadow-[0_1px_3px_rgba(0,0,0,0.12)] transition-opacity duration-150 group-hover/tile:opacity-100 hover:text-text focus-visible:opacity-100"
+        >
+          <X size={10} strokeWidth={2.2} />
+        </button>
+      </PreviewCard.Trigger>
+      {src ? (
+        <PreviewCard.Portal>
+          <PreviewCard.Positioner side="top" sideOffset={8} collisionPadding={8} className="z-50">
+            <PreviewCard.Popup className="tip-popup pointer-events-none overflow-hidden rounded-[10px] border border-border bg-bg shadow-popover">
+              <img src={src} alt="" className="block max-h-56 max-w-56" />
+            </PreviewCard.Popup>
+          </PreviewCard.Positioner>
+        </PreviewCard.Portal>
+      ) : null}
+    </PreviewCard.Root>
+  )
+}
+
+/** A picture or video on its way into the project: a tile with a spinner and how far along. */
+function AddingTile({ file }: { file: PendingMedia }): ReactElement {
+  const pct = typeof file.progress === 'number' ? Math.round(file.progress * 100) : null
+  return (
+    <span
+      role="status"
+      title={file.name}
+      aria-label={file.media === 'video' ? 'Getting your video ready' : 'Adding your image'}
+      className="pop-in flex size-[52px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-[10px] border border-dashed border-border-strong bg-bg-muted text-text-3"
+    >
+      <LoaderCircle size={15} className="animate-spin" />
+      {pct !== null ? <span className="text-[10px] font-medium tabular-nums">{pct}%</span> : null}
+    </span>
+  )
+}
+
+/** An audio file on its way into the project. */
 function AddingPill({ file }: { file: PendingMedia }): ReactElement {
   return (
     <span className="pop-in inline-flex h-[22px] max-w-full items-center gap-1 rounded-full border border-dashed border-border-strong px-2 text-[11px] font-medium text-text-2">
@@ -439,7 +602,8 @@ function ApprovalsPill({ disabled }: { disabled: boolean }): ReactElement {
           onMouseDown={(e: MouseEvent) => e.stopPropagation()}
           onClick={(e: MouseEvent) => e.stopPropagation()}
           className={cn(
-            'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40',
+            // the hint beside it gives way first: the label never wraps under its icon
+            'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-40',
             full ? 'text-warning' : 'text-text-2 hover:bg-hover hover:text-text'
           )}
         >

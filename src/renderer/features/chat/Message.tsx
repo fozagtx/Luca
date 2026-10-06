@@ -10,6 +10,7 @@ import {
   ImagePlay,
   MousePointer2,
   Paperclip,
+  Play,
   RotateCcw,
   Scissors,
   ShieldCheck,
@@ -17,11 +18,14 @@ import {
   WandSparkles,
   X
 } from 'lucide-react'
-import { useEffect, useState, type ReactElement } from 'react'
+import { PreviewCard } from '@base-ui/react/preview-card'
+import { useCallback, useEffect, useState, type ReactElement } from 'react'
+import { DEFAULT_ASPECT, sizeOf } from '@shared/aspect'
 import { describeActivity } from '../../../shared/activity'
 import { Markdown } from '../../components/ai/markdown'
 import { TextShimmer, TypingDots } from '../../components/ai/text-shimmer'
 import { Button } from '../../components/ui/button'
+import { Thumb } from '../../components/ui/thumb'
 import { cn } from '../../lib/cn'
 import { formatDuration } from '../../lib/format'
 import { clock } from '../../lib/timecode'
@@ -29,6 +33,8 @@ import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
 import { stopLuca } from '../../stores/queue'
 import type { ToolPart } from './activity'
+import { CopyImageButton, ImageViewer } from './ImageViewer'
+import { chipKeys, fitTile, visualOf, type Visual } from './images'
 import { Steps } from './Steps'
 
 // ------------------------------------------------------------------------------------ chips
@@ -107,21 +113,15 @@ export function ChipPill({
   tone?: 'default' | 'onBubble'
 }): ReactElement {
   const preview = chipPreview(chip)
-  return (
-    <span
-      className={cn(
-        'group relative inline-flex h-[22px] max-w-full items-center gap-1 rounded-full border px-2 text-[11px] font-medium',
-        tone === 'onBubble'
-          ? 'border-secondary-border bg-bg/70 text-secondary-fg'
-          : 'border-border bg-bg text-text-2'
-      )}
-    >
+  const label = chipLabel(chip)
+  const body = (
+    <>
       {chipIcon(chip)}
-      <span className="max-w-40 truncate">{chipLabel(chip)}</span>
+      <span className="max-w-40 truncate">{label}</span>
       {onRemove ? (
         <button
           type="button"
-          aria-label="Remove"
+          aria-label={`Remove ${label}`}
           onClick={(e) => {
             e.stopPropagation()
             onRemove()
@@ -131,32 +131,221 @@ export function ChipPill({
           <X size={10} />
         </button>
       ) : null}
-      {preview ? (
-        <img
-          src={preview}
-          alt=""
-          className="pointer-events-none absolute bottom-7 left-0 z-10 hidden w-40 rounded-[6px] border border-border shadow-md group-hover:block"
-        />
-      ) : null}
+    </>
+  )
+  const pill = cn(
+    'inline-flex h-[22px] max-w-full items-center gap-1 rounded-full border px-2 text-[11px] font-medium',
+    tone === 'onBubble'
+      ? 'border-secondary-border bg-bg/70 text-secondary-fg'
+      : 'border-border bg-bg text-text-2'
+  )
+  // a long name is cut short: the whole of it shows on hover
+  if (!preview)
+    return (
+      <span className={pill} title={label}>
+        {body}
+      </span>
+    )
+  // the still opens in a layer of its own, so the edge of the chat or the queue doesn't cut it off
+  return (
+    <PreviewCard.Root>
+      <PreviewCard.Trigger delay={200} closeDelay={0} render={<span className={pill} />}>
+        {body}
+      </PreviewCard.Trigger>
+      <PreviewCard.Portal>
+        <PreviewCard.Positioner side="top" sideOffset={6} collisionPadding={8} className="z-50">
+          <PreviewCard.Popup className="tip-popup pointer-events-none overflow-hidden rounded-[8px] border border-border bg-bg shadow-popover">
+            <img src={preview} alt="" className="block max-h-48 max-w-48" />
+          </PreviewCard.Popup>
+        </PreviewCard.Positioner>
+      </PreviewCard.Portal>
+    </PreviewCard.Root>
+  )
+}
+
+/** A video's mark on its poster: a play sign and how long it runs. */
+export function VideoBadge({
+  duration,
+  compact
+}: {
+  duration?: number
+  /** Just the play sign (a small tile). */
+  compact?: boolean
+}): ReactElement {
+  return (
+    <span
+      className={cn(
+        'pointer-events-none absolute bottom-1 left-1 inline-flex items-center gap-1 rounded-full bg-black/60 font-medium text-white tabular-nums backdrop-blur-sm',
+        compact ? 'size-4 justify-center' : 'h-5 px-1.5 text-[10.5px]'
+      )}
+    >
+      <Play size={compact ? 7 : 8} fill="currentColor" strokeWidth={0} className="ml-px" />
+      {compact ? null : duration ? formatDuration(duration) : 'Video'}
     </span>
+  )
+}
+
+/** Copy a message's words, then a check for a moment. */
+function CopyText({ text }: { text: string }): ReactElement {
+  const [copied, setCopied] = useState(false)
+  const copy = (): void => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1400)
+    })
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      className="inline-flex h-5 items-center gap-1 rounded-[5px] px-1 transition-colors hover:bg-hover hover:text-text"
+    >
+      {copied ? <Check size={11} /> : <Copy size={11} />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
   )
 }
 
 // ------------------------------------------------------------------------------------ user
 
+/** Room for the pictures above a message: one up to this size, several two to a row. */
+const ONE = { width: 240, height: 280 }
+const GAP = 6
+
+type Picture = { chip: Chip; key: string; visual: Visual }
+
+/**
+ * The person's message as in Claude and ChatGPT: their pictures above the bubble, the bubble
+ * with their words (and pills for what isn't a picture), and a Copy row on hover.
+ */
 export function UserMessage({ m, animate }: { m: ChatMessage; animate: boolean }): ReactElement {
+  const projectId = useProject((s) => s.project?.id)
+  const [view, setView] = useState({ index: 0, open: false })
+  const chips = m.chips ?? []
+  const keys = chipKeys(chips)
+  const pictures: Picture[] = []
+  const pills: { chip: Chip; key: string }[] = []
+  chips.forEach((chip, i) => {
+    const visual = visualOf(chip, projectId)
+    if (visual) pictures.push({ chip, key: keys[i], visual })
+    else pills.push({ chip, key: keys[i] })
+  })
+  const text = m.text.trim()
+
   return (
-    <div className={cn('flex justify-end pl-8', animate && 'msg-in')}>
-      <div className="max-w-full rounded-[16px] rounded-br-[5px] border border-secondary-border bg-secondary px-3 py-2 text-[13px] leading-[1.55] text-text">
-        {m.chips && m.chips.length > 0 ? (
-          <div className="mb-1.5 flex flex-wrap gap-1">
-            {m.chips.map((c, i) => (
-              <ChipPill key={i} chip={c} tone="onBubble" />
-            ))}
-          </div>
-        ) : null}
-        <div className="select-text whitespace-pre-wrap">{m.text}</div>
-      </div>
+    <div className={cn('group/msg flex flex-col items-end gap-1.5 pl-8', animate && 'msg-in')}>
+      {pictures.length > 0 ? (
+        <div
+          className="flex max-w-full flex-wrap justify-end"
+          style={{ width: ONE.width, gap: GAP }}
+        >
+          {pictures.map((p, i) => (
+            <PictureTile
+              key={p.key}
+              picture={p}
+              single={pictures.length === 1}
+              onOpen={() => setView({ index: i, open: true })}
+            />
+          ))}
+        </div>
+      ) : null}
+      {text || pills.length > 0 ? (
+        <div className="max-w-full rounded-[16px] rounded-br-[5px] border border-secondary-border bg-secondary px-3 py-2 text-[13px] leading-[1.55] text-text">
+          {pills.length > 0 ? (
+            <div className={cn('flex flex-wrap gap-1', text && 'mb-1.5')}>
+              {pills.map((p) => (
+                <ChipPill key={p.key} chip={p.chip} tone="onBubble" />
+              ))}
+            </div>
+          ) : null}
+          {text ? (
+            <div className="wrap-break-word whitespace-pre-wrap select-text">{text}</div>
+          ) : null}
+        </div>
+      ) : null}
+      {text ? (
+        <div className="-mt-1 flex h-5 items-center gap-1 text-[11px] text-text-3 opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100">
+          <CopyText text={text} />
+        </div>
+      ) : null}
+      {pictures.length > 0 ? (
+        <ImageViewer
+          items={pictures.map((p) => p.visual)}
+          index={view.index}
+          open={view.open}
+          onIndex={(index) => setView({ index, open: true })}
+          onOpenChange={(open) => setView((v) => ({ ...v, open }))}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * One picture of a message: its own shape when it's alone (from its size, so nothing jumps
+ * while it loads), a square two to a row when there are several. Opens the viewer; a pill
+ * stands in when neither the file nor its small still can be shown.
+ */
+function PictureTile({
+  picture,
+  single,
+  onOpen
+}: {
+  picture: Picture
+  single: boolean
+  onOpen: () => void
+}): ReactElement {
+  const { chip, visual } = picture
+  const aspect = useProject((s) => s.project?.aspect)
+  const [natural, setNatural] = useState<[number, number] | null>(null)
+  const [missing, setMissing] = useState(false)
+  // the size it really has once loaded (a phone photo's rotation, a frame's), else the one
+  // saved with it; a grabbed frame or a B-roll pick has the project's shape
+  const [w, h] =
+    natural ??
+    (visual.width && visual.height
+      ? [visual.width, visual.height]
+      : chip.kind === 'frame' || chip.kind === 'broll'
+        ? sizeOf(aspect ?? DEFAULT_ASPECT)
+        : [4, 3])
+  const box = single ? fitTile(w / h, ONE, 72) : null
+  const measure = useCallback(
+    (img: HTMLImageElement) => setNatural([img.naturalWidth, img.naturalHeight]),
+    []
+  )
+  if (missing) return <ChipPill chip={chip} />
+  return (
+    <div
+      className="group/tile relative max-w-full"
+      style={
+        box
+          ? { width: box.width, aspectRatio: `${box.width} / ${box.height}` }
+          : { width: (ONE.width - GAP) / 2, aspectRatio: '1 / 1' }
+      }
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Open ${visual.name}`}
+        className="block h-full w-full overflow-hidden rounded-[12px] border border-border bg-bg-muted transition-[filter] duration-150 hover:brightness-[0.96] dark:hover:brightness-110"
+      >
+        <Thumb
+          src={visual.src}
+          placeholder={visual.thumb}
+          alt={visual.name}
+          onLoad={measure}
+          onMissing={() => setMissing(true)}
+          className="h-full w-full"
+        >
+          {visual.video ? <VideoBadge duration={visual.duration} /> : null}
+        </Thumb>
+      </button>
+      {visual.video ? null : (
+        <CopyImageButton
+          src={visual.src}
+          className="absolute top-1.5 right-1.5 flex size-7 items-center justify-center rounded-full bg-black/55 text-white opacity-0 backdrop-blur-sm transition-[opacity,background-color] duration-150 group-hover/tile:opacity-100 hover:bg-black/70 focus-visible:opacity-100"
+        />
+      )}
     </div>
   )
 }
@@ -232,7 +421,6 @@ export function AssistantMessage({
   request?: ChatMessage
 }): ReactElement {
   const resend = useChat((s) => s.resend)
-  const [copied, setCopied] = useState(false)
   const parts: ChatContentPart[] =
     m.parts && m.parts.length > 0 ? m.parts : m.text ? [{ type: 'text', text: m.text }] : []
   const groups = group(parts)
@@ -244,13 +432,6 @@ export function AssistantMessage({
   const thinking = !!m.pending && !streaming && !toolRunning && !waitingOnPermission
   // reloaded history appears as is; only new or live messages animate
   const anim = animate || !!m.pending
-
-  const copy = (): void => {
-    void navigator.clipboard.writeText(m.text.trim()).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1400)
-    })
-  }
 
   return (
     <div className={cn('group/msg flex flex-col gap-2.5', animate && 'msg-in')}>
@@ -305,14 +486,7 @@ export function AssistantMessage({
       ) : null}
       {!m.pending && m.text.trim() ? (
         <div className="-mt-1 flex h-5 items-center gap-1 text-[11px] text-text-3 opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100">
-          <button
-            type="button"
-            onClick={copy}
-            className="inline-flex h-5 items-center gap-1 rounded-[5px] px-1 transition-colors hover:bg-hover hover:text-text"
-          >
-            {copied ? <Check size={11} /> : <Copy size={11} />}
-            {copied ? 'Copied' : 'Copy'}
-          </button>
+          <CopyText text={m.text.trim()} />
           {m.durationMs ? (
             <span className="px-1 tabular-nums">
               Worked for {duration(Math.round(m.durationMs / 1000))}
