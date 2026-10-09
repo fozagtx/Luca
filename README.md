@@ -171,7 +171,7 @@ flowchart LR
 
 | Layer | Where | Responsibility |
 | --- | --- | --- |
-| **Renderer** | `src/renderer/` | The UI: three resizable panes, Zustand-style stores (`stores/`) and feature folders (`features/chat`, `timeline`, `viewer`, `captions`, `broll`, `export`, …). It never touches the disk or API keys. |
+| **Renderer** | `src/renderer/` | The UI: three resizable panes, Zustand stores (`stores/`) and feature folders (`features/chat`, `timeline`, `viewer`, `captions`, `broll`, `export`, …). It never touches the disk or API keys. |
 | **Preload** | `src/preload/` | Exposes a typed, minimal API (`src/shared/api.ts`) over IPC. |
 | **Main** | `src/main/` | All side effects: projects (`projects.ts`), the agent (`agent.ts`), its MCP tools (`mcp.ts`), the preview server (`server.ts`), the file watcher (`watcher.ts`), git checkpoints (`versions.ts`), transcription and voice (`transcribe.ts`, `voice.ts`), B-roll (`pexels.ts`), color (`color.ts`), Studio scene generation (`studio/`), export (`export.ts` + `render-worker.ts`) and updates (`updater.ts`). |
 | **Shared** | `src/shared/` | Types, IPC channel names, the catalog search, caption presets, aspect ratios and the guides each video type gives the agent. |
