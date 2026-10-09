@@ -115,6 +115,68 @@ Building a tool Luca should talk to? [Open an issue](https://github.com/fozagtx/
 
 </details>
 
+## How it works
+
+1. **You describe the video.** Type or speak a request, drop a voiceover, footage or screenshots, and pick a look (Motion, Classic or Studio). Luca saves the plan as `.luca/EDIT.md` in a new project folder.
+2. **Luca listens.** Your audio is transcribed with word-level timings (AssemblyAI), so every edit can land on a word.
+3. **Luca cuts.** Filler words, long pauses and retakes are removed, producing a clean cut list.
+4. **Luca builds the composition.** Titles, zooms, B-roll (Pexels), captions, color (LUTs), sound and Studio scenes are written as plain HTML (HyperFrames) inside the project. That HTML *is* the video. There's no hidden second format.
+5. **You watch it live.** The preview reloads whenever a file changes, and the timeline reads straight from the same HTML.
+6. **You keep talking.** “Make the captions yellow” becomes another agent turn that edits the HTML. Each turn is a git commit, so History can undo anything.
+7. **You export.** A background render process turns the composition into an MP4 in `renders/`.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Renderer["Renderer · React 19 + Tailwind"]
+    UI["Chat · Preview · Timeline<br/>Transcript · B-roll · Looks"]
+    Voice["Mic (AudioWorklet)"]
+  end
+
+  subgraph Main["Electron main process"]
+    IPC["IPC handlers"]
+    Agent["Agent session<br/>(Claude Agent SDK)"]
+    MCP["Luca MCP server<br/>transcribe · clean_edit · captions_apply<br/>broll_* · lut_apply · studio_apply · …"]
+    Server["Loopback HTTP server<br/>(token-guarded, Range requests)"]
+    Watcher["File watcher"]
+    Git["Versions (git)"]
+    Export["Export (utilityProcess)"]
+  end
+
+  subgraph Project["Project folder"]
+    HTML["index.html + compositions/*.html"]
+    Media["media/ (immutable sources)"]
+    Renders["renders/*.mp4"]
+  end
+
+  Ext["AssemblyAI · Pexels · Google Fonts<br/>ffmpeg · HyperFrames CLI"]
+
+  UI <--> IPC
+  Voice --> IPC
+  IPC --> Agent
+  Agent <--> MCP
+  Agent -->|edits| HTML
+  MCP --> Ext
+  MCP -->|writes| HTML
+  MCP --> Media
+  Watcher -->|change| UI
+  HTML --> Watcher
+  Server -->|serves| UI
+  HTML --> Server
+  Agent --> Git
+  Export --> Renders
+  HTML --> Export
+```
+
+| Layer | Where | Responsibility |
+| --- | --- | --- |
+| **Renderer** | `src/renderer/` | The UI: three resizable panes, Zustand-style stores (`stores/`) and feature folders (`features/chat`, `timeline`, `viewer`, `captions`, `broll`, `export`, …). It never touches the disk or API keys. |
+| **Preload** | `src/preload/` | Exposes a typed, minimal API (`src/shared/api.ts`) over IPC. |
+| **Main** | `src/main/` | All side effects: projects (`projects.ts`), the agent (`agent.ts`), its MCP tools (`mcp.ts`), the preview server (`server.ts`), the file watcher (`watcher.ts`), git checkpoints (`versions.ts`), transcription and voice (`transcribe.ts`, `voice.ts`), B-roll (`pexels.ts`), color (`color.ts`), Studio scene generation (`studio/`), export (`export.ts` + `render-worker.ts`) and updates (`updater.ts`). |
+| **Shared** | `src/shared/` | Types, IPC channel names, the catalog search, caption presets, aspect ratios and the guides each video type gives the agent. |
+| **Project** | on disk | `index.html` + `compositions/` (the source of truth), `media/`, `fonts/`, `.luca/` (plan and state), `renders/`, and a `.git` history. |
+
 ## Run from source
 
 Prerequisites: everything under [Installation](#installation) (with Node 22+), plus the HyperFrames browser (`npx hyperframes browser ensure`). For development you can also set `PEXELS_API_KEY` in the environment, or `MAIN_VITE_PEXELS_API_KEY` in a git-ignored `.env` to build a key into the app (anyone with the build can read it).
@@ -131,7 +193,7 @@ npm run dist       # unsigned .dmg + .zip in dist/
 **Website.** The landing page is the static `site/` folder (plain HTML, CSS and one small script for the scrolling tour of the app, no build). Every push to `main` that touches it deploys to [fozagtx.github.io/Luca](https://fozagtx.github.io/Luca/) through GitHub Pages (`.github/workflows/pages.yml`); preview it locally with `python3 -m http.server -d site 4173`. One-time setup: in the repository’s Settings → Pages, set Source to **GitHub Actions**.
 
 <details>
-<summary><b>How it works</b> (for developers)</summary>
+<summary><b>Implementation notes</b> (for developers)</summary>
 
 The app itself never names the tools below; they are here for people building Luca from source.
 
