@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
 import { luca } from '../../lib/luca'
 import { usePlayer } from '../../stores/player'
-import { useProject } from '../../stores/project'
+import { toast } from 'sonner'
+import { errorMessage, useProject } from '../../stores/project'
+import { useProvider } from '../../stores/provider'
 import { stopLuca } from '../../stores/queue'
 import { useStart } from '../../stores/start'
 import { useTimeline } from '../../stores/timeline'
@@ -261,6 +263,17 @@ export function useShortcuts(): void {
           break
         case 'claude-login':
           await luca.env.openClaudeLogin()
+          break
+        case 'provider':
+          ui.setProvider(true)
+          break
+        case 'claude-logout':
+          try {
+            await useProvider.getState().signOutClaude()
+            toast.success('Signed out of Claude')
+          } catch (err) {
+            toast.error(errorMessage(err))
+          }
           break
         case 'shortcuts':
           ui.setShortcuts(!ui.shortcutsOpen)

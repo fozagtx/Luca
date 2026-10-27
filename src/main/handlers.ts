@@ -12,11 +12,12 @@ import type {
   MediaInput,
   PermissionDecision,
   Project,
+  ProviderKind,
   Settings,
   StartArgs,
   TimelineEdit
 } from '../shared/types'
-import { activeAgent, agentFor, closeAgent, onTurnEnd } from './agent'
+import { activeAgent, agentFor, closeAgent, forgetClaudeSignIn, onTurnEnd } from './agent'
 import {
   addFonts,
   addGoogleFont,
@@ -68,6 +69,13 @@ import {
   startProject,
   VIDEO_EXT
 } from './projects'
+import {
+  listModels,
+  providerStatus,
+  saveProvider,
+  setActiveProvider,
+  signOutClaude
+} from './provider'
 import { hasSecret, setSecret } from './secrets'
 import type { LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
@@ -131,6 +139,27 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     return hasSecret('assemblyai')
   })
   handle(Channels.envHasAssemblyAiKey, () => hasSecret('assemblyai'))
+
+  // who Luca edits with: a change starts the open project's session again with it
+  const switched = async (): Promise<ReturnType<typeof providerStatus>> => {
+    await activeAgent()?.restart()
+    return providerStatus()
+  }
+  handle(Channels.providerStatus, providerStatus)
+  handle(Channels.providerModels, listModels)
+  handle(Channels.providerSave, (args: { baseUrl: string; key?: string; model: string }) => {
+    saveProvider(args)
+    return switched()
+  })
+  handle(Channels.providerUse, (kind: ProviderKind) => {
+    setActiveProvider(kind)
+    return switched()
+  })
+  handle(Channels.providerSignOutClaude, async () => {
+    await signOutClaude()
+    forgetClaudeSignIn()
+    if (providerStatus().active === 'claude') await activeAgent()?.restart()
+  })
 
   // settings
   handle(Channels.settingsGet, getSettings)

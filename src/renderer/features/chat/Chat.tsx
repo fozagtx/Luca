@@ -1,11 +1,12 @@
 import type { ChatMessage } from '@shared/types'
-import { ArrowDown, Check, ChevronRight, Copy, LogIn, RotateCcw } from 'lucide-react'
+import { ArrowDown, Check, ChevronRight, Copy, KeyRound, LogIn, RotateCcw } from 'lucide-react'
 import { memo, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useStickToBottom } from '../../components/ai/use-stick-to-bottom'
 import { Button } from '../../components/ui/button'
 import { cn } from '../../lib/cn'
 import { useChat } from '../../stores/chat'
 import { useProject } from '../../stores/project'
+import { useUi } from '../../stores/ui'
 import { Composer } from './Composer'
 import { AssistantMessage, UserMessage } from './Message'
 import { LucaProfile, Suggestions } from './Profile'
@@ -251,6 +252,11 @@ function Onboarding({ state, detail }: { state: string; detail?: string }): Reac
             <RotateCcw size={12} className={checking ? 'animate-spin' : ''} />
             {checking ? 'Checking…' : missing ? "I've installed it" : "I've signed in"}
           </Button>
+          {missing ? null : (
+            <Button variant="ghost" onClick={() => useUi.getState().setProvider(true)}>
+              <KeyRound size={12} /> Use my own API key
+            </Button>
+          )}
         </div>
       </div>
     </div>

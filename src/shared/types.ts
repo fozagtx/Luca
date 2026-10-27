@@ -307,6 +307,19 @@ export type Settings = {
   approvals?: ApprovalMode
   /** The version that last ran, to tell when Luca was updated. */
   lastVersion?: string
+  /** Who Luca edits with: the Claude subscription (default) or the person's own API key. */
+  provider?: ProviderKind
+  /** The person's own OpenAI-compatible provider; its key is kept with the other secrets. */
+  customProvider?: { baseUrl: string; model: string }
+}
+
+export type ProviderKind = 'claude' | 'custom'
+
+export type ProviderStatus = {
+  active: ProviderKind
+  baseUrl: string
+  model: string
+  hasKey: boolean
 }
 
 export type TimelineEdit =

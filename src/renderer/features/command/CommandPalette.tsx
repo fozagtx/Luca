@@ -8,6 +8,7 @@ import {
   History,
   House,
   ImagePlay,
+  KeyRound,
   Mic,
   Moon,
   RefreshCw,
@@ -163,6 +164,12 @@ export function CommandPalette(): ReactElement {
       icon: <Clock size={14} strokeWidth={1.5} />,
       run: () => ui.setGoto(true),
       needsProject: true
+    },
+    {
+      id: 'provider',
+      label: 'Model & API key…',
+      icon: <KeyRound size={14} strokeWidth={1.5} />,
+      run: () => ui.setProvider(true)
     },
     {
       id: 'updates',

@@ -18,6 +18,7 @@ type UiStore = {
   captionsOpen: boolean
   colorOpen: boolean
   shortcutsOpen: boolean
+  providerOpen: boolean
   theme: Theme
   setTheme: (t: Theme, persist?: boolean) => void
   toggleTheme: () => void
@@ -29,6 +30,7 @@ type UiStore = {
   setCaptions: (open: boolean) => void
   setColor: (open: boolean) => void
   setShortcuts: (open: boolean) => void
+  setProvider: (open: boolean) => void
   setTab: (t: SidebarTab) => void
   setPalette: (open: boolean) => void
   setHistory: (open: boolean) => void
@@ -51,6 +53,7 @@ export const useUi = create<UiStore>((set, get) => ({
   captionsOpen: false,
   colorOpen: false,
   shortcutsOpen: false,
+  providerOpen: false,
   theme: 'light',
   setTheme: (theme, persist = true) => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
@@ -66,6 +69,7 @@ export const useUi = create<UiStore>((set, get) => ({
   setCaptions: (captionsOpen) => set({ captionsOpen }),
   setColor: (colorOpen) => set({ colorOpen }),
   setShortcuts: (shortcutsOpen) => set({ shortcutsOpen }),
+  setProvider: (providerOpen) => set({ providerOpen }),
   setTab: (tab) => set({ tab, sidebarOpen: true }),
   setPalette: (paletteOpen) => set({ paletteOpen }),
   setHistory: (historyOpen) => set({ historyOpen }),

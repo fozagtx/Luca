@@ -6,6 +6,7 @@ import { registerHandlers } from './handlers'
 import { Channels, broadcast } from './ipc'
 import { buildAppMenu } from './menu'
 import { AUDIO_EXT, VIDEO_EXT } from './projects'
+import { closeProviderProxy } from './provider'
 import { DEV_PORT, LucaServer } from './server'
 import { getSettings, updateSettings } from './settings'
 import { currentProject, setCurrentProject } from './state'
@@ -152,6 +153,7 @@ app.on('before-quit', () => {
   void cancelVoice()
   stopWatching()
   server.stop()
+  void closeProviderProxy()
 })
 
 process.on('uncaughtException', (err) => {
