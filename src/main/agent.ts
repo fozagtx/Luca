@@ -28,6 +28,7 @@ import { catalogTitle } from './library'
 import { lucaMcpServer } from './mcp'
 import { describeMedia } from './footage'
 import { lucaDir } from './projects'
+import { customProviderEnv, providerStatus } from './provider'
 import { getSettings, updateSettings } from './settings'
 
 const SYSTEM_RULES = [
@@ -128,10 +129,15 @@ const PLAIN_ERRORS: Record<string, string> = {
  */
 function plainApiError(text: string): string | null {
   if (!/^API Error\b/i.test(text)) return null
+  const own = providerStatus().active === 'custom'
+  // the provider's own words, passed on by Luca's bridge, say best what went wrong
+  const said = /Your model provider said[^"]*/.exec(text)?.[0]
+  if (own && said) return said.replace(/\\"/g, '"')
+  const who = own ? 'your model provider' : 'Claude'
   if (/connect|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|timed? ?out|network|socket|proxy/i.test(text))
-    return 'Luca couldn’t reach Claude. Check your internet connection, then try again.'
+    return `Luca couldn’t reach ${who}. Check your internet connection, then try again.`
   if (/overload|\b529\b|\b429\b|rate.?limit|limiting requests|\b5\d\d\b/i.test(text))
-    return 'Claude is busy right now. Try again in a minute.'
+    return `${own ? 'Your model provider' : 'Claude'} is busy right now. Try again in a minute.`
   return null
 }
 
@@ -203,6 +209,11 @@ function currentChip(chip: Chip): Chip[] {
 }
 
 let signedIn = false
+
+/** After signing out of Claude, the next start checks the sign-in again. */
+export function forgetClaudeSignIn(): void {
+  signedIn = false
+}
 
 /** true = logged in, false = not, null = unknown (old CLI without `auth status`). */
 async function authStatus(claude: string, env: NodeJS.ProcessEnv): Promise<boolean | null> {
@@ -343,15 +354,20 @@ export class ProjectAgent {
       return
     }
     this.setState('starting')
-    const env = await childEnv()
-    // signed in once this session is enough: opening another project skips the 1–2 s check
-    const auth = signedIn ? true : await authStatus(claude, env)
-    signedIn = auth === true
-    if (this.closed) return
-    if (auth === false) {
-      this.setState('needs-login', 'Not logged in · run /login in Claude Code')
-      return
+    // the person's own API key and endpoint: no Claude sign-in is needed
+    const custom = await customProviderEnv()
+    const env = await childEnv(custom ?? {})
+    if (!custom) {
+      // signed in once this session is enough: opening another project skips the 1–2 s check
+      const auth = signedIn ? true : await authStatus(claude, env)
+      signedIn = auth === true
+      if (this.closed) return
+      if (auth === false) {
+        this.setState('needs-login', 'Not logged in · run /login in Claude Code')
+        return
+      }
     }
+    if (this.closed) return
     const envRecord: Record<string, string> = {}
     for (const [k, v] of Object.entries(env)) if (v !== undefined) envRecord[k] = v
 
@@ -445,7 +461,12 @@ export class ProjectAgent {
   async send(turn: Turn): Promise<void> {
     if (!this.q) await this.start()
     if (this.state === 'missing-claude') throw new Error('Claude Code is not installed')
-    if (this.state === 'needs-login') throw new Error('Sign in to Claude Code first')
+    if (this.state === 'needs-login')
+      throw new Error(
+        providerStatus().active === 'custom'
+          ? 'Your model provider refused the API key. Check it under Model & API key.'
+          : 'Sign in to Claude Code first'
+      )
     if (!this.q) throw new Error(this.stateDetail ?? 'Claude Code could not start')
     const user: ChatMessage = {
       id: randomUUID(),
@@ -961,7 +982,9 @@ export class ProjectAgent {
       else if (isError && error && !this.current.text) {
         this.appendText(
           this.state === 'needs-login'
-            ? 'Sign in to Claude Code to continue.'
+            ? providerStatus().active === 'custom'
+              ? 'Your model provider refused the API key. Check it under Model & API key.'
+              : 'Sign in to Claude Code to continue.'
             : (PLAIN_ERRORS[error] ?? error)
         )
       }

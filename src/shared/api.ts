@@ -24,6 +24,8 @@ import type {
   MediaInput,
   PermissionDecision,
   Project,
+  ProviderKind,
+  ProviderStatus,
   ProjectChanged,
   RecentProject,
   Settings,
@@ -47,6 +49,17 @@ export type LucaApi = {
     checkClaude: () => Promise<{ ok: boolean; loggedIn: boolean; error?: string }>
     setAssemblyAiKey: (key: string) => Promise<boolean>
     hasAssemblyAiKey: () => Promise<boolean>
+  }
+  /** Who Luca edits with: the Claude subscription or the person's own API key and endpoint. */
+  provider: {
+    status: () => Promise<ProviderStatus>
+    /** The models an OpenAI-compatible endpoint offers (the saved key when none is given). */
+    models: (args: { baseUrl: string; key?: string }) => Promise<string[]>
+    /** Saves the endpoint, key (empty keeps the saved one) and model, and edits with them. */
+    save: (args: { baseUrl: string; key?: string; model: string }) => Promise<ProviderStatus>
+    use: (kind: ProviderKind) => Promise<ProviderStatus>
+    /** Signs Claude Code out of the Claude account. */
+    signOutClaude: () => Promise<void>
   }
   settings: {
     get: () => Promise<Settings>

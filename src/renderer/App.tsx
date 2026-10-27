@@ -15,6 +15,7 @@ import { Chat } from './features/chat/Chat'
 import { CommandPalette } from './features/command/CommandPalette'
 import { GotoSheet } from './features/command/GotoSheet'
 import { ShortcutsSheet } from './features/command/ShortcutsSheet'
+import { ProviderSheet } from './features/chat/ProviderSheet'
 import { useShortcuts } from './features/command/useShortcuts'
 import { CaptionStudio } from './features/captions/CaptionStudio'
 import { ColorStudio } from './features/color/ColorStudio'
@@ -250,6 +251,7 @@ export default function App(): ReactElement {
       <ExportSheet />
       <GotoSheet />
       <ShortcutsSheet />
+      <ProviderSheet />
       <CaptionStudio />
       <ColorStudio />
       <UpdatesSheet />

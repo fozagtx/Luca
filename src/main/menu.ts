@@ -143,7 +143,9 @@ export function buildAppMenu(): void {
           click: () => shell.openExternal('https://docs.anthropic.com/en/docs/claude-code')
         },
         { type: 'separator' },
-        { label: 'Sign in to Claude…', click: () => send('claude-login') }
+        { label: 'Model & API Key…', click: () => send('provider') },
+        { label: 'Sign in to Claude…', click: () => send('claude-login') },
+        { label: 'Sign Out of Claude', click: () => send('claude-logout') }
       ]
     }
   ]

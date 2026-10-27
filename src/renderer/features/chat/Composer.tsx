@@ -7,6 +7,7 @@ import {
   CircleAlert,
   Clapperboard,
   Crosshair,
+  Cpu,
   ImagePlus,
   LoaderCircle,
   Mic,
@@ -18,6 +19,7 @@ import {
   X
 } from 'lucide-react'
 import {
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -35,6 +37,8 @@ import { luca } from '../../lib/luca'
 import { stopLuca, useQueue } from '../../stores/queue'
 import { usePlayer } from '../../stores/player'
 import { useProject } from '../../stores/project'
+import { useProvider } from '../../stores/provider'
+import { useUi } from '../../stores/ui'
 import { kindOf, useStart, type Attachment } from '../../stores/start'
 import { useVoice } from '../../stores/voice'
 import { AssemblyAiKeyCard } from '../onboarding/AssemblyAiKeyCard'
@@ -298,6 +302,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                 </button>
               </Tip>
               <ApprovalsPill disabled={disabled} />
+              <ModelPill />
               <span className="ml-auto min-w-0 truncate pr-1 text-[10.5px] text-text-3">
                 {starting
                   ? 'Getting your video ready…'
@@ -426,6 +431,34 @@ const APPROVAL_MODES: { mode: ApprovalMode; title: string; body: string }[] = [
 ]
 
 /** How Luca's steps are approved: a card for each one, or full access. */
+/** What Luca edits with (Claude, or the person's own model); opens Model & API key. */
+function ModelPill(): ReactElement {
+  const status = useProvider((s) => s.status)
+  const load = useProvider((s) => s.load)
+  useEffect(() => {
+    void load()
+  }, [load])
+  const custom = status?.active === 'custom'
+  const label = custom ? (status.model.split('/').pop() ?? status.model) : 'Claude'
+  return (
+    <Tip label={custom ? `Editing with ${status.model}` : 'Model & API key'} side="top">
+      <button
+        type="button"
+        aria-label="Model & API key"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+          useUi.getState().setProvider(true)
+        }}
+        className="inline-flex h-7 max-w-[160px] min-w-0 items-center gap-1.5 rounded-full px-2.5 text-[11.5px] font-medium text-text-2 transition-colors hover:bg-hover hover:text-text"
+      >
+        <Cpu size={13} strokeWidth={1.9} className="shrink-0" />
+        <span className="truncate">{label}</span>
+      </button>
+    </Tip>
+  )
+}
+
 function ApprovalsPill({ disabled }: { disabled: boolean }): ReactElement {
   const mode = useProject((s) => s.settings?.approvals) ?? 'ask'
   const full = mode === 'full'

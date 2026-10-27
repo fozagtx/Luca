@@ -29,6 +29,13 @@ const api: LucaApi = {
     setAssemblyAiKey: (key) => invoke(C.envSetAssemblyAiKey, key),
     hasAssemblyAiKey: () => invoke(C.envHasAssemblyAiKey)
   },
+  provider: {
+    status: () => invoke(C.providerStatus),
+    models: (args) => invoke(C.providerModels, args),
+    save: (args) => invoke(C.providerSave, args),
+    use: (kind) => invoke(C.providerUse, kind),
+    signOutClaude: () => invoke(C.providerSignOutClaude)
+  },
   settings: {
     get: () => invoke(C.settingsGet),
     update: (patch) => invoke(C.settingsUpdate, patch),
