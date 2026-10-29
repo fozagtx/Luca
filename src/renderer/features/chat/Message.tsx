@@ -12,6 +12,7 @@ import {
   Paperclip,
   RotateCcw,
   Scissors,
+  Sparkles,
   ShieldCheck,
   Type,
   WandSparkles,
@@ -45,6 +46,8 @@ function chipIcon(chip: Chip): ReactElement {
       return <Type size={11} />
     case 'broll':
       return <ImagePlay size={11} />
+    case 'effect':
+      return <Sparkles size={11} />
     case 'edit':
       return <WandSparkles size={11} />
     case 'media':
@@ -78,6 +81,8 @@ function chipLabel(chip: Chip): string {
       return `“${chip.text.slice(0, 24)}${chip.text.length > 24 ? '…' : ''}”`
     case 'broll':
       return `B-roll: ${chip.title}`
+    case 'effect':
+      return `Effect: ${chip.title}`
     case 'edit':
       return chip.label
     case 'media':
