@@ -86,6 +86,7 @@ export type Chip =
       thumb: string
       duration?: number
     }
+  | { kind: 'effect'; id: string; title: string; at: number }
   /** A video, audio file or image the person added to the open project from the chat. */
   | {
       kind: 'media'
@@ -104,6 +105,27 @@ export type Chip =
 
 /** What a file added to a project is. */
 export type MediaKind = 'video' | 'audio' | 'image'
+
+export type EffectsStatus = {
+  state: 'unknown' | 'installing' | 'ready' | 'needs-python' | 'needs-ffmpeg' | 'error'
+  message?: string
+}
+
+export type EffectItem = {
+  fx: string
+  start: number
+  end: number
+  text?: string
+  options?: Record<string, string>
+}
+
+export type EffectPreviewResult =
+  | { ok: true; url: string }
+  | {
+      ok: false
+      reason: 'no-footage' | 'setup' | 'error'
+      message: string
+    }
 
 /** A file to add to the open project: a path on disk, or the bytes of a pasted picture. */
 export type MediaInput = { path: string } | { name: string; data: ArrayBuffer | Uint8Array }
@@ -378,7 +400,7 @@ export type CleanStatus = {
   since?: number
 }
 
-export type CleanResult = { cuts: number; cleanFile: string }
+export type CleanResult = { cuts: number; cleanFile: string; effectsRemoved?: string[] }
 
 /**
  * Real-time speech-to-text events (AssemblyAI Universal-Streaming), tagged with the session id

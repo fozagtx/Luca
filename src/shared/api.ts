@@ -16,6 +16,8 @@ import type {
   CleanResult,
   CleanStatus,
   Edl,
+  EffectsStatus,
+  EffectPreviewResult,
   EnvStatus,
   ExportOptions,
   ExportProgress,
@@ -167,6 +169,12 @@ export type LucaApi = {
     state: () => Promise<ColorState>
     apply: (grade: { lut: string; intensity: number }, checkpoint?: boolean) => Promise<ColorState>
     remove: () => Promise<ColorState>
+  }
+  effects: {
+    status: () => Promise<EffectsStatus>
+    setup: () => Promise<EffectsStatus>
+    preview: (args: { fx: string; at: number }) => Promise<EffectPreviewResult>
+    onStatus: (cb: (status: EffectsStatus) => void) => Unsubscribe
   }
   looks: {
     list: () => Promise<(Look & { thumb: string | null })[]>

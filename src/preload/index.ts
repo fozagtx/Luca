@@ -117,6 +117,12 @@ const api: LucaApi = {
     apply: (grade, checkpoint) => invoke(C.colorApply, grade, checkpoint),
     remove: () => invoke(C.colorRemove)
   },
+  effects: {
+    status: () => invoke(C.effectsStatus),
+    setup: () => invoke(C.effectsSetup),
+    preview: (args) => invoke(C.effectsPreview, args),
+    onStatus: (cb) => on(C.effectsStatusPush, cb)
+  },
   looks: {
     list: () => invoke(C.looksList),
     save: (name) => invoke(C.looksSave, name),

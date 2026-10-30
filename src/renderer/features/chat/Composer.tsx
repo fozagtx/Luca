@@ -1,5 +1,6 @@
 import { Menu } from '@base-ui/react/menu'
-import type { ApprovalMode } from '@shared/types'
+import { findEffects, type EffectInfo } from '@shared/effects'
+import type { ApprovalMode, Chip } from '@shared/types'
 import {
   ArrowUp,
   AudioLines,
@@ -21,6 +22,7 @@ import {
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ClipboardEvent,
@@ -44,9 +46,23 @@ import { useVoice } from '../../stores/voice'
 import { AssemblyAiKeyCard } from '../onboarding/AssemblyAiKeyCard'
 import { ChipPill } from './Message'
 import { VoiceRecorder } from './VoiceRecorder'
+import { EffectsMenu } from './EffectsMenu'
 
 const LINE = 20
 const MAX_LINES = 8
+
+type EffectToken = { query: string; start: number; end: number }
+
+function effectTokenAt(value: string, caret: number): EffectToken | null {
+  const before = value.slice(0, caret)
+  const match = /(^|\s)\/(?:effects?(?:\s+|$)|fx(?:\s+|$))?([\w-]*)$/i.exec(before)
+  if (!match) return null
+  return {
+    query: match[2],
+    start: match.index + match[1].length,
+    end: before.length
+  }
+}
 
 /**
  * The message box (prompt-kit PromptInput): grows with the text, Enter sends, Shift+Enter adds a
@@ -71,10 +87,21 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   const startVoice = useVoice((s) => s.start)
   const dismissVoice = useVoice((s) => s.dismiss)
   const [over, setOver] = useState(false)
+  const [slashToken, setSlashToken] = useState<EffectToken | null>(null)
+  const [effectIndex, setEffectIndex] = useState(0)
+  const dismissedEffectMenu = useRef(false)
+  const lastEffectDraft = useRef(draft)
   const grab = usePlayer((s) => s.grab)
   const toggleGrab = usePlayer((s) => s.toggleGrab)
   const ref = useRef<HTMLTextAreaElement>(null)
   const working = state === 'working'
+  const project = useProject((s) => s.project)
+  const effectMenuOpen = !noProject && !!project && slashToken !== null
+  const effects = useMemo(
+    () => (effectMenuOpen && slashToken ? findEffects(slashToken.query) : []),
+    [effectMenuOpen, slashToken]
+  )
+  const selectedEffectIndex = effects.length ? effectIndex % effects.length : 0
   const hasText = draft.trim().length > 0
   const startFiles = useStart((s) => s.files)
   const startPreviews = useStart((s) => s.previews)
@@ -92,17 +119,45 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
     el.style.height = `${Math.min(Math.max(el.scrollHeight, LINE * 2), LINE * MAX_LINES + 8)}px`
   }, [draft, voiceMode])
 
-  const submit = (): void => {
-    const text = draft.trim()
-    if (!canSend || disabled) return
+  const submit = (textOverride?: string, chipsOverride?: Chip[]): void => {
+    const text = (textOverride ?? draft).trim()
+    const sentChips = chipsOverride ?? chips
+    if (!(text || (noProject && media)) || attaching.length > 0 || disabled) return
     // Luca is busy: line it up in the queue instead of dropping it into the conversation
     if (!noProject && (working || useQueue.getState().items.some((i) => i.status !== 'review'))) {
-      useQueue.getState().enqueue(text, chips, 'typed', { time: usePlayer.getState().currentTime })
+      useQueue
+        .getState()
+        .enqueue(text, sentChips, 'typed', { time: usePlayer.getState().currentTime })
       useChat.setState({ draft: '', chips: [] })
       return
     }
     // read at send time: subscribing would re-render the composer on every frame of playback
+    if (textOverride !== undefined || chipsOverride !== undefined)
+      useChat.setState({ draft: text, chips: sentChips })
     void send(text, { time: usePlayer.getState().currentTime })
+  }
+  const updateEffectToken = (value: string, caret: number, end = caret): void => {
+    if (value !== lastEffectDraft.current) {
+      lastEffectDraft.current = value
+      dismissedEffectMenu.current = false
+    }
+    const next = !noProject && project && caret === end ? effectTokenAt(value, caret) : null
+    if (!next) dismissedEffectMenu.current = false
+    if (dismissedEffectMenu.current) {
+      setSlashToken(null)
+      return
+    }
+    if (next?.query !== slashToken?.query) setEffectIndex(0)
+    setSlashToken(next)
+  }
+  const pickEffect = (effect: EffectInfo): void => {
+    if (!slashToken) return
+    const text = `${draft.slice(0, slashToken.start)}${draft.slice(slashToken.end)}`.trim()
+    const at = usePlayer.getState().currentTime
+    const finalText = text || `Add the ${effect.title} effect`
+    const nextChips: Chip[] = [...chips, { kind: 'effect', id: effect.id, title: effect.title, at }]
+    setSlashToken(null)
+    submit(finalText, nextChips)
   }
   /** Anywhere on the box (not a button) puts the caret in the text, at the end. */
   const focusText = (e: MouseEvent): void => {
@@ -142,6 +197,31 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
     addFiles(take)
   }
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (effectMenuOpen) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        dismissedEffectMenu.current = true
+        setSlashToken(null)
+        return
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        e.stopPropagation()
+        if (effects.length)
+          setEffectIndex(
+            (index) => (index + (e.key === 'ArrowDown' ? 1 : effects.length - 1)) % effects.length
+          )
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        e.stopPropagation()
+        const effect = effects[selectedEffectIndex]
+        if (effect) pickEffect(effect)
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       submit()
@@ -151,7 +231,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
   return (
     <div
       // isolate: the glow while Luca works sits behind the box, not behind the panel
-      className="isolate shrink-0 px-3 pt-1 pb-3"
+      className="relative isolate shrink-0 px-3 pt-1 pb-3"
       onDragOver={(e) => {
         if (!fileDrop(e.dataTransfer)) return
         e.preventDefault()
@@ -249,8 +329,33 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
               ref={ref}
               id="chat-composer"
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value)
+                updateEffectToken(e.target.value, e.target.selectionStart, e.target.selectionEnd)
+              }}
               onKeyDown={onKey}
+              onKeyUp={(e) =>
+                updateEffectToken(
+                  e.currentTarget.value,
+                  e.currentTarget.selectionStart,
+                  e.currentTarget.selectionEnd
+                )
+              }
+              onSelect={(e) =>
+                updateEffectToken(
+                  e.currentTarget.value,
+                  e.currentTarget.selectionStart,
+                  e.currentTarget.selectionEnd
+                )
+              }
+              onMouseUp={(e) =>
+                updateEffectToken(
+                  e.currentTarget.value,
+                  e.currentTarget.selectionStart,
+                  e.currentTarget.selectionEnd
+                )
+              }
+              onBlur={() => setSlashToken(null)}
               onPaste={onPaste}
               disabled={disabled}
               rows={1}
@@ -259,7 +364,7 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
                   ? media
                     ? 'Anything Luca should know? (optional)'
                     : 'Describe the video you want…'
-                  : 'Tell Luca what to change…'
+                  : 'Tell Luca what to change, or / for effects…'
               }
               className={cn(
                 'block w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13px] leading-[20px] text-text placeholder:text-text-3 select-text',
@@ -384,6 +489,15 @@ export function Composer({ noProject }: { noProject: boolean }): ReactElement {
           </>
         )}
       </div>
+      {effectMenuOpen && project ? (
+        <EffectsMenu
+          effects={effects}
+          selectedIndex={selectedEffectIndex}
+          onSelect={setEffectIndex}
+          onPick={pickEffect}
+          project={project}
+        />
+      ) : null}
     </div>
   )
 }

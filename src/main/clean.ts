@@ -15,6 +15,7 @@ import { activeAgent, agentFor } from './agent'
 import { hasTranscript, refreshCaptions } from './captions'
 import { speechClips } from './captions-html'
 import { footageVideos } from './color'
+import { clearEffectsForBases, effectBaseForSrc } from './effects'
 import { ffmpegProgress, probeMedia } from './env'
 import { AUDIO_EXT } from './footage'
 import {
@@ -298,7 +299,7 @@ const num = (v: string | undefined, fallback: number): number => {
  * after a piece (chained footage, music, outros) move earlier by the time that piece lost, so the
  * video shortens by exactly the cuts.
  */
-function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): void {
+function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): string[] {
   const indexFile = join(p.dir, 'index.html')
   let html = readFileSync(indexFile, 'utf8')
   const tags = findTags(html)
@@ -326,12 +327,15 @@ function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): vo
     newLength: number
   }
   const pieces: Piece[] = []
+  const effectBases = new Set<string>()
   for (const tag of tags) {
     if ((tag.name !== 'video' && tag.name !== 'audio') || !topLevel(tag)) continue
     const src = tag.attrs.src ?? ''
-    const isSource = sourceRels.has(src)
-    if (!isSource && !CLEAN_FILE.test(src)) continue
-    const before = isSource ? [] : cutsOf(p, src)
+    const baseSrc = effectBaseForSrc(p.dir, src)
+    const isSource = sourceRels.has(baseSrc)
+    if (!isSource && !CLEAN_FILE.test(baseSrc)) continue
+    const before = isSource ? [] : cutsOf(p, baseSrc)
+    if (baseSrc !== src) effectBases.add(baseSrc)
     const start = num(tag.attrs['data-start'], 0)
     const mediaStart = num(tag.attrs['data-media-start'], 0)
     const length = num(tag.attrs['data-duration'], duration)
@@ -345,7 +349,7 @@ function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): vo
     // an earlier master whose cuts weren't recorded (cleaned before they were) becomes the whole new one
     pieces.push({ tag, start, end: start + length, mediaStart, before, newMediaStart, newLength })
   }
-  if (!pieces.length) return
+  if (!pieces.length) return []
 
   // a video and its own audio (even trimmed a little differently) are one stretch of time
   type Stretch = { start: number; end: number; rep: Piece; delta: number }
@@ -402,6 +406,7 @@ function relink(p: Project, cleanRel: string, cuts: Cut[], duration: number): vo
     (_, a: string, d: string, b: string) => `${a}${r3(Math.max(0.1, num(d, duration) + total))}${b}`
   )
   writeFileSync(indexFile, html)
+  return [...effectBases]
 }
 
 const readIndex = (dir: string): string => readFileSync(join(dir, 'index.html'), 'utf8')
@@ -525,7 +530,8 @@ export async function applyEdl(
       writeFileSync(join(p.dir, 'transcript.json'), JSON.stringify(remap(original, cuts), null, 2))
     setStatus({ stage: 'relinking' })
     writeFileSync(join(p.dir, 'edl.json'), JSON.stringify({ ...edl, cuts }, null, 2))
-    relink(p, cleanRel, cuts, newDuration)
+    const relinkedBases = relink(p, cleanRel, cuts, newDuration)
+    const effectsRemoved = clearEffectsForBases(p.dir, relinkedBases)
     writeFileSync(appliedFile(p.dir), JSON.stringify({ file: cleanRel, cuts }, null, 2))
     // the Studio look plays the cut video too, and captions follow the cut words; saved in the
     // same version as the cut
@@ -541,7 +547,11 @@ export async function applyEdl(
     }
     if (opts.checkpoint !== false) await checkpoint(p.dir, `Clean edit: ${cuts.length} cuts`)
     setStatus({ stage: 'done', message: `${cuts.length} cuts · ${cleanRel}` })
-    return { cuts: cuts.length, cleanFile: cleanRel }
+    return {
+      cuts: cuts.length,
+      cleanFile: cleanRel,
+      ...(effectsRemoved.length ? { effectsRemoved } : {})
+    }
   } catch (err) {
     setStatus({ stage: 'error', message: err instanceof Error ? err.message : String(err) })
     throw err
@@ -793,7 +803,7 @@ export async function cleanEditInTurn(
   p: Project,
   extra: Cut[],
   signal?: AbortSignal
-): Promise<Heard & { cuts: Cut[]; removed: number; before: number }> {
+): Promise<Heard & { cuts: Cut[]; removed: number; before: number; effectsRemoved?: string[] }> {
   const source = sourcePath(p)
   if (!source) throw new EditRefused('no-source')
   if (cleanOnTimeline(readIndex(p.dir))) throw new EditRefused('already-cut')
@@ -808,6 +818,7 @@ export async function cleanEditInTurn(
   task = 'clean'
   let cuts: Cut[] = []
   let before = 0
+  let effectsRemoved: string[] | undefined
   try {
     let t = readTranscript(p.dir)
     if (!t?.words.length) t = await transcribeSource(p, source)
@@ -820,15 +831,26 @@ export async function cleanEditInTurn(
       .filter((c) => c.end - c.start > 0.01)
     // overlaps and slivers too short to keep become one cut, so the list is always valid
     cuts = mergeCuts(inside, MIN_KEPT)
-    if (cuts.length)
-      await applyEdl(p, { version: 1, source: p.source, cuts }, { checkpoint: false, signal })
-    else setStatus({ stage: 'done', message: 'Nothing to cut' })
+    if (cuts.length) {
+      const result = await applyEdl(
+        p,
+        { version: 1, source: p.source, cuts },
+        { checkpoint: false, signal }
+      )
+      effectsRemoved = result.effectsRemoved
+    } else setStatus({ stage: 'done', message: 'Nothing to cut' })
   } catch (err) {
     setStatus({ stage: 'error', message: err instanceof Error ? err.message : String(err) })
     throw err
   }
   const removed = r3(cuts.reduce((n, c) => n + (c.end - c.start), 0))
-  return { ...(await heard(p, placed)), cuts, removed, before }
+  return {
+    ...(await heard(p, placed)),
+    cuts,
+    removed,
+    before,
+    ...(effectsRemoved ? { effectsRemoved } : {})
+  }
 }
 
 function readLookKeyterms(p: Project): string[] | null {

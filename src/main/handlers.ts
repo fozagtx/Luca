@@ -42,6 +42,7 @@ import {
 import { cancelExport, startExport } from './export'
 import { checkClaude, envStatus, openClaudeLoginTerminal } from './env'
 import { applyColor, colorState, removeColor } from './color'
+import { effectsStatus, previewEffect, setupEffects } from './effects'
 import { addMedia, footageInfo } from './footage'
 import { readTimeline } from './hyperframes'
 import { Channels, broadcast, handle, listen } from './ipc'
@@ -357,6 +358,11 @@ export function registerHandlers(getWin: WinGetter, server: LucaServer): void {
     applyColor(requireProject(), grade, { checkpoint })
   )
   handle(Channels.colorRemove, () => removeColor(requireProject()))
+  handle(Channels.effectsStatus, effectsStatus)
+  handle(Channels.effectsSetup, setupEffects)
+  handle(Channels.effectsPreview, (args: { fx: string; at: number }) =>
+    previewEffect(requireProject(), args.fx, args.at)
+  )
   handle(Channels.fontsAdd, async () => {
     const p = requireProject()
     const res = await openDialog(getWin(), {

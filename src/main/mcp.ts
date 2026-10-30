@@ -16,6 +16,7 @@ import { DEFAULT_ASPECT, sizeOf } from '../shared/aspect'
 import { REFERENCE_STUDY } from '../shared/motion'
 import { STUDIO_GUIDE } from '../shared/studio'
 import { BUNDLED_LUTS } from '../shared/luts'
+import { EFFECTS } from '../shared/effects'
 import type { CaptionConfig, Cut, CutReason } from '../shared/types'
 import { applyColor, footageVideos, removeColor } from './color'
 import {
@@ -41,6 +42,7 @@ import { findTagById } from './html'
 import { applyEdit } from './media'
 import { soundClips, soundOf } from '../shared/sound'
 import { addBroll, hasPexelsKey, searchBroll } from './pexels'
+import { applyEffects, currentEffects } from './effects'
 import { readProject, safeJoin, VIDEO_EXT } from './projects'
 import { studyReference } from './reference'
 import { installComponent, placeComponent, setupStudio, studioStatus } from './remocn'
@@ -176,7 +178,8 @@ function heardResult(summary: Record<string, unknown>, h: Heard): { content: Con
       : '',
     h.firstClipOnly
       ? 'Only the first clip the user started from is transcribed: the clips after it have no words here, so captions and cuts cover the first clip only.'
-      : ''
+      : '',
+    typeof summary.note === 'string' ? summary.note : ''
   ].filter(Boolean)
   return {
     content: [
@@ -284,6 +287,7 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
       'font_add adds a font that comes with Luca, or downloads a Google Fonts font, into the project ' +
       'so any text can use it offline. ' +
       'lut_apply grades the footage with a LUT that comes with Luca (a color look) or removes it. ' +
+      'effects_apply applies the complete set of video effects; use it for a picked effect or when the user asks for an effect, and never run its script directly. ' +
       'treatment_add installs one of Luca’s own footage treatments (mosaic-reveal, before-after) into the project ' +
       'and returns the snippet to place it over the footage. ' +
       'studio_apply puts the Studio look on a talking video from a scene plan (beats timed to the ' +
@@ -356,7 +360,13 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
                     removed: r.removed,
                     secondsBefore: r.before,
                     seconds: r.seconds,
-                    words: r.words
+                    words: r.words,
+                    ...(r.effectsRemoved?.length
+                      ? {
+                          effectsRemoved: r.effectsRemoved,
+                          note: 'The effects came off with the cut; apply them again with effects_apply, timed to the new words'
+                        }
+                      : {})
                   }
                 : {
                     ok: true,
@@ -367,6 +377,64 @@ export function lucaMcpServer(projectDir: string): ReturnType<typeof createSdkMc
                   },
               r
             )
+          } catch (err) {
+            return text({ ok: false, error: refusal(err) })
+          }
+        }
+      ),
+      tool(
+        'effects_apply',
+        [
+          'Apply video effects to the user’s footage. This replaces the complete set of effects on the video; pass the full set each time. Call with no effects to read the current effect set.',
+          'Times are timeline seconds. Use transcribe for word timing, and time each effect to the words. Short windows of 1.5–4 s usually look best. When effects overlap, put camera effects (locked-on, lean-in, spotlight) first. Use the user’s real words and numbers for text and number options.',
+          'A long clip can take a few minutes to render; tell the user in one line that it is running. Inspect the returned stills and re-apply with changes if an effect covers the face, text is cut off, or anything is unreadable.',
+          '',
+          'Effects:',
+          ...EFFECTS.map(
+            (effect) => `- ${effect.id}: ${effect.description} (options: ${effect.options})`
+          )
+        ].join('\n'),
+        {
+          effects: z
+            .array(
+              z.object({
+                fx: z.string().describe('effect id or alias'),
+                start: z.number().min(0).describe('timeline seconds'),
+                end: z.number().min(0).describe('timeline seconds'),
+                text: z.string().optional().describe('effect text, when applicable'),
+                options: z
+                  .record(z.string(), z.string())
+                  .optional()
+                  .describe('effect-specific options')
+              })
+            )
+            .max(100)
+            .optional()
+            .describe('the complete effect set; omit to read it, or pass [] to remove all effects')
+        },
+        async ({ effects }, extra) => {
+          const p = readProject(projectDir)
+          if (!p) return text({ ok: false, error: 'No project is open.' })
+          if (effects === undefined) return text({ ok: true, ...currentEffects(p) })
+          const signal = (extra as { signal?: AbortSignal } | undefined)?.signal
+          try {
+            const result = await applyEffects(p, effects, signal)
+            const response: Content[] = [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  ok: true,
+                  applied: result.applied,
+                  output: result.output
+                })
+              },
+              ...result.stills.map((still) => ({
+                type: 'image' as const,
+                data: still.jpeg,
+                mimeType: 'image/jpeg'
+              }))
+            ]
+            return { content: response }
           } catch (err) {
             return text({ ok: false, error: refusal(err) })
           }

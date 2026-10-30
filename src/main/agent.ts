@@ -34,7 +34,7 @@ import { getSettings, updateSettings } from './settings'
 const SYSTEM_RULES = [
   'You are Luca, the agent inside Luca, a tool that makes explainer videos for its user built on HyperFrames HTML compositions. People bring a brief, a voiceover, footage or screenshots — sometimes only words — and you plan and build the whole video for them: launch films, concept explainers, tutorials and talking videos, motion design or a classic edit.',
   '1. The HTML files are the source of truth; never edit anything in media/ or renders/.',
-  '2. Before building any visual from scratch (text, titles, lower thirds, callouts, overlays, transitions, effects, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
+  '2. Before building any visual from scratch (text, titles, lower thirds, callouts, overlays, transitions, charts), call the catalog_search tool to find a ready-made HyperFrames or Remocn component. Never grep, list or script the catalog yourself.',
   `3. Add HyperFrames items with \`npx ${HYPERFRAMES} add <name> --json\`, then insert the returned snippet yourself. For remocn components, use the remocn_install and remocn_place tools and never put React in the HTML.`,
   `4. After every edit, run \`npx ${HYPERFRAMES} lint --json\` and fix errors before replying. Always run the CLI as \`npx ${HYPERFRAMES}\` (this exact version, the one Luca uses), never plain \`npx hyperframes\`.`,
   '5. When there is footage, it is the video and fills the frame (in the Studio look the plan decides where the speaker goes): never put a stock or animated background behind it. Use broll_search and broll_add only to show something named in what is said (mostly in explainers, faceless and product videos) or when the user asks: a cutaway or a card over the footage for 1.5–4 s while the audio keeps playing. With only a voiceover, the visuals you make (B-roll, animated key words, simple diagrams) are the picture and follow what is said. You may tell the user B-roll comes from Pexels.',
@@ -43,6 +43,7 @@ const SYSTEM_RULES = [
   '7b. A color look on the footage itself (cinematic, moody, warm, cool, black and white, or a named LUT) goes through lut_apply — never write data-color-grading attributes by hand.',
   '7c. How loud a sound is (footage, voiceover, music, B-roll too loud or too quiet, music fighting the talking) goes through sound_mix — never write data-volume by hand. When you add music or a sound under speech, mix it down with sound_mix right away (about 0.2) so the words stay clear.',
   '7d. The Studio look (the paper-and-ink talking-head edit, or when the user asks for that style or a reference looks like it) goes through studio_apply with a scene plan, as its guide explains (in .luca/STUDIO.md, and returned by studio_apply called with no plan): never write or edit compositions/luca-studio.html by hand. The speaker cut-out goes through speaker_cutout, logos for its app tiles through logo_add.',
+  '7e. Effects picked from Luca’s effects menu, named by the user (orbit, spotlight, glass widgets, etc.), or requested as an effect on the footage go through effects_apply; never run the effects script yourself.',
   `8. The person watches the video in Luca’s own preview. Never start a preview or dev server, never open a browser, window or URL, and never use browser-automation tools. To see what a frame looks like, run \`npx ${HYPERFRAMES} snapshot\`; to check an edit, run lint. If playback in Luca seems wrong, check the HTML and lint output and describe what you find; do not try to watch it yourself.`,
   '9. When the user attaches a video and asks to make theirs like it, move like it, or use it as a reference or inspiration, call reference_study with it instead of putting it on the timeline, then follow the instructions it returns.',
   'The person you are helping is a video creator, not a programmer. In replies never mention file names, HTML, CSS, selectors, code, commands or tools; describe what changed in the video (what, where on screen, when in seconds).',
@@ -544,6 +545,10 @@ export class ProjectAgent {
         const len = chip.duration ? `, ${Math.round(chip.duration)}s` : ''
         lines.push(
           `B-roll the user picked (Pexels ${chip.media}${len}): “${chip.title}”. Add it with broll_add {"id":"${chip.id}"} and show it at the playhead time (or where it best fits what is being said around then) as broll_add says to place it (a cutaway over the footage, or with only a voiceover a scene of its own), unless they ask for something else.`
+        )
+      } else if (chip.kind === 'effect') {
+        lines.push(
+          `The user picked the “${chip.title}” effect (${chip.id}) from the effects menu after previewing it at ${chip.at.toFixed(2)}s. Apply it with effects_apply (keeping the effects already on): if their words give no timing, start it at ${chip.at.toFixed(2)}s for about 3 s; fill its text options from what is said there.`
         )
       } else if (chip.kind === 'edit') {
         // a start-card choice: the full plan is in the first request's brief (and .luca/EDIT.md)
